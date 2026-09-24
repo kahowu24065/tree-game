@@ -1,7 +1,7 @@
 import { ANIMALS, eventById, eventForDate, stageFor, stageIndex } from './content';
 import { addDays, daysBetween, formatLong } from './dates';
-import type { Care, DayCond, ForecastDay, GameState, Reinforcement, Storm, StormKind, StormOutcome } from './types';
-import { clamp } from './util';
+import type { Care, DayCond, ForecastDay, GameState, LogKind, LogReward, Reinforcement, Storm, StormKind, StormOutcome } from './types';
+import { clamp, formatHeight } from './util';
 import { classify, stormLabel } from './weather';
 
 export const HEALTH_FLOOR = 12;
@@ -30,9 +30,32 @@ export function stormOutcome(kind: StormKind, score: number): StormOutcome {
   return 'hit';
 }
 
-export function addLog(state: GameState, date: string, text: string): void {
-  state.log.unshift({ date, text });
-  if (state.log.length > 40) state.log.length = 40;
+let logClock: () => string = () => '';
+
+/** The browser sets this so log entries carry the local HH:MM they happened at. */
+export function setLogClock(fn: () => string): void {
+  logClock = fn;
+}
+
+export interface LogMeta {
+  kind?: LogKind;
+  title?: string;
+  reward?: LogReward;
+  time?: string;
+}
+
+export function addLog(state: GameState, date: string, text: string, meta: LogMeta = {}): void {
+  state.log.unshift({ date, text, time: meta.time ?? logClock(), kind: meta.kind, title: meta.title, reward: meta.reward });
+  if (state.log.length > 80) state.log.length = 80;
+}
+
+function signed(n: number, unit: string): string {
+  const v = Math.round(n);
+  return `${v >= 0 ? '+' : ''}${v} ${unit}`;
+}
+
+function growthChip(cm: number): string {
+  return cm >= 100 ? `+${(cm / 100).toFixed(1)} 米` : `+${cm.toFixed(1)} 厘米`;
 }
 
 export function createGame(today: string): GameState {
@@ -62,7 +85,7 @@ export function createGame(today: string): GameState {
     eventBonus: 1,
     morningNote: null,
   };
-  addLog(state, today, '一棵幼苗種低窗前。');
+  addLog(state, today, '一棵幼苗種低咗，由今日開始慢慢陪佢大。', { kind: 'plant', title: '種低幼苗', reward: { text: '新開始', tone: 'green' } });
   ensureToday(state, today);
   refreshUnlocks(state, { hot: false, date: today });
   return state;
@@ -75,6 +98,7 @@ export function ensureToday(state: GameState, today: string): string | null {
   state.dailyEventDate = today;
   state.dailyEventId = event.id;
   event.apply(state);
+  if (event.id !== 'quiet') addLog(state, today, event.text, { kind: 'event', title: `今日小事：${event.title}`, reward: event.chip });
   state.health = clamp(state.health, HEALTH_FLOOR, 100);
   state.moisture = clamp(state.moisture, 0, 100);
   state.pests = clamp(state.pests, 0, 100);
@@ -167,16 +191,16 @@ export function closeDay(state: GameState, date: string, cond: DayCond): { growt
   state.health = clamp(state.health, HEALTH_FLOOR, 100);
   state.moisture = clamp(state.moisture, 0, 100);
 
-  const stageText = noteStage(state, before, date);
+  const stageText = noteStage(state, before, date, '');
   return { growthCm: state.heightCm - before, storms, stageText };
 }
 
-function noteStage(state: GameState, beforeCm: number, date: string): string | null {
+function noteStage(state: GameState, beforeCm: number, date: string, time?: string): string | null {
   const before = stageFor(beforeCm);
   const after = stageFor(state.heightCm);
   if (before.id === after.id) return null;
   const text = `棵樹進入新階段：${after.name}。`;
-  addLog(state, date, text);
+  addLog(state, date, `棵樹長成${after.name}，高 ${formatHeight(state.heightCm)}。`, { kind: 'stage', title: '進入新階段', reward: { text: after.name, tone: 'blue' }, time });
   return text;
 }
 
@@ -195,6 +219,7 @@ export function resolveStorm(state: GameState, storm: Storm, date: string): Stor
   const label = stormLabel(storm.kind);
   let bonusCm = 0;
   let message = '';
+  let meta: LogMeta;
   if (outcome === 'safe') {
     state.health = clamp(state.health + 8, HEALTH_FLOOR, 100);
     bonusCm = 6 + stageIndex(state.heightCm) * 3;
@@ -202,20 +227,23 @@ export function resolveStorm(state: GameState, storm: Storm, date: string): Stor
     state.stormSurvivals += 1;
     if (state.scars > 0) state.scars -= 1;
     message = `${label}過咗。你預先加固，棵樹唔單止捱住，仲長多 ${bonusCm} 厘米。`;
+    meta = { kind: 'storm-safe', title: `捱過${label}`, reward: { text: `+${bonusCm} 厘米`, tone: 'green' } };
   } else if (outcome === 'partial') {
     state.health = clamp(state.health - 8, HEALTH_FLOOR, 100);
     state.scars = Math.min(4, state.scars + 1);
     message = `${label}打中棵樹。有少少加固，只係受咗輕傷，有枝拗斷。`;
+    meta = { kind: 'storm-partial', title: `${label}過後`, reward: { text: '-8 健康度', tone: 'orange' } };
   } else {
     const dmg = storm.kind === 'typhoon' ? 28 : storm.kind === 'gale' ? 18 : 12;
     state.health = clamp(state.health - dmg, HEALTH_FLOOR, 100);
     state.scars = Math.min(4, state.scars + 1);
     message = `${label}打中棵樹，有枝拗斷咗。下次預報嚴重天氣，可以先打樁、綁繩、修枝。`;
+    meta = { kind: 'storm-hit', title: `${label}打中棵樹`, reward: { text: `-${dmg} 健康度`, tone: 'red' } };
   }
   storm.resolved = true;
   storm.outcome = outcome;
   state.reinforcement = freshReinforcement();
-  addLog(state, date, message);
+  addLog(state, date, message, { ...meta, time: '' });
   return { date, kind: storm.kind, outcome, message, bonusCm };
 }
 
@@ -229,7 +257,7 @@ export function refreshUnlocks(state: GameState, opts: { hot: boolean; date: str
     if (animal.needHeat && !opts.hot) continue;
     state.animals.push(animal.id);
     got.push(animal.id);
-    addLog(state, opts.date, `${animal.name}嚟咗，住進棵樹。`);
+    addLog(state, opts.date, `${animal.name}嚟咗，${animal.about}`, { kind: 'animal', title: '新朋友來訪', reward: { text: '+1 圖鑑', tone: 'purple' } });
   }
   return got;
 }
@@ -240,7 +268,18 @@ export interface ActionResult {
   grewCm: number;
 }
 
-export function performAction(state: GameState, action: 'water' | 'fertilize' | 'deworm' | 'prune', cond: DayCond): ActionResult {
+type CareAction = 'water' | 'fertilize' | 'deworm' | 'prune';
+
+interface Snapshot {
+  health: number;
+  moisture: number;
+  nutrients: number;
+  pests: number;
+}
+
+export function performAction(state: GameState, action: CareAction, cond: DayCond): ActionResult {
+  const snap: Snapshot = { health: state.health, moisture: state.moisture, nutrients: state.nutrients, pests: state.pests };
+  const finish = (message: string) => finishAction(state, cond, message, action, snap);
   if (action === 'water') {
     if (state.care.watered) return { ok: false, message: '今日澆過水喇。', grewCm: 0 };
     if (cond.raining) return { ok: false, message: '落緊雨，泥土濕㗎喇，唔使澆。', grewCm: 0 };
@@ -254,7 +293,7 @@ export function performAction(state: GameState, action: 'water' | 'fertilize' | 
     } else {
       state.health = clamp(state.health + (state.moisture < 70 ? 4 : 1), HEALTH_FLOOR, 100);
     }
-    return finishAction(state, cond, message);
+    return finish(message);
   }
   if (action === 'fertilize') {
     if (state.care.fertilized) return { ok: false, message: '今日施過肥喇。', grewCm: 0 };
@@ -263,7 +302,7 @@ export function performAction(state: GameState, action: 'water' | 'fertilize' | 
     state.nutrients = clamp(state.nutrients + gain, 0, 100);
     state.health = clamp(state.health + 2, HEALTH_FLOOR, 100);
     const message = state.nutrients > 90 ? '泥已經好肥，效果少啲，留返聽日都得。' : '養分滲入泥度，葉色會慢慢亮起來。';
-    return finishAction(state, cond, message);
+    return finish(message);
   }
   if (action === 'deworm') {
     if (state.care.dewormed) return { ok: false, message: '今日檢查過蟲喇。', grewCm: 0 };
@@ -271,11 +310,11 @@ export function performAction(state: GameState, action: 'water' | 'fertilize' | 
     if (state.pests < 10) {
       state.pests = 0;
       state.health = clamp(state.health + 1, HEALTH_FLOOR, 100);
-      return finishAction(state, cond, '搵唔到蟲，不過你檢查過，葉底乾淨。');
+      return finish('搵唔到蟲，不過你檢查過，葉底乾淨。');
     }
     state.pests = clamp(state.pests - 48, 0, 100);
     state.health = clamp(state.health + 3, HEALTH_FLOOR, 100);
-    return finishAction(state, cond, '蟲少咗，樹好像鬆一口氣。');
+    return finish('蟲少咗，樹好像鬆一口氣。');
   }
   if (state.care.pruned) return { ok: false, message: '今日修剪過喇。', grewCm: 0 };
   state.care.pruned = true;
@@ -286,16 +325,30 @@ export function performAction(state: GameState, action: 'water' | 'fertilize' | 
     state.scars -= 1;
     message = '你修平咗斷枝，傷口乾淨咗。';
   }
-  return finishAction(state, cond, message);
+  return finish(message);
 }
 
-function finishAction(state: GameState, cond: DayCond, message: string): ActionResult {
+const ACTION_TITLES: Record<CareAction, string> = { water: '已澆水', fertilize: '已施肥', deworm: '已捉蟲', prune: '已修剪' };
+
+function actionReward(state: GameState, action: CareAction, snap: Snapshot): LogReward {
+  const dh = Math.round(state.health - snap.health);
+  if (action === 'water') return dh > 0 ? { text: signed(dh, '健康度'), tone: 'green' } : { text: signed(state.moisture - snap.moisture, '水分'), tone: 'blue' };
+  if (action === 'fertilize') return { text: signed(state.nutrients - snap.nutrients, '養分'), tone: 'green' };
+  if (action === 'deworm') {
+    const gone = Math.round(snap.pests - state.pests);
+    return gone > 0 ? { text: `-${gone} 害蟲`, tone: 'green' } : { text: signed(dh, '健康度'), tone: 'green' };
+  }
+  return { text: signed(dh, '健康度'), tone: 'green' };
+}
+
+function finishAction(state: GameState, cond: DayCond, message: string, action: CareAction, snap: Snapshot): ActionResult {
   if (!state.care.credited) {
     state.daysCared += 1;
     state.care.credited = true;
   }
   const before = state.heightCm;
   const grew = grantCareGrowth(state, cond);
+  addLog(state, state.care.date, message, { kind: action, title: ACTION_TITLES[action], reward: actionReward(state, action, snap) });
   const stageText = noteStage(state, before, state.care.date);
   const animals = refreshUnlocks(state, { hot: cond.hot, date: state.care.date });
   if (stageText) message = `${message} ${stageText}`;
@@ -311,6 +364,8 @@ export function setReinforcement(state: GameState, key: keyof Reinforcement, on:
   const labels = { stakes: '木樁', ropes: '防風繩', prune: '防風修枝' };
   const score = prepScore(state.reinforcement);
   if (!on) return `收起咗${labels[key]}。而家準備 ${score}/3。`;
+  const date = state.virtualToday ?? state.care.date;
+  addLog(state, date, `加咗${labels[key]}，抗風能力提升咗，而家準備 ${score}/3。`, { kind: 'reinforce', title: '已加固', reward: { text: '+1 抗風', tone: 'orange' } });
   return `加咗${labels[key]}。而家準備 ${score}/3。`;
 }
 
@@ -406,9 +461,16 @@ export function catchUp(state: GameState, today: string, dayCond: (date: string)
     state.lastSeenDate = today;
     state.care = freshCare(today);
   }
+  const growthCm = state.heightCm - heightBefore;
+  if (gap > 0) {
+    addLog(state, today, gap === 1 ? '過咗一夜，棵樹靜靜咁長高咗少少。' : `你離開咗 ${gap} 日，棵樹自己撐住，仍然有長高。`, {
+      kind: 'grow',
+      title: gap === 1 ? '過咗一夜' : '你返嚟喇',
+      reward: { text: growthChip(growthCm), tone: 'blue' },
+    });
+  }
   const eventText = ensureToday(state, today);
   const animals = refreshUnlocks(state, { hot: hotToday, date: today });
-  const growthCm = state.heightCm - heightBefore;
   if (gap === 1) {
     state.morningNote = `過咗一夜，棵樹長咗 ${growthCm.toFixed(1)} 厘米。`;
   } else if (gap > 1) {
@@ -439,9 +501,10 @@ export function advanceVirtualDay(state: GameState, today: string, cond: DayCond
   state.virtualToday = next;
   state.lastSeenDate = next;
   state.care = freshCare(next);
+  const growthCm = state.heightCm - heightBefore;
+  addLog(state, next, '過咗一夜，棵樹靜靜咁長高咗少少。', { kind: 'grow', title: '過咗一夜', reward: { text: growthChip(growthCm), tone: 'blue' } });
   const eventText = ensureToday(state, next);
   const animals = refreshUnlocks(state, { hot: false, date: next });
-  const growthCm = state.heightCm - heightBefore;
   state.morningNote = `過咗一夜，棵樹長咗 ${growthCm.toFixed(1)} 厘米。`;
   if (closed.storms.length) state.morningNote += ` ${closed.storms.map((s) => s.message).join(' ')}`;
   return {
@@ -499,4 +562,12 @@ export function dayNumber(state: GameState, today: string): number {
 export function eventTitle(state: GameState): { title: string; text: string } {
   const event = eventById(state.dailyEventId);
   return { title: event.title, text: event.text };
+}
+
+/** Display metrics for the status card: canopy fullness and root strength, 0-100. */
+export function treeMetrics(state: GameState): { canopy: number; roots: number } {
+  const stage = stageIndex(state.heightCm);
+  const canopy = clamp(Math.round(0.55 * state.health + 0.3 * state.nutrients + 15 - 0.3 * state.pests - 5 * state.scars), 5, 100);
+  const roots = clamp(Math.round(25 + stage * 10 + Math.min(20, state.daysCared * 1.5) + (state.moisture - 50) * 0.2), 5, 100);
+  return { canopy, roots };
 }

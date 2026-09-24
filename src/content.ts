@@ -1,4 +1,4 @@
-import type { GameState } from './types';
+import type { GameState, LogReward } from './types';
 import { clamp, hashString } from './util';
 
 export interface StageDef {
@@ -60,11 +60,13 @@ export const ANIMALS: AnimalDef[] = [
   { id: 'sparrow', name: '麻雀', epithet: '簷前熟客', minM: 0.8, minHealth: 48, hint: '小樹、健康過得去', about: '香港全年都見得到，吱吱喳喳。' },
   { id: 'squirrel', name: '赤腹松鼠', epithet: '赤腹一閃', minM: 2, minHealth: 55, hint: '兩米高、健康 55', about: '郊野同公園都有，尾巴比身體還靈活。' },
   { id: 'bulbul', name: '白頭鵯', epithet: '白頭高歌', minM: 3.5, minHealth: 58, hint: '年輕樹', about: '頭頂一撮白，是窗臺同公園的熟客。' },
+  { id: 'magpierobin', name: '鵲鴝', epithet: '巢裡幾顆蛋', minM: 4, minHealth: 62, hint: '四米高、健康 62', about: '黑白分明的小鳥，喺樹杈築巢，巢入面有幾顆淺藍色的蛋。' },
   { id: 'redbulbul', name: '紅耳鵯', epithet: '紅頰俏鳥', minM: 5, minHealth: 60, hint: '五米高', about: '頰上有紅斑，叫聲清亮。' },
   { id: 'cicada', name: '蟬', epithet: '盛夏長鳴', minM: 6, minHealth: 55, needHeat: true, hint: '酷熱日子、六米高', about: '要碰上酷熱的日子，牠才肯露面。' },
   { id: 'kingfisher', name: '普通翠鳥', epithet: '藍電一掠', minM: 7, minHealth: 70, needStorms: 1, hint: '捱過一場風暴', about: '風暴之後天色放晴，藍影會停在枝上。' },
   { id: 'woodpecker', name: '啄木鳥', epithet: '敲敲樹幹', minM: 8, minHealth: 62, hint: '成樹', about: '樹幹夠粗之後，偶爾會來敲一敲找蟲。' },
   { id: 'dove', name: '珠頸斑鳩', epithet: '咕咕低鳴', minM: 10, minHealth: 64, hint: '十米高', about: '頸上像一串珍珠，步步安穩。' },
+  { id: 'muntjac', name: '赤麂', epithet: '樹下吠鹿', minM: 12, minHealth: 70, hint: '十二米、健康 70', about: '香港郊野的細小鹿，受驚會好似狗吠咁叫，最鍾意喺樹蔭下休息。' },
   { id: 'owl', name: '領角鴞', epithet: '夜裡的眼睛', minM: 15, minHealth: 72, hint: '十五米、健康 72', about: '香港常見的小型貓頭鷹，黃昏後最活躍。' },
   { id: 'firefly', name: '螢火蟲', epithet: '一點溫光', minM: 22, minHealth: 82, hint: '二十二米、健康 82', about: '樹夠大、夠健康，夜裡就有微光。' },
 ];
@@ -96,12 +98,14 @@ export interface DailyEvent {
   id: string;
   title: string;
   text: string;
+  chip?: LogReward;
   apply: (state: GameState) => void;
 }
 
 export const EVENTS: DailyEvent[] = [
   {
     id: 'mist',
+    chip: { text: '-8 害蟲', tone: 'green' },
     title: '晨霧',
     text: '薄霧濕潤咗葉面，害蟲少咗少少。',
     apply: (s) => {
@@ -111,6 +115,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'compost',
+    chip: { text: '+16 養分', tone: 'green' },
     title: '鄰居的堆肥',
     text: '樓下街坊分咗一袋堆肥畀你。',
     apply: (s) => {
@@ -119,6 +124,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'birds',
+    chip: { text: '+2 健康度', tone: 'green' },
     title: '鳥仔來探',
     text: '有小鳥停低又飛走，樹頂多咗幾分生氣。',
     apply: (s) => {
@@ -127,6 +133,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'drywind',
+    chip: { text: '-10 水分', tone: 'red' },
     title: '乾風',
     text: '風有啲乾，泥土會快啲渴。',
     apply: (s) => {
@@ -135,6 +142,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'leaves',
+    chip: { text: '+8 養分', tone: 'green' },
     title: '落葉',
     text: '舊葉落返泥度，慢慢變養分。',
     apply: (s) => {
@@ -143,6 +151,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'drawing',
+    chip: { text: '+3 健康度', tone: 'green' },
     title: '小朋友的畫',
     text: '有孩童在樹下留低一張畫，棵樹好像被好好對待。',
     apply: (s) => {
@@ -151,6 +160,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'aphids',
+    chip: { text: '+16 害蟲', tone: 'red' },
     title: '蚜蟲',
     text: '葉底多咗一群蚜蟲，今日適合除蟲。',
     apply: (s) => {
@@ -159,6 +169,7 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'sunbeam',
+    chip: { text: '生長 ×1.15', tone: 'blue' },
     title: '陽光正好',
     text: '雲隙透出柔和陽光，今日會長得順一點。',
     apply: (s) => {

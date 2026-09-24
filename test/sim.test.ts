@@ -11,8 +11,12 @@ import {
   performAction,
   prepScore,
   refreshUnlocks,
+  setLogClock,
+  setReinforcement,
   stormOutcome,
+  treeMetrics,
 } from '../src/sim';
+import { visualHeight } from '../src/three/tree3d';
 import type { DayCond, GameState } from '../src/types';
 import { classify, condFromForecast, mildDay, overrideDay } from '../src/weather';
 
@@ -152,5 +156,43 @@ describe('日子同動物', () => {
 
   it('同一日的小事唔會變', () => {
     expect(eventForDate('2026-09-24').id).toBe(eventForDate('2026-09-24').id);
+  });
+
+  it('成長日誌會記低時間、種類同獎勵', () => {
+    setLogClock(() => '09:15');
+    const state = tuned('2026-09-25');
+    state.moisture = 30;
+    performAction(state, 'water', calm('2026-09-25'));
+    const entry = state.log[0]!;
+    expect(entry.kind).toBe('water');
+    expect(entry.title).toBe('已澆水');
+    expect(entry.time).toBe('09:15');
+    expect(entry.reward?.text).toMatch(/水分|健康/);
+    setReinforcement(state, 'stakes', true);
+    expect(state.log[0]!.kind).toBe('reinforce');
+    expect(state.log[0]!.reward?.tone).toBe('orange');
+    setLogClock(() => '');
+  });
+
+  it('狀態卡數值喺 0 至 100 之間，樹越大根系越好', () => {
+    const state = tuned('2026-09-25');
+    const small = treeMetrics(state);
+    state.heightCm = 6000;
+    const big = treeMetrics(state);
+    for (const v of [small.canopy, small.roots, big.canopy, big.roots]) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(100);
+    }
+    expect(big.roots).toBeGreaterThan(small.roots);
+  });
+
+  it('3D 樹的視覺高度隨真實高度單調上升', () => {
+    let last = -1;
+    for (const cm of [0, 5, 18, 50, 120, 200, 800, 2000, 5000, 11620, 30000]) {
+      const v = visualHeight(cm);
+      expect(v).toBeGreaterThan(last);
+      last = v;
+    }
+    expect(visualHeight(30000)).toBeLessThanOrEqual(15);
   });
 });

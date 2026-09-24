@@ -1,6 +1,6 @@
 import { stageFor, stageProgress } from './content';
 import { drawAnimal } from './draw-animals';
-import type { DayCond, TimeMode } from './types';
+import type { DayCond, Reinforcement, TimeMode } from './types';
 import { clamp, hashString, mulberry32 } from './util';
 import { isSnowCode } from './weather';
 
@@ -19,6 +19,7 @@ export interface SceneInput {
   sunsetMin: number;
   eventId: string;
   reducedMotion: boolean;
+  reinforce?: Reinforcement;
 }
 
 interface Pt {

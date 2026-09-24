@@ -1,244 +1,157 @@
+// Functional playtest of the 3D HUD build (served on :4327). Writes a JSON report.
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:4327';
-const SHOTS = '/workspace/tree-game-shots';
-fs.mkdirSync(SHOTS, { recursive: true });
-
-const report = { errors: [], logs: [], checks: {}, notes: [] };
-function ok(name, pass, detail = '') {
+const OUT = '/workspace/tree-game-shots/v2/playtest';
+fs.mkdirSync(OUT, { recursive: true });
+const report = { errors: [], checks: {}, notes: [] };
+const ok = (name, pass, detail = '') => {
   report.checks[name] = pass ? 'PASS' : 'FAIL';
   if (!pass) report.notes.push(`FAIL ${name}: ${detail}`);
   console.log(`${pass ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`);
-}
-
-async function shot(page, name) {
-  const p = path.join(SHOTS, name);
-  await page.screenshot({ path: p, fullPage: false });
-  console.log('SHOT', p);
-  return p;
-}
-
-function hook(page) {
-  page.on('console', (msg) => {
-    const t = `${msg.type()}: ${msg.text()}`;
-    report.logs.push(t);
-    if (msg.type() === 'error') report.errors.push(t);
-  });
-  page.on('pageerror', (err) => report.errors.push('pageerror: ' + err.message));
-}
-
-async function openDebug(page) {
-  const details = page.locator('details.debug');
-  await details.waitFor({ state: 'attached', timeout: 5000 });
-  await page.evaluate(() => {
+};
+const dbg = async (page, cmd) => {
+  await page.evaluate((c) => {
     const d = document.querySelector('details.debug');
-    if (d) d.open = true;
-  });
-  await page.waitForTimeout(150);
-}
-
-async function dbg(page, cmd) {
-  await openDebug(page);
-  await page.locator(`[data-debug="${cmd}"]`).click();
-  await page.waitForTimeout(350);
-}
-
-async function dismissName(page, name = '窗前小樹') {
-  const modal = page.locator('#modal:not([hidden])');
-  if (!(await modal.isVisible().catch(() => false))) return;
-  const input = page.locator('#tree-name');
-  if (await input.count()) await input.fill(name);
-  await page.locator('[data-action="start"]').click();
-  await page.waitForTimeout(400);
-}
-
-async function closeModal(page) {
-  const modal = page.locator('#modal:not([hidden])');
-  if (await modal.isVisible().catch(() => false)) {
-    const btn = page.locator('#modal [data-action="close-modal"]');
-    if (await btn.count()) await btn.click();
-    else await page.locator('#modal button').first().click();
-    await page.waitForTimeout(300);
-  }
-}
-
-async function tab(page, label) {
-  await page.getByRole('tab', { name: label }).click();
-  await page.waitForTimeout(250);
-}
-
-async function run() {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    locale: 'zh-HK',
-    timezoneId: 'Asia/Hong_Kong',
-    geolocation: { latitude: 22.3193, longitude: 114.1694 },
-    permissions: ['geolocation'],
-  });
-  const page = await context.newPage();
-  hook(page);
-
-  await page.goto(`${BASE}/?debug=1`, { waitUntil: 'networkidle' });
-  await page.evaluate(() => localStorage.clear());
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(600);
-  await dismissName(page);
-
-  await dbg(page, 'time-day');
-  await dbg(page, 'scene-clear');
-  await page.waitForTimeout(400);
-  await shot(page, '01-normal-day.png');
-  ok('first_load', true);
-
-  await tab(page, '照顧');
-  for (const act of ['water', 'fertilize', 'deworm', 'prune']) {
-    const b = page.locator(`[data-action="${act}"]`);
-    if (await b.count() && !(await b.isDisabled())) {
-      await b.click();
-      await page.waitForTimeout(200);
-    }
-  }
-  const waterDisabled = await page.locator('[data-action="water"]').isDisabled();
-  ok('care_limits', waterDisabled, 'water disabled after use or rain');
-
-  // Forecast storm warning + reinforce
-  await dbg(page, 'storm-tomorrow-typhoon');
-  await tab(page, '預報');
-  await page.waitForTimeout(400);
-  const forecastText = await page.locator('#panel').innerText();
-  ok('forecast_storm_warning', /颱風|風暴準備|打木樁/.test(forecastText), forecastText.slice(0, 160));
-  await shot(page, '03-forecast-storm-warning.png');
-
-  // Reinforce all three
-  for (const key of ['stakes', 'ropes', 'prune']) {
-    const b = page.locator(`[data-prep="${key}"], [data-action="prep-${key}"], button`).filter({ hasText: /木樁|防風繩|修枝防風/ });
-    // prefer data attributes if present
-  }
-  // Look at prep buttons
-  const prepBtns = page.locator('.preps button, [data-reinforce], [data-prep]');
-  const prepCount = await page.locator('.preps button').count();
-  report.notes.push('prepCount=' + prepCount);
-  for (let i = 0; i < prepCount; i++) {
-    const b = page.locator('.preps button').nth(i);
-    if (!(await b.isDisabled().catch(() => false))) {
-      await b.click();
-      await page.waitForTimeout(200);
-    }
-  }
-  // Also try data-action from ui
-  for (const lab of ['打木樁', '綁防風繩', '修枝防風']) {
-    const b = page.getByRole('button', { name: lab });
-    if (await b.count() && !(await b.first().isDisabled().catch(() => false))) {
-      await b.first().click();
-      await page.waitForTimeout(150);
-    }
-  }
-
-  // Rain/storm scene
-  await dbg(page, 'scene-typhoon');
-  await page.waitForTimeout(500);
-  await shot(page, '02-rain-or-storm.png');
-  ok('rain_storm_scene', true);
-
-  // Resolve reinforced storm: use today typhoon + advance
-  await dbg(page, 'clear-storms');
-  await dbg(page, 'storm-today-typhoon');
-  await tab(page, '預報');
+    d.open = true;
+    document.querySelector(`[data-debug="${c}"]`).click();
+    d.open = false;
+  }, cmd);
   await page.waitForTimeout(300);
-  for (let i = 0; i < (await page.locator('.preps button').count()); i++) {
-    const b = page.locator('.preps button').nth(i);
-    const cls = await b.getAttribute('class');
-    if (!cls?.includes('on') && !cls?.includes('done')) {
-      await b.click();
-      await page.waitForTimeout(150);
-    }
+};
+const modalText = (page) => page.locator('#modal:not([hidden])').innerText().catch(() => '');
+const closeModal = async (page) => {
+  if (await page.locator('#modal:not([hidden])').isVisible().catch(() => false)) {
+    await page.locator('#modal [data-action="close-modal"], #modal .primary').first().click();
+    await page.waitForTimeout(250);
   }
-  // Click any prep not yet on
-  for (const lab of ['打木樁', '綁防風繩', '修枝防風']) {
-    const b = page.getByRole('button', { name: lab });
-    if (await b.count()) await b.first().click().catch(() => {});
-  }
-  await dbg(page, 'advance');
-  await page.waitForTimeout(700);
-  const modalText = (await page.locator('#modal:not([hidden])').innerText().catch(() => '')) || '';
-  ok('storm_reward', /捱住|長多|加固|過咗|颱風/.test(modalText), modalText.slice(0, 180));
-  await shot(page, '04-storm-survived-reward.png');
-  await closeModal(page);
-
-  // Grow tree + animals
-  for (let i = 0; i < 5; i++) await dbg(page, 'jump');
-  await dbg(page, 'time-day');
-  await dbg(page, 'scene-clear');
-  await page.waitForTimeout(500);
-  await shot(page, '05-later-tree-animals.png');
-  const meta = await page.locator('#scene-meta').innerText();
-  ok('later_stage', /幼樹|大樹|古樹|巨樹|成樹/.test(meta) || !/幼苗/.test(meta), meta);
-
-  await tab(page, '圖鑑');
+};
+const drawerTab = async (page, open, tab) => {
+  if (await page.locator('#drawer').isHidden()) await page.locator(`[data-open="${open}"]`).first().click();
+  await page.waitForTimeout(350);
+  if (tab) await page.locator(`#drawer [data-tab="${tab}"]`).click();
+  await page.waitForTimeout(250);
+};
+const closeDrawer = async (page) => {
+  if (await page.locator('#drawer').isVisible()) await page.locator('#drawer-close').click();
   await page.waitForTimeout(400);
-  await shot(page, '06-animal-album.png');
-  const album = await page.locator('#panel').innerText();
-  ok('album', album.length > 30, album.slice(0, 120));
+};
 
-  await tab(page, '里程');
-  const mile = await page.locator('#panel').innerText();
-  ok('milestones', /將軍|海波|米/.test(mile), mile.slice(0, 120));
-
-  const saved = await page.evaluate(() => localStorage.getItem('yiri-yisyu-v1'));
-  ok('save', !!saved, saved ? `len=${saved.length}` : 'null');
-  const nameBefore = await page.locator('#tree-title').innerText();
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForTimeout(700);
-  await closeModal(page);
-  const nameAfter = await page.locator('#tree-title').innerText();
-  ok('persistence', nameAfter === nameBefore && nameAfter.length > 0, `${nameBefore} -> ${nameAfter}`);
-
-  // Desktop
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.waitForTimeout(400);
-  await shot(page, '07-desktop.png');
-  ok('desktop', true);
-
-  // Unreinforced damage
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(`${BASE}/?debug=1`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(500);
-  await dismissName(page, '無加固樹');
-  await dbg(page, 'storm-today-typhoon');
-  await dbg(page, 'advance');
-  await page.waitForTimeout(700);
-  const dmg = (await page.locator('#modal:not([hidden])').innerText().catch(() => '')) || '';
-  ok('unreinforced_damage', /拗斷|打中|輕傷|下次預報/.test(dmg), dmg.slice(0, 180));
-  await shot(page, '08-storm-damage.png');
-  await closeModal(page);
-
-  // Catch-up: advance several days via debug then check morning note / health
-  await dbg(page, 'advance');
-  await dbg(page, 'advance');
-  await closeModal(page);
-  ok('day_advance', true);
-
-  // Weather failure already observed via 429 fallback in earlier runs; probe cache path
-  const chip = await page.locator('#weather-chip').innerText();
-  ok('weather_ui', chip.length > 0, chip);
-
-  // Console errors (ignore benign)
-  const realErrors = report.errors.filter((e) => !/favicon|429/.test(e));
-  ok('no_console_errors', realErrors.length === 0, realErrors.join(' | ') || 'clean');
-
-  await browser.close();
-  fs.writeFileSync(path.join(SHOTS, 'playtest-report.json'), JSON.stringify(report, null, 2));
-  console.log('\n=== CHECKS ===');
-  console.log(JSON.stringify(report.checks, null, 2));
-  console.log('notes', report.notes);
-  console.log('errors', report.errors);
-}
-
-run().catch((e) => {
-  console.error(e);
-  process.exit(1);
+const browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-HK', timezoneId: 'Asia/Hong_Kong', geolocation: { latitude: 22.3193, longitude: 114.1694 }, permissions: ['geolocation'] });
+const page = await ctx.newPage();
+page.on('console', (m) => {
+  if (m.type() === 'error' && !/429|favicon/.test(m.text())) report.errors.push(m.text());
 });
+page.on('pageerror', (e) => report.errors.push('pageerror: ' + e.message));
+
+await page.goto(`${BASE}/?debug=1`);
+await page.evaluate(() => localStorage.clear());
+await page.reload();
+await page.locator('#tree-name').fill('測試樹');
+await page.locator('[data-action="start"]').click();
+await page.waitForTimeout(800);
+await dbg(page, 'time-day');
+await dbg(page, 'scene-clear');
+ok('webgl_scene', await page.evaluate(() => !document.body.classList.contains('flat') && !!document.getElementById('scene').getContext('webgl2')));
+ok('log_collapsed_default', (await page.locator('#sheet').getAttribute('data-state')) === 'closed');
+ok('hud_weather_card', /°C/.test(await page.locator('#weather-card').innerText()));
+ok('hud_status_card', /高度[\s\S]*健康度[\s\S]*樹冠[\s\S]*根系/.test(await page.locator('#status-card').innerText()));
+ok('hud_rail', /當前/.test(await page.locator('#rail').innerText()));
+ok('dock_labels', (await page.locator('#dock').innerText()).replace(/\s+/g, '').match(/澆水.*施肥.*加固.*圖鑑/) !== null);
+
+await page.locator('.dock [data-action="water"]').click();
+await page.waitForTimeout(250);
+await page.locator('.dock [data-action="fertilize"]').click();
+await page.locator('#status-card [data-action="deworm"]').click();
+await page.locator('#status-card [data-action="prune"]').click();
+await page.waitForTimeout(300);
+const care = await page.evaluate(() => JSON.parse(localStorage.getItem('yiri-yisyu-v1')).care);
+ok('care_actions', care.watered && care.fertilized && care.dewormed && care.pruned, JSON.stringify(care));
+ok('care_limits', (await page.locator('.dock [data-action="water"]').getAttribute('aria-disabled')) === 'true');
+
+await page.locator('#sheet-handle').click();
+await page.waitForTimeout(500);
+const logText = await page.locator('#sheet-body').innerText();
+ok('log_open_and_entries', (await page.locator('#sheet').getAttribute('data-state')) === 'open' && /已澆水/.test(logText) && /健康|水分|養分|害蟲/.test(logText), logText.slice(0, 120).replace(/\n/g, ' '));
+await page.screenshot({ path: path.join(OUT, 'log-open.png') });
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+ok('log_close', (await page.locator('#sheet').getAttribute('data-state')) === 'closed');
+
+await dbg(page, 'storm-tomorrow-typhoon');
+ok('severe_weather_card', await page.locator('#weather-card.severe').count() === 1, await page.locator('#weather-card').innerText());
+await drawerTab(page, 'forecast');
+ok('forecast_warning', /風暴準備|颱風/.test(await page.locator('#panel').innerText()));
+for (const k of ['stakes', 'ropes', 'prune']) await page.locator(`[data-prep="${k}"]`).click();
+await page.waitForTimeout(200);
+ok('reinforce_all', (await page.locator('.prep.on').count()) === 3);
+await closeDrawer(page);
+
+await dbg(page, 'clear-storms');
+await dbg(page, 'storm-today-typhoon');
+await drawerTab(page, 'forecast');
+for (const k of ['stakes', 'ropes', 'prune']) {
+  const b = page.locator(`[data-prep="${k}"]`);
+  if ((await b.getAttribute('aria-pressed')) !== 'true') await b.click();
+}
+await closeDrawer(page);
+await dbg(page, 'advance');
+await page.waitForTimeout(600);
+const reward = await modalText(page);
+ok('storm_reward', /捱住|長多|加固|颱風/.test(reward), reward.slice(0, 100).replace(/\n/g, ' '));
+await closeModal(page);
+
+for (let i = 0; i < 5; i++) await dbg(page, 'jump');
+await dbg(page, 'scene-clear');
+await page.waitForTimeout(1500);
+ok('later_stage', /巨樹|古樹/.test(await page.locator('#status-card').innerText()));
+await drawerTab(page, 'album');
+await page.waitForTimeout(800);
+ok('album_3d_thumbs', (await page.locator('.thumb img').count()) >= 10, `imgs=${await page.locator('.thumb img').count()}`);
+await page.locator('#drawer [data-tab="milestones"]').click();
+ok('milestones', /將軍|海波/.test(await page.locator('#panel').innerText()));
+await page.locator('#drawer [data-tab="care"]').click();
+ok('care_tab_has_all_actions', (await page.locator('#panel .act').count()) === 4);
+await closeDrawer(page);
+
+// Location + settings.
+await page.locator('#place-pill').click();
+await page.locator('[data-place="shatin"]').click();
+await page.waitForTimeout(400);
+ok('location_pick', /沙田/.test(await page.locator('#place-pill').innerText()));
+await page.locator('#gear').click();
+await page.locator('[data-quality="high"]').click();
+ok('quality_toggle', (await page.evaluate(() => localStorage.getItem('yiri-yisyu-quality'))) === 'high');
+await closeModal(page);
+
+// Persistence.
+const before = await page.locator('.status-sub').innerText();
+await page.reload();
+await page.waitForTimeout(1200);
+await closeModal(page);
+ok('persistence', (await page.locator('.status-sub').innerText()).startsWith('測試樹'), `${before}`);
+
+// Unreinforced storm damage.
+await page.evaluate(() => localStorage.clear());
+await page.reload();
+await page.locator('#tree-name').fill('無加固樹');
+await page.locator('[data-action="start"]').click();
+await dbg(page, 'storm-today-typhoon');
+await dbg(page, 'advance');
+await page.waitForTimeout(600);
+const dmg = await modalText(page);
+ok('unreinforced_damage', /拗斷|打中|輕傷|下次預報/.test(dmg), dmg.slice(0, 100).replace(/\n/g, ' '));
+await closeModal(page);
+
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.waitForTimeout(800);
+await page.screenshot({ path: path.join(OUT, 'desktop.png') });
+ok('no_console_errors', report.errors.length === 0, report.errors.join(' | ') || 'clean');
+await browser.close();
+fs.writeFileSync(path.join(OUT, 'playtest-report.json'), JSON.stringify(report, null, 2));
+const failed = Object.values(report.checks).filter((v) => v === 'FAIL').length;
+console.log(`\n${Object.keys(report.checks).length - failed}/${Object.keys(report.checks).length} checks passed`);
+process.exit(failed ? 1 : 0);

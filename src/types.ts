@@ -28,9 +28,36 @@ export interface Storm {
   debug: boolean;
 }
 
+export type LogKind =
+  | 'plant'
+  | 'water'
+  | 'fertilize'
+  | 'deworm'
+  | 'prune'
+  | 'reinforce'
+  | 'animal'
+  | 'stage'
+  | 'storm-safe'
+  | 'storm-partial'
+  | 'storm-hit'
+  | 'event'
+  | 'grow';
+
+export type RewardTone = 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'gray';
+
+export interface LogReward {
+  text: string;
+  tone: RewardTone;
+}
+
 export interface LogEntry {
   date: string;
   text: string;
+  /** HH:MM local clock when recorded; empty for entries settled during catch-up. */
+  time?: string;
+  kind?: LogKind;
+  title?: string;
+  reward?: LogReward;
 }
 
 export interface GameState {
@@ -99,4 +126,4 @@ export interface DayCond {
 export type SceneOverride = 'clear' | 'rain' | 'heat' | 'heavyrain' | 'gale' | 'typhoon';
 export type TimeMode = 'auto' | 'day' | 'night';
 export type TabId = 'care' | 'forecast' | 'album' | 'milestones';
-export type LocationSource = 'geo' | 'fallback';
+export type LocationSource = 'geo' | 'fallback' | 'manual';
