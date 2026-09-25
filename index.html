@@ -7,8 +7,8 @@
     <meta name="theme-color" content="#8fcbf0" />
     <meta name="description" content="一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。" />
     <title>一日一樹</title>
-    <script type="module" crossorigin src="./assets/index-CpAgqI4i.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-3EkF6WEa.css">
+    <script type="module" crossorigin src="./assets/index-CJ2lBzgQ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BbtVeSqA.css">
   </head>
   <body>
     <canvas id="scene" aria-label="今日的樹同天空"></canvas>
@@ -24,6 +24,8 @@
       <section class="glass status-card" id="status-card" aria-label="樹木狀態"></section>
       <button type="button" class="rail" id="rail" data-open="milestones" aria-label="高度進度同里程"></button>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <button type="button" class="glass pill view-reset" id="view-reset" data-action="reset-view" hidden aria-label="返回全景"></button>
+      <p class="zoom-hint" id="zoom-hint" hidden>雙指縮放／滾輪放大・撳動物跟拍</p>
       <div class="sheet-backdrop" id="sheet-backdrop" data-action="close-sheet"></div>
       <section class="sheet glass" id="sheet" data-state="closed" aria-label="成長日誌">
         <div class="sheet-handle" id="sheet-handle" role="button" tabindex="0" aria-expanded="false" aria-controls="sheet-body">
