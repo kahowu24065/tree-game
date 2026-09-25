@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#8fcbf0" />
+    <meta name="description" content="一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。" />
+    <title>一日一樹</title>
+    <script type="module" crossorigin src="./assets/index-DSnorntE.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CDSnGsJB.css">
+  </head>
+  <body>
+    <canvas id="scene" aria-label="今日的樹同天空"></canvas>
+    <div id="app" class="hud">
+      <button type="button" class="glass weather-card" id="weather-card" data-open="forecast" aria-label="天氣同預報"></button>
+      <div class="top-right">
+        <button type="button" class="glass pill place-pill" id="place-pill" data-action="location" aria-label="揀地點"></button>
+        <button type="button" class="glass round" id="gear" data-action="settings" aria-label="設定"></button>
+      </div>
+      <section class="glass status-card" id="status-card" aria-label="樹木狀態"></section>
+      <button type="button" class="rail" id="rail" data-open="milestones" aria-label="高度進度同里程"></button>
+      <div id="note-slot" class="note-slot"></div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div class="sheet-backdrop" id="sheet-backdrop" data-action="close-sheet"></div>
+      <section class="sheet glass" id="sheet" data-state="closed" aria-label="成長日誌">
+        <div class="sheet-handle" id="sheet-handle" role="button" tabindex="0" aria-expanded="false" aria-controls="sheet-body">
+          <span class="grab"></span>
+          <span class="sheet-title" id="sheet-title">成長日誌</span>
+        </div>
+        <div class="sheet-body" id="sheet-body"></div>
+      </section>
+      <nav class="dock" id="dock" aria-label="主要動作"></nav>
+    </div>
+    <div class="drawer-backdrop" id="drawer-backdrop" data-action="close-drawer" hidden></div>
+    <section class="drawer glass" id="drawer" aria-label="照顧同紀錄面板" hidden>
+      <div class="drawer-head">
+        <span class="grab"></span>
+        <button type="button" class="round small" data-action="close-drawer" aria-label="關閉" id="drawer-close"></button>
+      </div>
+      <div class="panel" id="panel"></div>
+    </section>
+    <div id="modal" class="modal" hidden></div>
+    <div id="debug-root" hidden></div>
+  </body>
+</html>
