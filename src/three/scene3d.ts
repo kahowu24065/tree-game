@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
-import { albumFigure, Animals3D, realScale, type EcoInfo, type EcoCaps } from './animals3d';
+import { albumFigure, Animals3D, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, type Habitat } from './habitat3d';
 import { buildFence, buildIsland, ISLAND_R, onStream, type Fence, type Island } from './island3d';
 import { animalFactor, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
@@ -566,7 +566,51 @@ export class Scene3D {
       this.followRef = hit;
       this.follow = null;
       this.followZoom = 1;
+      return;
     }
+    // v9: a tap that just misses a moving overview marker (flocks move fast on screen) still follows that group.
+    const r = this.canvas.getBoundingClientRect();
+    let best: { uid: number; d: number } | null = null;
+    for (const m of this.animals.markers(this.camera, this.width, this.height)) {
+      if (m.px > 22) continue;
+      // Pin head sits ~30 px above the animal; accept taps on the pin or the animal.
+      const d = Math.min(Math.hypot(m.x + r.left - x, m.y + r.top - y), Math.hypot(m.x + r.left - x, m.y - 30 + r.top - y));
+      if (d < 48 && (!best || d < best.d)) best = { uid: m.uid, d };
+    }
+    if (best) this.followCrew(best.uid);
+  }
+
+  /** v9: overview markers (one per visiting group), in CSS px of the canvas. */
+  animalMarkers(): AnimalMarker[] {
+    return this.animals.markers(this.camera, this.width, this.height);
+  }
+
+  /** v9: follow a group by uid (marker tap, toast tap, animal list). */
+  followCrew(uid: number): boolean {
+    const h = this.animals.handleFor(uid);
+    if (!h) return false;
+    this.followRef = h;
+    this.follow = null;
+    this.followZoom = 1;
+    return true;
+  }
+
+  /** uid of the group being followed (tap / marker / list), if any. */
+  followingUid(): number | null {
+    const h = this.followRef as { crew: { uid: number } } | null;
+    return h && this.animals.refName(h) ? h.crew.uid : null;
+  }
+
+  crewList(): ReturnType<Animals3D['crewList']> {
+    return this.animals.crewList();
+  }
+
+  takeArrivals(): AnimalArrival[] {
+    return this.animals.takeArrivals();
+  }
+
+  hintStats(): { trails: number; sparkles: number } {
+    return this.animals.hintStats();
   }
 
   isZoomed(): boolean {
@@ -901,6 +945,7 @@ export class Scene3D {
       (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
     }
     this.pivot.updateMatrixWorld(true);
+    this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
     this.animals.update(t, dt, night);
 
     const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
@@ -959,7 +1004,7 @@ export class Scene3D {
     if (focus && !Number.isFinite(focus.pos.x)) focus = null;
     if (focus) {
       if (!this.followOn) this.followPos.copy(focus.pos);
-      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * 4));
+      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * 7));
       target.copy(this.followPos);
       target.y += focus.size * 0.3;
       dist = Math.max(0.25, focus.size * 4.2) * this.followZoom;
@@ -970,7 +1015,9 @@ export class Scene3D {
     let camAz = az;
     if (focus) {
       // Three-quarter front view of the animal: its forward is (cos yaw, 0, -sin yaw).
-      const want = Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
+      // v9: birds and insects round the crown are filmed from outside the crown, looking back at the tree.
+      const out = (focus as { outward?: boolean }).outward && Math.hypot(focus.pos.x, focus.pos.z) > 0.05;
+      const want = out ? Math.atan2(focus.pos.x, focus.pos.z) + 0.35 : Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
       const d = Math.atan2(Math.sin(want - this.followAz), Math.cos(want - this.followAz));
       this.followAz += d * (1 - Math.exp(-dt * 1.2));
       // Keep trunk / canopy / rocks out of the way: try a few orbit angles, else move closer.

@@ -10,6 +10,7 @@ import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
+import { mountAnimalHud, type AnimalHud } from './animalHud';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -108,6 +109,7 @@ try {
     (species, stage, cm) => scene3d?.speciesThumb(species, stage, cm) ?? null,
   );
 } catch (error) {
+  scene3d = null;
   console.warn('WebGL 用唔到，改用簡化畫面', error);
   scene2d = new Scene(canvas);
   document.body.classList.add('flat');
@@ -907,6 +909,12 @@ if (DEV_PANEL) {
     spawn: (id: string) => scene3d?.spawnAnimal(id),
     follow: (id: string | null) => scene3d?.followAnimal(id),
     lineup: (ids: string[], treeM: number) => scene3d?.lineup(ids, treeM) ?? null,
+    markers: () => scene3d?.animalMarkers() ?? [],
+    hud: () => animalHud?.debug() ?? null,
+    crews: () => scene3d?.crewList() ?? [],
+    followCrew: (uid: number) => scene3d?.followCrew(uid) ?? false,
+    followingUid: () => scene3d?.followingUid() ?? null,
+    hints: () => scene3d?.hintStats() ?? null,
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');
@@ -942,10 +950,20 @@ function syncViewButton(): void {
   if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
 }
 
+/** v9 animal markers / arrival toast / 島上動物 list (3D scene only). */
+let animalHud: AnimalHud | null = null;
+function syncAnimalHud(time: number): void {
+  if (!scene3d) return;
+  animalHud ??= mountAnimalHud(scene3d, (id) => state.animals.includes(id) && !state.seenAnimals.includes(id));
+  animalHud.setEnabled(state.started && !state.over && Boolean(document.getElementById('modal')?.hidden));
+  animalHud.update(time);
+}
+
 function frame(time: number): void {
   const input = sceneInput();
   drawScene(input, time);
   syncViewButton();
+  syncAnimalHud(time);
   // Keep the clock-driven chrome (countdowns, night styling) fresh without re-rendering every frame.
   if (time - lastChrome > 15000) {
     lastChrome = time;

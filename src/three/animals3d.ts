@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
-import { allowedAt, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
+import { allowedAt, flocky, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
+import { MotionHints, newTrail, stepTrail, type TrailState } from './motionHints';
 import { clamp } from '../util';
 import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius } from '../scale';
 import { ISLAND_R } from './island3d';
@@ -914,12 +915,14 @@ function foldWings(obj: THREE.Object3D, fold: number): void {
 const FLYERS = new Set(['perch', 'flock', 'soar', 'hover', 'flutter', 'bat']);
 const GROUND = new Set(['walk', 'hop', 'wade']);
 /** Hard safety limit regardless of stage (developer spawns included). */
-const MAX_MEMBERS = 72;
+const MAX_MEMBERS = 80;
 
 type Act = 'none' | 'graze' | 'sniff' | 'sit' | 'look' | 'lie' | 'climb' | 'groom' | 'peck' | 'strike' | 'preen' | 'rest';
 
 interface Member {
   lastPerched?: boolean;
+  /** Faint flight trail (small birds, v9). */
+  trail?: TrailState;
   /** Individual size variation (±3 %). */
   jit?: number;
   obj: THREE.Object3D;
@@ -958,6 +961,8 @@ interface Member {
 }
 
 interface Crew {
+  /** Stable id for markers / the animal list / arrival toasts (v9). */
+  uid: number;
   def: AnimalDef;
   members: Member[];
   resident: boolean;
@@ -979,6 +984,47 @@ export interface EcoInfo {
   name: string;
   count: number;
   resident: boolean;
+}
+
+/** Screen-space marker data for one visiting group (v9 overview markers). */
+export interface AnimalMarker {
+  uid: number;
+  id: string;
+  name: string;
+  category: AnimalDef['category'];
+  kind: Look['kind'];
+  count: number;
+  /** CSS px from the canvas' top-left. */
+  x: number;
+  y: number;
+  /** On-screen body length in CSS px (small = far away). */
+  px: number;
+  resident: boolean;
+}
+
+/** A group that just arrived (for the 「一群…飛咗嚟」 toast). */
+export interface AnimalArrival {
+  uid: number;
+  id: string;
+  name: string;
+  count: number;
+  motion: AnimalDef['motion'];
+  category: AnimalDef['category'];
+}
+
+/** Small birds that draw a flight trail. */
+function trails(def: AnimalDef): boolean {
+  return def.category === 'bird' && def.real.len <= 0.35 && (def.motion === 'flock' || def.motion === 'perch' || def.motion === 'hover');
+}
+
+/** Insects / butterflies that twinkle. */
+function sparkles(def: AnimalDef): boolean {
+  return (def.category === 'insect' || def.category === 'butterfly') && def.motion !== 'glow';
+}
+
+function smooth(a: number, b: number, x: number): number {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 export interface EcoCaps {
@@ -1061,10 +1107,99 @@ export class Animals3D {
   private fly = fireflies();
   private perchTaken = new Set<number>();
   private rng = Math.random;
+  private uidNext = 1;
+  private focusCen = new THREE.Vector3();
+  private arrivals: AnimalArrival[] = [];
+  private hints = new MotionHints();
+  /** Camera position, world metres per CSS px at distance 1, and device pixel ratio (set by the scene). */
+  private view = { cam: new THREE.Vector3(0, 5, 20), perPx: 0.002, dpr: 1 };
 
   constructor() {
     this.fly.points.visible = false;
     this.root.add(this.fly.points);
+    this.root.add(this.hints.group);
+  }
+
+  /** Camera info for the motion hints (fade with on-screen size). */
+  setView(cam: THREE.Vector3, perPx: number, dpr: number): void {
+    this.view.cam.copy(cam);
+    this.view.perPx = perPx;
+    this.view.dpr = dpr;
+  }
+
+  /** On-screen body length (CSS px) of a member. */
+  private screenPx(def: AnimalDef, p: THREE.Vector3): number {
+    return this.dlen(def) / Math.max(1e-4, p.distanceTo(this.view.cam) * this.view.perPx);
+  }
+
+  /** One marker per visiting group, projected with `camera` onto a w × h canvas (CSS px). */
+  markers(camera: THREE.PerspectiveCamera, w: number, h: number): AnimalMarker[] {
+    const out: AnimalMarker[] = [];
+    const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(1, h);
+    const cen = new THREE.Vector3();
+    const v = new THREE.Vector3();
+    for (const c of this.crews) {
+      if (c.leaving || c.def.motion === 'glow') continue;
+      const vis = c.members.filter((m) => m.obj.visible);
+      if (!vis.length) continue;
+      cen.set(0, 0, 0);
+      for (const m of vis) cen.add(m.pos);
+      cen.multiplyScalar(1 / vis.length);
+      // The group's centre (smooth, unlike hopping between members).
+      const d = cen.distanceTo(camera.position);
+      v.copy(cen).project(camera);
+      if (v.z > 1 || v.z < -1 || Math.abs(v.x) > 1.02 || Math.abs(v.y) > 1.02) continue;
+      out.push({
+        uid: c.uid,
+        id: c.def.id,
+        name: c.def.name,
+        category: c.def.category,
+        kind: c.def.look.kind,
+        count: c.members.length,
+        x: ((v.x + 1) / 2) * w,
+        y: ((1 - v.y) / 2) * h,
+        px: this.dlen(c.def) / Math.max(1e-4, d * perPx),
+        resident: c.resident,
+      });
+    }
+    return out;
+  }
+
+  /** Groups on the island now (for the animal list). */
+  crewList(): { uid: number; id: string; name: string; category: AnimalDef['category']; kind: Look['kind']; count: number; resident: boolean }[] {
+    return this.visibleCrews().map((c) => ({ uid: c.uid, id: c.def.id, name: c.def.name, category: c.def.category, kind: c.def.look.kind, count: c.members.length, resident: c.resident }));
+  }
+
+  /** Follow handle (same shape as `pick`) for a group, by uid. */
+  handleFor(uid: number): { crew: Crew; member: Member } | null {
+    const crew = this.crews.find((c) => c.uid === uid && !c.leaving);
+    if (!crew || !crew.members.length) return null;
+    const vis = crew.members.filter((m) => m.obj.visible);
+    const list = vis.length ? vis : crew.members;
+    return { crew, member: list[Math.floor(list.length / 2)]! };
+  }
+
+  /** Arrivals since the last call. */
+  takeArrivals(): AnimalArrival[] {
+    const a = this.arrivals;
+    this.arrivals = [];
+    return a;
+  }
+
+  /** Trails / sparkles drawn last frame (for checks). */
+  hintStats(): { trails: number; sparkles: number } {
+    return this.hints.stats;
+  }
+
+  /** Weighted pick: flocks of small birds and insect swarms come more often (v9). */
+  private pickOption(options: string[]): string {
+    const w = options.map((id) => (flocky(animalById(id)!) ? 2.5 : 1));
+    let r = this.rng() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < options.length; i++) {
+      r -= w[i]!;
+      if (r <= 0) return options[i]!;
+    }
+    return options[options.length - 1]!;
   }
 
   /** Radius of the (growing) island in island units, and the scene scale K (metres per island unit). */
@@ -1145,10 +1280,22 @@ export class Animals3D {
   }
 
   /** Follow-cam data for a picked animal, or null once it has left. */
-  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number } | null {
+  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean } | null {
     const h = ref as { crew: Crew; member: Member } | null;
     if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
-    return { pos: h.member.pos, size: this.dlen(h.crew.def), yaw: h.member.yaw };
+    const c = h.crew;
+    const air = c.members.filter((m) => !m.lastPerched);
+    if (c.members.length > 1 && FLYERS.has(c.def.motion) && air.length > 1) {
+      // v9: a flying flock is framed as a whole: aim at its centre, back off with its spread.
+      const cen = this.focusCen.set(0, 0, 0);
+      for (const m of air) cen.add(m.pos);
+      cen.multiplyScalar(1 / air.length);
+      let spread = 0;
+      for (const m of air) spread += m.pos.distanceTo(cen);
+      spread /= air.length;
+      return { pos: cen, size: Math.max(this.dlen(c.def), spread * 1.1), yaw: h.member.yaw, outward: true };
+    }
+    return { pos: h.member.pos, size: this.dlen(c.def), yaw: h.member.yaw, outward: FLYERS.has(c.def.motion) };
   }
 
   flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {
@@ -1248,7 +1395,7 @@ export class Animals3D {
       if (room < 1) break;
       const options = this.candidates();
       if (!options.length) break;
-      this.spawn(options[Math.floor(this.rng() * options.length)]!, { room });
+      this.spawn(this.pickOption(options), { room });
     }
   }
 
@@ -1258,7 +1405,7 @@ export class Animals3D {
     if (visitors.length) this.retire(visitors.sort((a, b) => a.born - b.born)[0]!);
     const options = this.candidates().filter((id) => !this.crews.some((c) => c.def.id === id));
     const room = stageCap(this.stage).members - this.visitorMembers();
-    if (options.length && room >= 1) this.spawn(options[Math.floor(this.rng() * options.length)]!, { room });
+    if (options.length && room >= 1) this.spawn(this.pickOption(options), { room });
     this.fill();
     this.nextRotate = this.time + 28 + this.rng() * 20;
   }
@@ -1318,6 +1465,7 @@ export class Animals3D {
     const t = template(id);
     if (!t) return;
     const crew: Crew = {
+      uid: this.uidNext++,
       def,
       members: [],
       resident: Boolean(opts.resident),
@@ -1383,6 +1531,8 @@ export class Animals3D {
     if (def.motion === 'glow') this.fly.points.visible = true;
     this.crews.push(crew);
     this.assignSeats(crew);
+    this.arrivals.push({ uid: crew.uid, id: def.id, name: def.name, count: crew.members.length, motion: def.motion, category: def.category });
+    if (this.arrivals.length > 12) this.arrivals.shift();
   }
 
   private nestWithRobin(robin: THREE.Group): THREE.Group {
@@ -1578,7 +1728,7 @@ export class Animals3D {
       const room = cap.members - this.visitorMembers();
       if (this.visitors().length < cap.groups && room >= 1) {
         const options = this.candidates();
-        if (options.length) this.spawn(options[Math.floor(this.rng() * options.length)]!, { room });
+        if (options.length) this.spawn(this.pickOption(options), { room });
       }
     }
     for (const c of this.crews) this.step(c, t, dt);
@@ -1588,6 +1738,36 @@ export class Animals3D {
     }
     this.crews = this.crews.filter((c) => !c.gone);
     if (this.fly.points.visible) this.updateFireflies(t, night);
+    this.updateHints(t, dt);
+  }
+
+  /** v9: faint trails behind small flying birds, twinkles on insects — strongest when they are tiny on screen. */
+  private updateHints(t: number, dt: number): void {
+    const h = this.hints;
+    h.begin();
+    for (const c of this.crews) {
+      const def = c.def;
+      const tr = trails(def);
+      const sp = sparkles(def);
+      if (!tr && !sp) continue;
+      const fade = c.leaving ? 0 : clamp(c.enter * 2, 0, 1);
+      c.members.forEach((m, i) => {
+        if (!m.obj.visible) return;
+        const px = this.screenPx(def, m.pos);
+        if (tr) {
+          m.trail ??= newTrail();
+          const flying = !m.lastPerched && m.moving > 0.15 * Math.max(0.3, GK * 0.3);
+          stepTrail(m.trail, m.pos, dt, flying, 0.05);
+          h.trail(m.trail, fade * (0.05 + 0.45 * (1 - smooth(5, 30, px))));
+        }
+        if (sp) {
+          const tw = Math.max(0, Math.sin(t * (4.5 + (i % 3)) + m.phase * 3)) ** 3;
+          const a = fade * (1 - smooth(10, 44, px)) * (0.25 + 0.75 * tw);
+          h.sparkle(m.pos, a, (6 + 5 * tw) * this.view.dpr);
+        }
+      });
+    }
+    h.end();
   }
 
   private step(c: Crew, t: number, dt: number): void {
@@ -1700,10 +1880,16 @@ export class Animals3D {
         case 'flutter':
         case 'bat': {
           const bfly = def.look.kind === 'butterfly';
+          // v9: insect groups move as one swarm, a few body lengths apart.
+          const swarm = c.members.length > 1 && (def.category === 'insect' || def.category === 'butterfly');
+          const spacing = Math.max(len * 5, 0.12 * Math.min(SK, 3));
           if (c.leaving) {
             m.rest = null;
             m.target.set(Math.cos(m.phase) * (R + 8 * SK), H * 0.7 + 3 * SK, Math.sin(m.phase) * (R + 8 * SK));
             if (m.pos.distanceTo(m.target) < Math.max(0.4, SK)) leaveDone();
+          } else if (def.motion === 'hover' && i > 0 && swarm) {
+            // Swarm: stay around the first member (bees round the same flower, dragonflies in a loose knot).
+            m.target.copy(c.members[0]!.target).addScaledVector(m.offset, spacing);
           } else if (def.motion === 'hover') {
             m.timer -= dt;
             if (m.timer <= 0) {
@@ -1722,17 +1908,27 @@ export class Animals3D {
             }
           } else {
             const speed = def.motion === 'bat' ? 0.9 : 0.35;
-            const a = t * speed * m.speed + m.phase * 2;
-            const low = bfly && i % 2 === 1;
-            const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(ph * 0.7) * 0.4 * SK;
-            const y = low ? (0.5 + Math.sin(ph * 1.3) * 0.3) * SK : H * (def.motion === 'bat' ? 0.75 : 0.5) + Math.sin(ph * 1.1) * H * 0.12;
-            m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr);
+            const low = bfly && (swarm ? c.uid % 2 === 1 : i % 2 === 1);
+            if (swarm) {
+              // Butterflies of one group fly together: one shared loop, each a few wing-spans off it.
+              const a = t * speed + c.uid * 1.7;
+              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(t * 0.7 + c.uid) * 0.4 * SK;
+              const y = low ? (0.5 + Math.sin(t * 1.3 + c.uid) * 0.3) * SK : H * 0.5 + Math.sin(t * 1.1 + c.uid) * H * 0.12;
+              m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr).addScaledVector(m.offset, spacing);
+              m.target.y += Math.sin(ph * 2.3) * spacing * 0.3;
+            } else {
+              const a = t * speed * m.speed + m.phase * 2;
+              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(ph * 0.7) * 0.4 * SK;
+              const y = low ? (0.5 + Math.sin(ph * 1.3) * 0.3) * SK : H * (def.motion === 'bat' ? 0.75 : 0.5) + Math.sin(ph * 1.1) * H * 0.12;
+              m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr);
+            }
             if (bfly) {
               m.timer -= dt;
               if (m.timer <= 0 && c.enter >= 1) {
                 // Pick somewhere to land: a canopy leaf (high flyers) or the ground near a flower (low flyers).
                 if (low) {
-                  const g = this.groundTarget(def);
+                  // A swarm settles where it is (on the grass under the loop), not scattered over the island.
+                  const g = swarm ? new THREE.Vector3(m.target.x, groundY(m.target.x, m.target.z), m.target.z) : this.groundTarget(def);
                   m.rest = g.setY(g.y + 0.04);
                 } else if (tree.perches.length) m.rest = this.perchWorld(Math.floor(this.rng() * tree.perches.length), new THREE.Vector3());
                 m.timer = 3 + this.rng() * 4;
@@ -2213,7 +2409,7 @@ export class Animals3D {
 
   private updateFireflies(t: number, night: number): void {
     const m = this.fly.points.material as THREE.PointsMaterial;
-    m.opacity = night;
+    m.opacity = night * (0.8 + 0.2 * Math.sin(t * 2.6));
     const tree = this.tree!;
     const b = { r: tree.canopyRadius + 0.6, y: tree.height * 0.25, h: tree.height * 0.8 };
     m.size = 0.2 + tree.height * 0.02;
