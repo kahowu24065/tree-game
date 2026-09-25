@@ -16,7 +16,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/429|Failed to load resource/.test(m.text())) errors.push(m.text()); });
 await page.goto(BASE);
 await page.locator('#tree-name').fill('窗前小樹');
-await page.locator('[data-action="start"]').click();
+await page.locator('[data-season="s3"]').click();
 await page.waitForFunction(() => /即時天氣/.test(document.querySelector('#weather-card')?.textContent ?? ''), null, { timeout: 30000 });
 await page.waitForTimeout(1500);
 const card = (await page.locator('#weather-card').innerText()).replace(/\n+/g, ' | ');

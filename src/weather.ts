@@ -1,6 +1,6 @@
 import { addDays } from './dates';
 import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
-import type { CurrentWeather, DayCond, ForecastDay, LocationSource, SceneOverride, Storm, StormKind } from './types';
+import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } from './types';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
@@ -30,6 +30,8 @@ export interface WeatherSnapshot {
   district?: string;
   /** Hours until rain is expected in the next 6 h (0 = now), from Open-Meteo hourly data. */
   rainInHours?: number | null;
+  /** Next hours from Open-Meteo (for the 12-hour severe-weather countdown). */
+  hourly?: HourPoint[];
   /** Location choice this snapshot was made for ('auto' or a PLACES id), so a changed choice refetches. */
   choice?: string;
 }
@@ -230,45 +232,8 @@ export function offlineSnapshot(today: string, error: string): WeatherSnapshot {
   };
 }
 
-export function overrideDay(input: ForecastDay, scene: SceneOverride): ForecastDay {
-  const day: ForecastDay = { ...input, hkoIcon: undefined };
-  switch (scene) {
-    case 'clear':
-      return { ...day, code: 0, precipMm: 0, precipProb: 0, windKmh: 8, gustKmh: 14, tempMax: 28, tempMin: 23 };
-    case 'rain':
-      return { ...day, code: 61, precipMm: 8, precipProb: 80, windKmh: 16, gustKmh: 28, tempMax: 24, tempMin: 22 };
-    case 'heat':
-      return { ...day, code: 0, precipMm: 0, precipProb: 0, windKmh: 10, gustKmh: 18, tempMax: 35, tempMin: 29 };
-    case 'heavyrain':
-      return { ...day, code: 65, precipMm: 70, precipProb: 95, windKmh: 28, gustKmh: 45, tempMax: 25, tempMin: 22 };
-    case 'gale':
-      return { ...day, code: 3, precipMm: 4, precipProb: 40, windKmh: 55, gustKmh: 85, tempMax: 26, tempMin: 23 };
-    case 'typhoon':
-      return { ...day, code: 95, precipMm: 120, precipProb: 100, windKmh: 100, gustKmh: 150, tempMax: 27, tempMin: 24 };
-  }
-}
-
-export function mergeStorm(day: ForecastDay, storm: Storm | undefined): ForecastDay {
-  if (!storm || storm.resolved) return day;
-  const code = storm.kind === 'typhoon' ? 95 : storm.kind === 'heavy-rain' ? Math.max(day.code, 65) : day.code;
-  return {
-    ...day,
-    // A storm day draws the storm, not the Observatory's fair-weather icon.
-    hkoIcon: storm.kind === 'gale' ? day.hkoIcon : undefined,
-    precipMm: Math.max(day.precipMm, storm.rainMm),
-    gustKmh: Math.max(day.gustKmh, storm.gustKmh),
-    windKmh: Math.max(day.windKmh, storm.windKmh),
-    precipProb: Math.max(day.precipProb, storm.kind === 'gale' ? 50 : 90),
-    code,
-  };
-}
-
-export function presentForecast(
-  daily: ForecastDay[],
-  storms: Storm[],
-  today: string,
-  scene: SceneOverride | null,
-): ForecastDay[] {
+/** The 7 days from today, padding any gap with a mild placeholder day. */
+export function presentForecast(daily: ForecastDay[], today: string): ForecastDay[] {
   const byDate = new Map(daily.map((d) => [d.date, d]));
   for (let i = 0; i < 7; i++) {
     const date = addDays(today, i);
@@ -276,13 +241,7 @@ export function presentForecast(
   }
   return [...byDate.values()]
     .filter((d) => d.date >= today && d.date <= addDays(today, 6))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((day) => {
-      const storm = storms.find((s) => s.date === day.date);
-      let next = mergeStorm(day, storm);
-      if (scene && day.date === today) next = overrideDay(next, scene);
-      return next;
-    });
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function currentFromDay(day: ForecastDay): CurrentWeather {
@@ -302,11 +261,19 @@ function num(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+export interface HourPoint {
+  time: string;
+  precipMm: number;
+  code: number;
+  gustKmh: number;
+}
+
 export interface ForecastResult {
   timezone: string;
   current: CurrentWeather;
   daily: ForecastDay[];
   rainInHours: number | null;
+  hourly?: HourPoint[];
 }
 
 interface OpenMeteoHourly {
@@ -364,6 +331,12 @@ export function parseOpenMeteo(data: unknown): ForecastResult {
     },
     daily: days,
     rainInHours: rainSoon(body.hourly, current.time ?? ''),
+    hourly: (body.hourly?.time ?? []).map((time, i) => ({
+      time,
+      precipMm: num(body.hourly?.precipitation?.[i], 0),
+      code: num(body.hourly?.weather_code?.[i], 0),
+      gustKmh: num(body.hourly?.wind_gusts_10m?.[i], 0),
+    })),
   };
 }
 

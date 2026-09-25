@@ -1,7 +1,8 @@
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
 
-export const SAVE_KEY = 'yiri-yisyu-v1';
+/** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
+export const SAVE_KEY = 'sekai-tree-v2';
 export const WEATHER_KEY = 'yiri-yisyu-weather';
 
 export function loadGame(): GameState | null {
@@ -9,26 +10,10 @@ export function loadGame(): GameState | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as GameState;
-    if (!data || data.version !== 1 || typeof data.heightCm !== 'number' || !data.care) return null;
-    data.storms ??= [];
-    data.animals ??= [];
-    data.seenAnimals ??= [];
+    if (!data || data.version !== 2 || typeof data.heightCm !== 'number' || !data.care || !data.pest) return null;
+    data.dayEvents ??= {};
+    data.residents ??= [];
     data.log ??= [];
-    data.reinforcement ??= { stakes: false, ropes: false, prune: false };
-    data.scars ??= 0;
-    data.eventBonus ??= 1;
-    data.care.date ??= data.lastSeenDate || data.createdOn;
-    data.care.growthCm ??= 0;
-    data.care.credited ??= false;
-    data.care.watered ??= false;
-    data.care.fertilized ??= false;
-    data.care.dewormed ??= false;
-    data.care.pruned ??= false;
-    data.reinforcement = {
-      stakes: Boolean(data.reinforcement?.stakes),
-      ropes: Boolean(data.reinforcement?.ropes),
-      prune: Boolean(data.reinforcement?.prune),
-    };
     return data;
   } catch {
     return null;

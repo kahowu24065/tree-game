@@ -20,6 +20,12 @@ export interface SceneInput {
   eventId: string;
   reducedMotion: boolean;
   reinforce?: Reinforcement;
+  /** H ≥ 80: 爆發生長 green glow. */
+  thriving?: boolean;
+  /** A previous tree's 養分地標 stands on the island. */
+  landmark?: boolean;
+  /** Tier-3 「星空浮島」 look. */
+  starry?: boolean;
 }
 
 interface Pt {

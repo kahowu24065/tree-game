@@ -69,6 +69,9 @@ export class Scene3D {
   private clouds: { mesh: THREE.Mesh; r: number; a: number; y: number; speed: number; low: boolean }[] = [];
   private cloudMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, transparent: true, opacity: 0.94, emissive: '#ffffff', emissiveIntensity: 0.35 });
   private stars: THREE.Points;
+  private glow: THREE.Points;
+  private sparkles: THREE.Points;
+  private landmark = new THREE.Group();
   private rain: THREE.LineSegments;
   private rainSeeds: Float32Array;
   private sea: THREE.Mesh;
@@ -170,6 +173,47 @@ export class Scene3D {
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     this.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: '#fffbe8', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
     this.scene.add(this.stars);
+
+    // 爆發生長 green glow: motes rising around the tree.
+    const glowGeo = new THREE.BufferGeometry();
+    const glowPos = new Float32Array(60 * 3);
+    for (let i = 0; i < 60; i++) glowPos.set([(rand() - 0.5) * 3, rand(), (rand() - 0.5) * 3], i * 3);
+    glowGeo.setAttribute('position', new THREE.BufferAttribute(glowPos, 3));
+    this.glow = new THREE.Points(glowGeo, new THREE.PointsMaterial({ color: '#9dff8a', size: 5, sizeAttenuation: false, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.glow.visible = false;
+    this.scene.add(this.glow);
+
+    // 星空浮島 (tier-3 badge): sparkles circling the island.
+    const spGeo = new THREE.BufferGeometry();
+    const spPos = new Float32Array(90 * 3);
+    for (let i = 0; i < 90; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = 7.5 + rand() * 2.5;
+      spPos.set([Math.cos(a) * r, -1.5 + rand() * 3, Math.sin(a) * r], i * 3);
+    }
+    spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+    this.sparkles = new THREE.Points(spGeo, new THREE.PointsMaterial({ color: '#cfe3ff', size: 3, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.sparkles.visible = false;
+    this.scene.add(this.sparkles);
+
+    // 養分地標: mossy stone with glowing mushrooms where the last tree stood.
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 0), new THREE.MeshStandardMaterial({ color: '#8a8f7a', flatShading: true, roughness: 1 }));
+    stone.scale.set(1, 0.7, 0.9);
+    stone.position.y = 0.2;
+    const moss = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#6fae4f', flatShading: true }));
+    moss.position.set(0.05, 0.42, 0);
+    this.landmark.add(stone, moss);
+    for (let i = 0; i < 4; i++) {
+      const a = i * 1.7;
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#ffd36b', emissive: '#ffb830', emissiveIntensity: 0.6 }));
+      cap.position.set(Math.cos(a) * 0.55, 0.14, Math.sin(a) * 0.55);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.14, 5), new THREE.MeshStandardMaterial({ color: '#f3ead2' }));
+      stem.position.set(Math.cos(a) * 0.55, 0.07, Math.sin(a) * 0.55);
+      this.landmark.add(cap, stem);
+    }
+    this.landmark.position.set(2.8, 0.05, 2.2);
+    this.landmark.visible = false;
+    this.scene.add(this.landmark);
 
     // Rain streaks.
     const n = 900;
@@ -341,6 +385,21 @@ export class Scene3D {
 
     this.island.dirt.scale.setScalar(clamp(0.3 + tree.height * 0.09, 0.3, 1.5));
     this.island.update(t, wind);
+    this.landmark.visible = Boolean(input.landmark);
+    this.sparkles.visible = Boolean(input.starry);
+    if (this.sparkles.visible) this.sparkles.rotation.y = t * 0.05;
+    this.glow.visible = Boolean(input.thriving) && !input.reducedMotion;
+    if (this.glow.visible) {
+      const gp = this.glow.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const h = Math.max(1, tree.height);
+      for (let i = 0; i < gp.count; i++) {
+        const phase = (t * 0.25 + i * 0.137) % 1;
+        gp.setY(i, 0.3 + phase * h * 1.1);
+      }
+      gp.needsUpdate = true;
+      this.glow.scale.set(Math.max(1, h * 0.35), 1, Math.max(1, h * 0.35));
+      (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
+    }
     this.animals.update(t, night);
 
     // Clouds drift; overcast brings more and darker clouds.

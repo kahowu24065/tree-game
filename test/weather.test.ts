@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
-import { closeDay, createGame, syncOfficialWarnings } from '../src/sim';
+import { dayEvent, hkoWarningEvents, severeCountdown } from '../src/events';
 import { condFromForecast, dayLabel, districtRain, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')) as unknown;
@@ -103,50 +103,47 @@ describe('香港天文台', () => {
   });
 });
 
-describe('真實信號同遊戲風暴', () => {
-  const calm = (d: string) => {
-    const c = condFromForecast(mildDay(d));
-    c.raining = false;
-    return c;
-  };
+describe('天文台警告變遊戲天氣事件', () => {
+  const w = (group: string, code: string) => ({ group, code, name: code, short: code, kind: null, standby: false, tone: 'red' as const, issued: '' });
 
-  it('八號風球令今日有風暴，加固捱過有額外加成', () => {
-    const state = createGame('2026-09-25');
-    state.started = true;
-    const sig = { code: 'TC8NE', name: '八號東北烈風或暴風信號', short: '八號風球', kind: 'typhoon' as const, standby: false };
-    expect(syncOfficialWarnings(state, [sig], '2026-09-25')).toContain('八號東北烈風或暴風信號');
-    expect(syncOfficialWarnings(state, [sig], '2026-09-25')).toBeNull();
-    const storm = state.storms.find((s) => s.date === '2026-09-25')!;
-    expect(storm.kind).toBe('typhoon');
-    expect(storm.official?.short).toBe('八號風球');
-    state.reinforcement = { stakes: true, ropes: true, prune: true };
-    const res = closeDay(state, '2026-09-25', calm('2026-09-25'));
-    expect(res.storms[0]!.outcome).toBe('safe');
-    expect(res.storms[0]!.bonusCm).toBe(9);
-    expect(res.storms[0]!.message).toContain('八號風球');
+  it('按設計書對應', () => {
+    expect(hkoWarningEvents([w('WHOT', 'WHOT')])).toEqual(['hot']);
+    expect(hkoWarningEvents([w('WRAIN', 'WRAINA')])).toEqual(['rainstorm']);
+    expect(hkoWarningEvents([w('WRAIN', 'WRAINR')])).toEqual(['rainstorm']);
+    expect(hkoWarningEvents([w('WRAIN', 'WRAINB')])).toEqual(['blackrain']);
+    expect(hkoWarningEvents([w('WTS', 'WTS')])).toEqual(['thunder']);
+    expect(hkoWarningEvents([w('WMSGNL', 'WMSGNL')])).toEqual(['thunder']);
+    expect(hkoWarningEvents([w('WTCSGNL', 'TC1')])).toEqual(['typhoon1']);
+    expect(hkoWarningEvents([w('WTCSGNL', 'TC3')])).toEqual(['typhoon1']);
+    expect(hkoWarningEvents([w('WTCSGNL', 'TC8NE')])).toEqual(['typhoon8']);
+    expect(hkoWarningEvents([w('WTCSGNL', 'TC10')])).toEqual(['typhoon8']);
+    expect(hkoWarningEvents([w('WFIRE', 'WFIREY')])).toEqual([]);
+    // Real fixture: 酷熱 + 黃色火災 → 酷熱 only.
+    expect(hkoWarningEvents(parseWarnsum(fixture('hko-warnsum.json')))).toEqual(['hot']);
   });
 
-  it('一號風球冇升級就唔會打中棵樹，加固保留', () => {
-    const state = createGame('2026-09-25');
-    const tc1 = { code: 'TC1', name: '一號戒備信號', short: '一號風球', kind: null, standby: true };
-    syncOfficialWarnings(state, [tc1], '2026-09-25');
-    const heads = state.storms.find((s) => s.date === '2026-09-26')!;
-    expect(heads.provisional).toBe(true);
-    state.reinforcement = { stakes: true, ropes: false, prune: false };
-    const health = state.health;
-    const res = closeDay(state, '2026-09-26', calm('2026-09-26'));
-    expect(res.storms).toHaveLength(0);
-    expect(state.reinforcement.stakes).toBe(true);
-    expect(state.health).toBeGreaterThanOrEqual(health - 3);
+  it('Open-Meteo 日子按陣風、雨量、天氣碼判斷', () => {
+    const d = (x: Partial<ReturnType<typeof mildDay>>) => ({ ...mildDay('2026-09-26'), ...x });
+    expect(dayEvent(d({ gustKmh: 130 }))).toBe('typhoon8');
+    expect(dayEvent(d({ gustKmh: 95 }))).toBe('typhoon1');
+    expect(dayEvent(d({ code: 95 }))).toBe('thunder');
+    expect(dayEvent(d({ precipMm: 80, code: 65 }))).toBe('blackrain');
+    expect(dayEvent(d({ precipMm: 30, code: 65 }))).toBe('rainstorm');
+    expect(dayEvent(d({ tempMax: 34 }))).toBe('hot');
+    expect(dayEvent(d({ precipMm: 2, code: 61 }))).toBe('drizzle');
+    expect(dayEvent(d({}))).toBe('clear');
+    // HKO says fine: no drizzle even if the model has a few mm.
+    expect(dayEvent(d({ precipMm: 3, code: 61, hkoIcon: 50 }))).toBe('clear');
   });
 
-  it('一號之後升八號，預告變真風暴', () => {
-    const state = createGame('2026-09-25');
-    syncOfficialWarnings(state, [{ code: 'TC1', name: '一號戒備信號', short: '一號風球', kind: null, standby: true }], '2026-09-25');
-    syncOfficialWarnings(state, [{ code: 'TC8SE', name: '八號東南烈風或暴風信號', short: '八號風球', kind: 'typhoon', standby: false }], '2026-09-26');
-    const storm = state.storms.find((s) => s.date === '2026-09-26')!;
-    expect(storm.provisional).toBe(false);
-    expect(storm.kind).toBe('typhoon');
+  it('12 小時倒數：生效中、逐小時、手動預報', () => {
+    const base = { hourly: [], nowIso: '2026-09-25T14:00', minutesToMidnight: 600, nowMs: 0, activeSource: '天文台' };
+    expect(severeCountdown({ ...base, nowEvents: ['typhoon8'] })).toMatchObject({ event: 'typhoon8', active: true, hours: 0 });
+    expect(severeCountdown({ ...base, nowEvents: ['drizzle'] })).toBeNull();
+    const hourly = [0, 1, 2, 3, 4].map((i) => ({ time: `2026-09-25T${14 + i}:00`, precipMm: 0, code: i === 3 ? 95 : 3, gustKmh: 20 }));
+    expect(severeCountdown({ ...base, nowEvents: [], hourly })).toMatchObject({ event: 'thunder', hours: 3 });
+    expect(severeCountdown({ ...base, nowEvents: [], manual: { event: 'typhoon1', at: 2 * 3600000 } })).toMatchObject({ event: 'typhoon1', hours: 2 });
+    expect(severeCountdown({ ...base, nowEvents: [], manual: { event: 'typhoon1', at: 20 * 3600000 } })).toBeNull();
   });
 });
 
@@ -198,11 +195,10 @@ describe('預報圖示跟天文台', () => {
     expect(withHkoDays(om().daily, null, '2026-09-25')[1]!.hkoIcon).toBeUndefined();
   });
 
-  it('有風暴嗰日唔再顯示天晴圖示', () => {
+  it('預報列表補齊七日', () => {
     const days = withHkoDays(om().daily, hko(), '2026-09-25');
-    const storms = [{ id: 's', date: '2026-09-27', kind: 'typhoon' as const, rainMm: 120, windKmh: 90, gustKmh: 140, announced: '2026-09-25', resolved: false }];
-    const shown = presentForecast(days, storms as never, '2026-09-25', null);
-    expect(shown.find((d) => d.date === '2026-09-27')!.hkoIcon).toBeUndefined();
+    const shown = presentForecast(days, '2026-09-25');
+    expect(shown).toHaveLength(7);
     expect(shown.find((d) => d.date === '2026-09-28')!.hkoIcon).toBe(90);
   });
 });

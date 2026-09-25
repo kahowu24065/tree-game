@@ -1593,59 +1593,406 @@ body.sheet-open .sheet-backdrop {
   margin-bottom: 8px !important;
 }
 
-/* ---------- Debug ---------- */
+/* ---------- Developer panel (DEV_PANEL) ---------- */
 
-#debug-root {
+#dev-root {
   position: fixed;
   left: calc(8px + var(--safe-l));
-  top: 46%;
-  z-index: 5;
+  top: 44%;
+  z-index: 60;
 }
 
-.debug summary {
-  list-style: none;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: rgba(35, 53, 44, 0.75);
-  color: #fff;
-  width: max-content;
+.dev-fab {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #37474f;
 }
 
-.debug summary::-webkit-details-marker {
+.dev-fab svg {
+  width: 20px;
+  height: 20px;
+}
+
+#dev-root.open .dev-fab {
   display: none;
 }
 
-.debug-card {
-  margin-top: 6px;
-  width: min(300px, calc(100vw - 24px));
-  max-height: 50vh;
+.dev-panel {
+  position: fixed;
+  left: calc(8px + var(--safe-l));
+  top: calc(8px + var(--safe-t));
+  width: min(348px, calc(100vw - 16px));
+  max-height: calc(100vh - 120px);
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  padding: 10px;
-  box-shadow: var(--shadow);
-  font-size: 12px;
+  border-radius: 18px;
+  padding: 10px 12px 12px;
+  background: rgba(250, 252, 251, 0.97);
+  font-size: 12.5px;
+  z-index: 61;
 }
 
-.debug-card p {
-  margin: 0 0 8px;
+.dev-panel header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dev-panel header b {
+  font-size: 15px;
+}
+
+.dev-panel header small {
+  color: var(--ink-soft);
+  flex: 1;
+}
+
+.dev-panel header button {
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.dev-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgba(35, 53, 44, 0.07);
+  border-radius: 12px;
+  padding: 3px;
+}
+
+.dev-seg button {
+  padding: 7px 4px;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.dev-seg button.on {
+  background: #37474f;
+  color: #fff;
+}
+
+.dev-note {
+  margin: 6px 2px;
   color: var(--ink-soft);
 }
 
-.debug-grid {
+.dev-events {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.dev-events button,
+.dev-actions button {
+  display: grid;
+  padding: 6px 3px;
+  border-radius: 10px;
+  background: rgba(35, 53, 44, 0.07);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dev-events button small {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.dev-events button.on {
+  background: var(--orange);
+  color: #fff;
+}
+
+.dev-events button.on small {
+  color: #fff;
+}
+
+.dev-events button:disabled {
+  opacity: 0.45;
+}
+
+.dev-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.dev-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dev-row select,
+.dev-row input {
+  font: inherit;
+  padding: 3px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(35, 53, 44, 0.2);
+  max-width: 110px;
+}
+
+.dev-sliders {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.dev-sliders label {
+  display: grid;
+  grid-template-columns: 64px 1fr 30px;
+  align-items: center;
   gap: 6px;
 }
 
-.debug-grid button {
+.dev-sliders b {
+  text-align: right;
+}
+
+.dev-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.dev-actions button:first-child {
+  grid-column: span 2;
+  background: var(--green);
+  color: #fff;
+  padding: 9px;
+}
+
+.dev-actions button.danger {
+  color: var(--red);
+}
+
+.dev-panel .card.settle {
+  margin: 8px 0 0;
+  background: rgba(35, 53, 44, 0.05);
+}
+
+/* ---------- 世界之樹 rules UI ---------- */
+
+.bars {
+  display: grid;
+  gap: 4px;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 13px 26px 1fr 24px;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+
+.bar-key {
+  font-weight: 800;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.bar-label {
+  color: var(--ink-soft);
+}
+
+.bar-track {
+  position: relative;
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(35, 53, 44, 0.1);
+  overflow: hidden;
+}
+
+.bar-band,
+.track .band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(63, 154, 75, 0.22);
+  box-shadow: inset 1px 0 0 rgba(63, 154, 75, 0.7), inset -1px 0 0 rgba(63, 154, 75, 0.7);
+}
+
+.bar-fill {
+  position: absolute;
+  left: 0;
+  top: 1.5px;
+  bottom: 1.5px;
+  border-radius: 3px;
+}
+
+.bar.health .bar-fill,
+.fill.health {
+  background: linear-gradient(90deg, #8fd66f, #4aa74c);
+}
+.bar.water .bar-fill {
+  background: linear-gradient(90deg, #9fd1fb, #3d8fd4);
+}
+.bar.food .bar-fill {
+  background: linear-gradient(90deg, #f7d77b, #d99a2b);
+}
+.bar.shield .bar-fill,
+.fill.shield {
+  background: linear-gradient(90deg, #f6c08c, #de7b24);
+}
+
+.bar-val {
+  text-align: right;
   font-size: 12px;
-  padding: 7px 4px;
-  border-radius: 10px;
-  background: rgba(35, 53, 44, 0.07);
+}
+
+.bar.off .bar-val {
+  color: var(--red);
+}
+
+.bar.shield.off .bar-val {
+  color: var(--ink);
+}
+
+.track {
+  position: relative;
+}
+
+.track .fill {
+  position: relative;
+}
+
+.meter.off .meter-top span:last-child {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.note-card.dying {
+  background: rgba(253, 224, 220, 0.92);
+  border-color: rgba(210, 69, 59, 0.5);
+}
+
+.note-card.dying b {
+  display: block;
+  color: var(--red);
+  margin-bottom: 2px;
+}
+
+.bad {
+  color: var(--red);
+}
+
+.breakdown {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.breakdown li {
+  display: grid;
+  grid-template-columns: 64px 70px 1fr;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.breakdown small {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.evtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+.evtable th,
+.evtable td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(35, 53, 44, 0.08);
+}
+
+.seasons {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.season {
+  display: grid;
+  text-align: left;
+  gap: 2px;
+  padding: 11px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(63, 154, 75, 0.35);
+}
+
+.season b {
+  font-size: 15px;
+  color: var(--green);
+}
+
+.season span {
+  font-size: 13px;
+}
+
+.season small {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.season:active {
+  transform: scale(0.98);
+}
+
+.legacy {
+  background: var(--yellow-bg);
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.badges {
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.creature em.res {
+  background: var(--purple);
+}
+
+body.thriving::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 45% 38% at 50% 52%, rgba(130, 240, 110, 0.28), rgba(130, 240, 110, 0) 70%);
+  animation: thrive 3.2s ease-in-out infinite;
+}
+
+body.dying::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow: inset 0 0 80px rgba(210, 69, 59, 0.45);
+}
+
+@keyframes thrive {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.thriving::after {
+    animation: none;
+  }
 }
 
 /* ---------- Responsive ---------- */

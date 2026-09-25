@@ -1,13 +1,17 @@
+import type { PrepId, SeasonId, WeatherEventId } from './balance';
+
 export interface Care {
   date: string;
-  watered: boolean;
-  fertilized: boolean;
+  /** Times watered / drained today. */
+  water: number;
+  drain: number;
+  fertilize: number;
   dewormed: boolean;
-  pruned: boolean;
-  growthCm: number;
+  preps: Record<PrepId, boolean>;
   credited: boolean;
 }
 
+/** Visual reinforcement shown on the 3D tree (derived from 抗風力 R). */
 export interface Reinforcement {
   stakes: boolean;
   ropes: boolean;
@@ -15,35 +19,22 @@ export interface Reinforcement {
 }
 
 export type StormKind = 'heavy-rain' | 'gale' | 'typhoon';
-export type StormOutcome = 'safe' | 'partial' | 'hit';
-
-export interface Storm {
-  date: string;
-  kind: StormKind;
-  rainMm: number;
-  windKmh: number;
-  gustKmh: number;
-  resolved: boolean;
-  outcome?: StormOutcome;
-  debug: boolean;
-  /** Set when a real Hong Kong Observatory signal drives this storm. */
-  official?: { code: string; name: string; short: string };
-  /** TC1 heads-up for tomorrow: only becomes a real storm if a stronger signal follows. */
-  provisional?: boolean;
-}
 
 export type LogKind =
   | 'plant'
   | 'water'
   | 'fertilize'
   | 'deworm'
-  | 'prune'
+  | 'drain'
   | 'reinforce'
   | 'animal'
   | 'stage'
+  | 'settle'
   | 'storm-safe'
-  | 'storm-partial'
   | 'storm-hit'
+  | 'pest'
+  | 'dying'
+  | 'badge'
   | 'event'
   | 'grow';
 
@@ -64,24 +55,61 @@ export interface LogEntry {
   reward?: LogReward;
 }
 
+/** Full breakdown of one nightly settlement (shown in the log and the developer panel). */
+export interface Settlement {
+  date: string;
+  events: WeatherEventId[];
+  event: WeatherEventId;
+  hBefore: number;
+  hAfter: number;
+  wBefore: number;
+  wAfter: number;
+  nBefore: number;
+  nAfter: number;
+  rBefore: number;
+  rAfter: number;
+  wFactor: number;
+  nFactor: number;
+  baseDamage: number;
+  finalDamage: number;
+  pestDamage: number;
+  hMult: number;
+  weatherBonus: number;
+  baseGrowth: number;
+  deltaG: number;
+  heightAfter: number;
+  carbonKg: number;
+  notes: string[];
+}
+
+export interface DayRecord {
+  events: WeatherEventId[];
+  /** True once real HKO data was seen for this date (then HKO decides the severe events). */
+  hko: boolean;
+}
+
 export interface GameState {
-  version: 1;
+  version: 2;
   started: boolean;
   treeName: string;
+  season: SeasonId;
   createdOn: string;
   lastSeenDate: string;
   virtualToday: string | null;
   health: number;
-  heightCm: number;
   moisture: number;
   nutrients: number;
-  pests: number;
-  scars: number;
+  /** 抗風力 R. */
+  resist: number;
+  heightCm: number;
+  pest: { active: boolean; lowNDays: number; wetDays: number; since: string | null };
   care: Care;
-  reinforcement: Reinforcement;
-  storms: Storm[];
+  dayEvents: Record<string, DayRecord>;
   animals: string[];
   seenAnimals: string[];
+  residents: string[];
+  highStreak: number;
+  scars: number;
   log: LogEntry[];
   daysCared: number;
   stormSurvivals: number;
@@ -89,6 +117,22 @@ export interface GameState {
   dailyEventId: string;
   eventBonus: number;
   morningNote: string | null;
+  dying: { since: string; at: number } | null;
+  over: null | { kind: 'dead' | 'complete'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean };
+  lastSettlement: Settlement | null;
+  /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
+  legacyBonus: number;
+}
+
+/** Progress kept across games (badges, legacy). */
+export interface MetaState {
+  version: 1;
+  badges: Record<'1' | '2' | '3', number>;
+  reviveTokens: number;
+  starry: boolean;
+  landmark: { name: string; heightCm: number; date: string } | null;
+  pendingLegacy: boolean;
+  history: { name: string; season: SeasonId; days: number; heightCm: number; result: 'dead' | 'complete'; date: string }[];
 }
 
 export interface ForecastDay {
@@ -129,7 +173,6 @@ export interface DayCond {
   stormKind: StormKind | null;
 }
 
-export type SceneOverride = 'clear' | 'rain' | 'heat' | 'heavyrain' | 'gale' | 'typhoon';
 export type TimeMode = 'auto' | 'day' | 'night';
 export type TabId = 'care' | 'forecast' | 'album' | 'milestones';
 export type LocationSource = 'geo' | 'fallback' | 'manual';

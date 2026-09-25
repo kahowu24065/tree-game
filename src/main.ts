@@ -1,36 +1,42 @@
 import './style.css';
+import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type SeasonId, type WeatherEventId } from './balance';
 import { addDays, clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
+import { condForEvent, currentEvents, severeCountdown, type Countdown } from './events';
+import { DEV_PANEL } from './flags';
+import { bookGameEnd, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
+import { pickEvent } from './rules';
 import { Scene3D, type Quality } from './three/scene3d';
 import {
   advanceVirtualDay,
   catchUp,
-  clearDebugStorms,
+  checkRescue,
   createGame,
-  insertDebugStorm,
-  jumpStage,
+  eventsForDate,
   performAction,
+  recordEvents,
+  reinforce,
   setLogClock,
-  setReinforcement,
-  syncOfficialWarnings,
-  syncStorms,
+  triggerPest,
+  visualReinforcement,
+  type CareAction,
   type CatchupReport,
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache } from './storage';
-import type { DayCond, GameState, SceneOverride, TabId, TimeMode } from './types';
+import type { DayCond, GameState, TabId } from './types';
 import {
   PLACES,
   animalName,
   closeModal,
   locationModal,
-  mountDebug,
-  nameModal,
   openModal,
+  overModal,
   renderChrome,
   renderPanel,
   renderSheet,
   setThumbnailer,
   settingsModal,
+  startModal,
   stormModal,
   toast,
   type View,
@@ -38,7 +44,6 @@ import {
 import {
   WEATHER_STALE_MS,
   WEATHER_TTL_MS,
-  activeHot,
   condFromForecast,
   districtRain,
   fetchForecast,
@@ -46,13 +51,11 @@ import {
   withHkoDays,
   inHongKong,
   nearHongKong,
-  classify,
   isRainCode,
   isSnowCode,
   locate,
   mildDay,
   offlineSnapshot,
-  overrideDay,
   presentForecast,
   type ForecastResult,
   type WeatherProvider,
@@ -60,8 +63,7 @@ import {
 } from './weather';
 import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { reverseGeocode } from './place';
-
-type ActionName = 'water' | 'fertilize' | 'deworm' | 'prune';
+import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
@@ -71,17 +73,16 @@ setLogClock(() => {
   const m = clockMinutes(timezone);
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 });
+let meta = loadMeta();
 let state: GameState = loadGame() ?? createGame(formatDateInTz(new Date(), timezone));
+let dev: DevSettings = DEV_PANEL ? loadDev() : defaultDev();
 let tab: TabId = 'care';
-let sceneOverride: SceneOverride | null = null;
-let timeMode: TimeMode = 'auto';
 let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
 let weather: WeatherSnapshot = initialWeather();
 let weatherLoading = weather.provider === 'sim';
 let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
-const debug = new URLSearchParams(location.search).get('debug') === '1';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-let pendingStorm = '';
+let pendingNote = '';
 let quality: Quality = localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'low';
 
 const canvas = document.getElementById('scene');
@@ -100,7 +101,6 @@ const drawer = document.getElementById('drawer');
 const drawerBackdrop = document.getElementById('drawer-backdrop');
 const sheet = document.getElementById('sheet');
 const sheetHandle = document.getElementById('sheet-handle');
-const debugRoot = document.getElementById('debug-root');
 
 /** Cached weather: fresh (<30 min, same location choice) counts as live; older real data is shown as cached. */
 function initialWeather(): WeatherSnapshot {
@@ -129,13 +129,38 @@ function reconcileClock(): void {
   if (state.virtualToday && daysBetween(real, state.virtualToday) <= 0) state.virtualToday = null;
 }
 
+const manual = () => DEV_PANEL && dev.mode === 'manual';
+
 function presentedDays() {
-  return presentForecast(weather.daily, state.storms, today(), sceneOverride);
+  return presentForecast(weather.daily, today());
+}
+
+function hkActive(snapshot: WeatherSnapshot = weather): boolean {
+  return Boolean(snapshot.hko) && usesHko(snapshot);
+}
+
+/** Events happening right now according to live weather (HKO warnings in HK). */
+function liveEvents(): WeatherEventId[] {
+  if (weather.provider === 'sim' && !weather.hko) return [];
+  const day = weather.daily.find((d) => d.date === today());
+  return currentEvents({ hk: usesHko(weather), warnings: weather.hko?.warnings, current: weather.current, today: day });
+}
+
+/** Events the day is settled with (manual developer weather wins). */
+function eventsFor(date: string): WeatherEventId[] {
+  if (manual()) return dev.events.length ? [...dev.events] : ['clear'];
+  return eventsForDate(state, date, weather.daily.find((d) => d.date === date));
+}
+
+function todayEvents(): WeatherEventId[] {
+  return eventsFor(today());
 }
 
 function todayCond(): DayCond {
-  const day = presentedDays().find((d) => d.date === today()) ?? mildDay(today());
-  const useLive = !sceneOverride && weather.origin !== 'offline';
+  const t = today();
+  const day = presentedDays().find((d) => d.date === t) ?? mildDay(t);
+  if (manual()) return condForEvent(condFromForecast(mildDay(t), 28), pickEvent(todayEvents()));
+  const useLive = weather.origin !== 'offline';
   const temp = useLive ? weather.current.tempC : (day.tempMax + day.tempMin) / 2;
   const cond = condFromForecast(day, temp);
   if (useLive) {
@@ -145,47 +170,31 @@ function todayCond(): DayCond {
     cond.tempC = weather.current.tempC;
     cond.precipMm = weather.current.precipMm;
     cond.raining = cond.precipMm >= 0.2 || isRainCode(cond.code) || isSnowCode(cond.code);
-    cond.hot = cond.tempC >= 33 || day.tempMax >= 33;
-    cond.stormKind = classify({
-      precipMm: cond.precipMm,
-      gustKmh: cond.gustKmh,
-      windKmh: cond.windKmh,
-      tempMax: Math.max(day.tempMax, cond.tempC),
-    }).stormKind;
+    cond.hot = false;
+    cond.stormKind = null;
   }
-  if (!sceneOverride) {
-    // A real HKO signal in force today drives the scene and the day's conditions.
-    const official = state.storms.find((s) => s.date === today() && !s.resolved && s.official && !s.provisional);
-    if (official) {
-      const rank = { 'heavy-rain': 1, gale: 2, typhoon: 3 } as const;
-      if (!cond.stormKind || rank[official.kind] > rank[cond.stormKind]) cond.stormKind = official.kind;
-      if (official.kind !== 'gale') {
-        cond.raining = true;
-        cond.precipMm = Math.max(cond.precipMm, 10);
-        cond.code = official.kind === 'typhoon' ? 95 : Math.max(cond.code, 63);
-      }
-      if (official.kind !== 'heavy-rain') {
-        cond.windKmh = Math.max(cond.windKmh, official.windKmh * 0.7);
-        cond.gustKmh = Math.max(cond.gustKmh, official.gustKmh * 0.7);
-      }
-    }
-    if (activeHot(weather.hko?.warnings)) cond.hot = true;
-  }
-  return cond;
+  // Severe events drive the scene only while in force right now.
+  const now = pickEvent(liveEvents());
+  return now === 'clear' ? cond : condForEvent(cond, now);
 }
 
-function condForDate(date: string): DayCond {
-  const storm = state.storms.find((s) => s.date === date && !s.resolved);
-  if (storm) {
-    const fake = overrideDay(mildDay(date), storm.kind === 'typhoon' ? 'typhoon' : storm.kind === 'gale' ? 'gale' : 'heavyrain');
-    fake.precipMm = storm.rainMm;
-    fake.windKmh = storm.windKmh;
-    fake.gustKmh = storm.gustKmh;
-    return condFromForecast(fake);
-  }
-  const api = weather.daily.find((d) => d.date === date);
-  if (api) return condFromForecast(api);
-  return condFromForecast(mildDay(date));
+function localNowIso(): string {
+  const m = clockMinutes(timezone);
+  return `${realToday()}T${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+function countdown(): Countdown | null {
+  const t = today();
+  return severeCountdown({
+    nowEvents: manual() ? dev.events : liveEvents(),
+    hourly: manual() ? [] : weather.hourly,
+    nowIso: localNowIso(),
+    tomorrow: manual() ? undefined : weather.daily.find((d) => d.date === addDays(t, 1)),
+    minutesToMidnight: 24 * 60 - clockMinutes(timezone),
+    manual: manual() ? dev.forecast : null,
+    nowMs: Date.now(),
+    activeSource: manual() ? '手動天氣' : hkActive() ? '天文台' : '即時天氣',
+  });
 }
 
 function choiceKey(): string {
@@ -193,8 +202,8 @@ function choiceKey(): string {
 }
 
 function placeLabel(): { place: string; note: string } {
-  const manual = PLACES.find((p) => p.id === placeChoice);
-  if (manual) return { place: manual.name, note: '' };
+  const m = PLACES.find((p) => p.id === placeChoice);
+  if (m) return { place: m.name, note: '' };
   if (weather.provider === 'sim' && !weather.fetchedAt) return { place: '香港', note: '' };
   return { place: weather.place || '你嘅位置', note: weather.source === 'fallback' ? '預設' : '' };
 }
@@ -205,14 +214,17 @@ function sceneInput(): SceneInput {
   const sunrise = isoMinutes(day.sunrise) ?? 370;
   const sunset = isoMinutes(day.sunset) ?? 1105;
   const minute = clockMinutes(timezone);
+  const timeMode = DEV_PANEL ? dev.time : 'auto';
+  // Residents always stay; up to three recent visitors drop by.
+  const visitors = state.animals.filter((id) => !state.residents.includes(id)).slice(-3);
   return {
     treeName: state.treeName,
     heightCm: state.heightCm,
-    health: state.health,
+    health: state.over?.kind === 'dead' ? 0 : Math.max(state.health, state.dying ? 0 : 8),
     moisture: state.moisture,
-    pests: state.pests,
+    pests: state.pest.active ? 70 : 0,
     scars: state.scars,
-    animals: state.animals,
+    animals: [...state.residents, ...visitors],
     cond,
     daylight: daylightFactor(minute, sunrise, sunset, timeMode),
     minute: timeMode === 'day' ? sunrise + 180 : timeMode === 'night' ? 23 * 60 : minute,
@@ -220,14 +232,19 @@ function sceneInput(): SceneInput {
     sunsetMin: sunset,
     eventId: state.dailyEventId,
     reducedMotion,
-    reinforce: state.reinforcement,
+    reinforce: visualReinforcement(state.resist),
+    thriving: state.health >= 80 && !state.over,
+    landmark: Boolean(meta.landmark) && state.legacyBonus > 0,
+    starry: meta.starry,
   };
 }
 
 function view(input: SceneInput): View {
   const { place, note } = placeLabel();
+  const hk = hkActive();
   return {
     state,
+    meta,
     today: today(),
     tab,
     place,
@@ -236,24 +253,28 @@ function view(input: SceneInput): View {
     cond: input.cond,
     forecast: presentedDays(),
     night: input.daylight < 0.45,
-    debug,
+    todayEvents: todayEvents(),
+    todayEvent: pickEvent(todayEvents()),
+    countdown: countdown(),
+    manual: manual(),
+    minutesToSettle: 24 * 60 - clockMinutes(timezone),
     wx: {
       provider: weather.provider ?? (weather.origin === 'offline' ? 'sim' : 'open-meteo'),
       origin: weather.origin,
       loading: weatherLoading,
       fetchedAt: weather.fetchedAt,
       updated: clockOf(weather.fetchedAt),
-      hkoUsed: Boolean(weather.hko && usesHko(weather)),
-      warnings: weather.hko && usesHko(weather) ? weather.hko.warnings : [],
-      messages: weather.hko && usesHko(weather) ? weather.hko.messages : [],
-      situation: weather.hko && usesHko(weather) ? weather.hko.situation : '',
-      hkoDays: weather.hko && usesHko(weather) ? Object.fromEntries(weather.hko.forecast.map((d) => [d.date, d.text])) : {},
-      conditionText: sceneOverride ? undefined : weather.conditionText,
-      nowIcon: !sceneOverride && weather.hko && usesHko(weather) ? weather.hko.current?.icon || undefined : undefined,
+      hkoUsed: hk,
+      warnings: hk ? weather.hko!.warnings : [],
+      messages: hk ? weather.hko!.messages : [],
+      situation: hk ? weather.hko!.situation : '',
+      hkoDays: hk ? Object.fromEntries(weather.hko!.forecast.map((d) => [d.date, d.text])) : {},
+      conditionText: manual() ? undefined : weather.conditionText,
+      nowIcon: !manual() && hk ? weather.hko!.current?.icon || undefined : undefined,
       station: weather.station,
       rainInHours: weather.rainInHours ?? null,
       error: weather.error,
-      overridden: Boolean(sceneOverride),
+      overridden: manual(),
     },
   };
 }
@@ -265,6 +286,7 @@ function render(): void {
   renderSheet(state, today());
   if (drawer && !drawer.hidden) renderPanel(v);
   drawScene(input, performance.now());
+  devRender?.();
 }
 
 function drawScene(input: SceneInput, time: number): void {
@@ -272,23 +294,36 @@ function drawScene(input: SceneInput, time: number): void {
   else scene2d?.draw(input, time);
 }
 
-function showReport(report: CatchupReport): void {
+function persist(): void {
   saveGame(state);
+  saveMeta(meta);
+}
+
+/** When a game ends: book badges / landmark once, then show the result. */
+function handleOver(): boolean {
+  if (!state.over) return false;
+  const lines = bookGameEnd(meta, state);
+  persist();
+  if (state.started) openModal(overModal(state, meta, lines));
+  return true;
+}
+
+function showReport(report: CatchupReport): void {
+  persist();
   render();
-  if (report.storms.length) {
-    const message = report.storms.map((s) => s.message).join(' ');
-    if (!state.started) pendingStorm = message;
+  if (handleOver()) return;
+  if (report.messages.length) {
+    const message = report.messages.join(' ');
+    if (!state.started) pendingNote = message;
     else openModal(stormModal(message));
   }
   const names = report.animals.map(animalName);
   if (names.length) toast(`${names.join('、')}嚟咗。`);
-  else if (report.stageTexts.length && !report.storms.length) toast(report.stageTexts.join(' '));
 }
 
 function runCatchup(): void {
   reconcileClock();
-  const cond = todayCond();
-  const report = catchUp(state, today(), condForDate, cond.hot);
+  const report = catchUp(state, today(), eventsFor, meta, Date.now());
   showReport(report);
 }
 
@@ -304,17 +339,19 @@ function applyWeather(snapshot: WeatherSnapshot): void {
         ? `更新唔到（${snapshot.error ?? '網絡問題'}），用緊 ${clockOf(snapshot.fetchedAt)} 的記錄。`
         : `而家攞唔到真實天氣，暫時用模擬天氣。${snapshot.error ?? ''}`;
   reconcileClock();
-  if (snapshot.provider !== 'sim') syncStorms(state, weather.daily, today());
-  if (snapshot.hko && usesHko(snapshot)) {
-    const note = syncOfficialWarnings(state, snapshot.hko.warnings, today());
-    if (note && state.started) toast(note);
+  if (snapshot.provider !== 'sim' || snapshot.hko) {
+    const events = liveEvents();
+    const had = state.dayEvents[today()]?.events ?? [];
+    recordEvents(state, today(), events, hkActive(snapshot));
+    const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
+    if (fresh.length && state.started && !manual()) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => WEATHER_EVENTS[e].label).join('、')}生效，今晚結算前仲可以準備。`);
   }
   if (today() !== before) {
-    const report = catchUp(state, today(), condForDate, todayCond().hot);
+    const report = catchUp(state, today(), eventsFor, meta, Date.now());
     showReport(report);
     return;
   }
-  saveGame(state);
+  persist();
   render();
 }
 
@@ -436,19 +473,23 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   applyWeather(snapshot);
 }
 
-function renameOrStart(): void {
+function startGame(season: SeasonId): void {
   const input = document.getElementById('tree-name');
-  const name = input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '';
-  state.treeName = name || '窗前小樹';
-  const wasStarted = state.started;
-  state.started = true;
-  saveGame(state);
+  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '世界之樹';
+  const wasStarted = state.started && !state.over;
+  if (wasStarted) {
+    state.treeName = name;
+  } else {
+    state = newGame(meta, realToday(), season, name);
+    tab = 'care';
+  }
+  persist();
   closeModal();
   render();
-  if (!wasStarted) toast(`${state.treeName}種好喇。${pendingStorm ? '' : '今日可以做一件小事。'}`);
-  if (pendingStorm) {
-    const message = pendingStorm;
-    pendingStorm = '';
+  if (!wasStarted) toast(`${state.treeName}種好喇。今日先澆水、施肥。`);
+  if (pendingNote) {
+    const message = pendingNote;
+    pendingNote = '';
     openModal(stormModal(message));
   }
 }
@@ -550,22 +591,18 @@ function bindSheetDrag(): void {
 /* ---------- Actions (document-level delegation) ---------- */
 
 function doAction(action: string, target: HTMLElement): void {
-  if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'prune') {
-    if (target.getAttribute('aria-disabled') === 'true') {
-      toast(action === 'water' && todayCond().raining ? '落緊雨，今日唔使澆。' : '今日做過喇，聽日再嚟。');
-      return;
-    }
-    const result = performAction(state, action as ActionName, todayCond());
-    saveGame(state);
+  if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'drain') {
+    const result = performAction(state, action as CareAction, { raining: todayCond().raining });
+    persist();
     render();
     toast(result.message);
-    target.classList.add('pop');
+    if (result.ok) target.classList.add('pop');
     return;
   }
   switch (action) {
     case 'dismiss-note':
       state.morningNote = null;
-      saveGame(state);
+      persist();
       render();
       return;
     case 'retry-weather':
@@ -578,7 +615,10 @@ function doAction(action: string, target: HTMLElement): void {
       void refreshWeather(true);
       return;
     case 'rename':
-      openModal(nameModal(state.treeName, true));
+      openModal(startModal(state.treeName, meta, true));
+      return;
+    case 'new-game':
+      openModal(startModal('世界之樹', meta, false));
       return;
     case 'location':
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
@@ -592,8 +632,8 @@ function doAction(action: string, target: HTMLElement): void {
     case 'close-sheet':
       setSheet(false);
       return;
-    case 'start':
-      renameOrStart();
+    case 'save-name':
+      startGame(state.season);
       return;
     case 'close-modal':
       closeModal();
@@ -604,11 +644,15 @@ function doAction(action: string, target: HTMLElement): void {
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
-  if (el.closest('#debug-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality]');
+  if (el.closest('#dev-root')) return;
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-season]');
   if (!target) return;
   const inModal = Boolean(target.closest('#modal'));
-  if (!state.started && !inModal) return;
+  if ((!state.started || state.over) && !inModal) return;
+  if (target.dataset.season) {
+    startGame(target.dataset.season as SeasonId);
+    return;
+  }
   if (target.dataset.open) {
     openDrawer(target.dataset.open as TabId);
     return;
@@ -620,10 +664,10 @@ document.addEventListener('click', (event) => {
     if (panel) panel.scrollTop = 0;
     return;
   }
-  if (target.dataset.prep === 'stakes' || target.dataset.prep === 'ropes' || target.dataset.prep === 'prune') {
-    const key = target.dataset.prep;
-    toast(setReinforcement(state, key, !state.reinforcement[key]));
-    saveGame(state);
+  if (target.dataset.prep && target.dataset.prep in PREPS) {
+    const res = reinforce(state, target.dataset.prep as PrepId);
+    toast(res.message);
+    persist();
     render();
     return;
   }
@@ -631,7 +675,7 @@ document.addEventListener('click', (event) => {
     const id = target.dataset.seen;
     if (state.animals.includes(id) && !state.seenAnimals.includes(id)) {
       state.seenAnimals.push(id);
-      saveGame(state);
+      persist();
       render();
     }
     return;
@@ -656,10 +700,7 @@ document.addEventListener('click', (event) => {
 });
 
 document.getElementById('modal')?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    const input = document.getElementById('tree-name');
-    if (document.activeElement === input) renameOrStart();
-  }
+  if (event.key === 'Enter' && document.activeElement === document.getElementById('tree-name') && state.started && !state.over) startGame(state.season);
 });
 
 document.addEventListener('keydown', (event) => {
@@ -669,73 +710,88 @@ document.addEventListener('keydown', (event) => {
   else if (sheet?.dataset.state === 'open') setSheet(false);
 });
 
-debugRoot?.addEventListener('click', (event) => {
-  const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-debug]') : null;
-  const cmd = target?.dataset.debug;
-  if (!cmd) return;
-  const day = today();
-  if (cmd === 'scene-auto') sceneOverride = null;
-  if (cmd === 'scene-clear') sceneOverride = 'clear';
-  if (cmd === 'scene-rain') sceneOverride = 'rain';
-  if (cmd === 'scene-heat') sceneOverride = 'heat';
-  if (cmd === 'scene-heavyrain') sceneOverride = 'heavyrain';
-  if (cmd === 'scene-gale') sceneOverride = 'gale';
-  if (cmd === 'scene-typhoon') sceneOverride = 'typhoon';
-  if (cmd === 'time-auto') timeMode = 'auto';
-  if (cmd === 'time-day') timeMode = 'day';
-  if (cmd === 'time-night') timeMode = 'night';
-  if (cmd === 'storm-tomorrow-typhoon') insertDebugStorm(state, addDays(day, 1), 'typhoon');
-  if (cmd === 'storm-tomorrow-rain') insertDebugStorm(state, addDays(day, 1), 'heavy-rain');
-  if (cmd === 'storm-tomorrow-gale') insertDebugStorm(state, addDays(day, 1), 'gale');
-  if (cmd === 'storm-today-typhoon') {
-    insertDebugStorm(state, day, 'typhoon');
-    sceneOverride = 'typhoon';
-  }
-  if (cmd === 'clear-storms') {
-    clearDebugStorms(state);
-    sceneOverride = null;
-  }
-  if (cmd === 'jump') {
-    const name = jumpStage(state, day, todayCond().hot || sceneOverride === 'heat');
-    toast(`而家長成${name}。`);
-  }
-  if (cmd === 'advance') {
-    const report = advanceVirtualDay(state, day, todayCond());
-    sceneOverride = null;
-    showReport(report);
-    tab = 'care';
-    return;
-  }
-  if (cmd === 'real-date') {
-    state.virtualToday = null;
-    runCatchup();
-    return;
-  }
-  if (cmd === 'reset') {
-    clearGame();
-    sceneOverride = null;
-    timeMode = 'auto';
-    state = createGame(realToday());
-    pendingStorm = '';
-    closeModal();
-    closeDrawer();
-    setSheet(false);
-    openModal(nameModal(state.treeName));
+/* ---------- Developer panel (removed from the bundle when DEV_PANEL is false) ---------- */
+
+let devRender: (() => void) | null = null;
+
+export interface DevApi {
+  state: () => GameState;
+  dev: () => DevSettings;
+  setDev: (next: DevSettings) => void;
+  events: typeof EVENT_ORDER;
+  liveEvents: () => WeatherEventId[];
+  todayEvents: () => WeatherEventId[];
+  countdown: () => Countdown | null;
+  advanceDay: () => void;
+  setStat: (key: 'health' | 'moisture' | 'nutrients' | 'resist', value: number) => void;
+  triggerPest: () => void;
+  reset: () => void;
+  realDate: () => void;
+}
+
+if (DEV_PANEL) {
+  const api: DevApi = {
+    state: () => state,
+    dev: () => dev,
+    setDev: (next) => {
+      dev = next;
+      saveDev(dev);
+      render();
+    },
+    events: EVENT_ORDER,
+    liveEvents,
+    todayEvents,
+    countdown,
+    advanceDay: () => {
+      if (state.over) return;
+      const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now());
+      showReport(report);
+    },
+    setStat: (key, value) => {
+      state[key] = Math.max(0, Math.min(100, value));
+      if (key === 'health' && value > 0) state.dying = null;
+      checkRescue(state);
+      persist();
+      render();
+    },
+    triggerPest: () => {
+      triggerPest(state, today());
+      persist();
+      render();
+      toast('觸發咗蟲害。');
+    },
+    reset: () => {
+      clearGame();
+      state = createGame(realToday());
+      pendingNote = '';
+      closeModal();
+      closeDrawer();
+      setSheet(false);
+      persist();
+      render();
+      openModal(startModal('世界之樹', meta, false));
+    },
+    realDate: () => {
+      state.virtualToday = null;
+      runCatchup();
+    },
+  };
+  void import('./dev/panel').then((m) => {
+    const root = document.getElementById('dev-root');
+    if (root) devRender = m.mountDevPanel(root, api);
     render();
-    return;
-  }
-  saveGame(state);
-  render();
-});
+  });
+}
 
 let lastChrome = 0;
 function frame(time: number): void {
   const input = sceneInput();
   drawScene(input, time);
-  // Keep the clock-driven chrome (night styling, weather card) fresh without re-rendering every frame.
-  if (time - lastChrome > 30000) {
+  // Keep the clock-driven chrome (countdowns, night styling) fresh without re-rendering every frame.
+  if (time - lastChrome > 15000) {
     lastChrome = time;
     renderChrome(view(input));
+    if (state.dying && !state.over && Date.now() - state.dying.at > 24 * 3600 * 1000) render();
   }
   if (!document.hidden) requestAnimationFrame(frame);
 }
@@ -743,6 +799,7 @@ function frame(time: number): void {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   requestAnimationFrame(frame);
+  runCatchup();
   const age = Date.now() - weather.fetchedAt;
   if (!refreshing && (weather.origin !== 'live' || age > WEATHER_TTL_MS)) void refreshWeather();
 });
@@ -755,9 +812,8 @@ window.addEventListener('resize', resize);
 resize();
 
 bindSheetDrag();
-if (debug && debugRoot) mountDebug(debugRoot);
 runCatchup();
-if (!state.started) openModal(nameModal('窗前小樹'));
+if (!state.started) openModal(startModal('世界之樹', meta, false));
 requestAnimationFrame(frame);
 if (weather.origin === 'live' && !weatherLoading) {
   applyWeather(weather);

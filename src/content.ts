@@ -105,11 +105,10 @@ export interface DailyEvent {
 export const EVENTS: DailyEvent[] = [
   {
     id: 'mist',
-    chip: { text: '-8 害蟲', tone: 'green' },
+    chip: { text: '+6 水分', tone: 'blue' },
     title: '晨霧',
-    text: '薄霧濕潤咗葉面，害蟲少咗少少。',
+    text: '薄霧濕潤咗葉面同泥土。',
     apply: (s) => {
-      s.pests = Math.max(0, s.pests - 8);
       s.moisture = Math.min(100, s.moisture + 6);
     },
   },
@@ -160,11 +159,11 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'aphids',
-    chip: { text: '+16 害蟲', tone: 'red' },
+    chip: { text: '留意蟲害', tone: 'red' },
     title: '蚜蟲',
-    text: '葉底多咗一群蚜蟲，今日適合除蟲。',
+    text: '葉底見到幾隻蚜蟲。養分唔夠或者泥土太濕，好易生蟲，可以除一除預防。',
     apply: (s) => {
-      s.pests = Math.min(100, s.pests + 16);
+      if (!s.pest.active) s.pest.lowNDays = Math.max(s.pest.lowNDays, 1);
     },
   },
   {

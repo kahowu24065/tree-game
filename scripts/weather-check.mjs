@@ -22,7 +22,7 @@ async function run(name, opts, setup) {
   if (setup) await setup(ctx, page);
   await page.goto(BASE);
   await page.locator('#tree-name').fill('窗前小樹');
-  await page.locator('[data-action="start"]').click();
+  await page.locator('[data-season="s3"]').click();
   await page.waitForFunction(() => !/攞緊/.test(document.querySelector('#weather-card')?.textContent ?? ''), null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(2500);
   const card = await page.locator('#weather-card').innerText();
