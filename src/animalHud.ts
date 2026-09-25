@@ -20,6 +20,8 @@ export interface AnimalHud {
   /** For checks: what the HUD shows right now. */
   debug(): { markers: { uid: number; id: string; x: number; y: number; alpha: number; cluster: number }[]; toast: string | null; toastUids: number[]; listOpen: boolean; list: string[] };
   setEnabled(on: boolean): void;
+  /** v10: re-render now (e.g. a species just became 「已見」, so its 新 badge must go everywhere). */
+  refresh(): void;
 }
 
 /** Marker shows while the animal is smaller than this on screen (CSS px) and fades out by FADE_PX. */
@@ -367,6 +369,12 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
         listOpen: !panel.hidden,
         list: [...panel.querySelectorAll('[data-uid]')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
       };
+    },
+    refresh(): void {
+      listT = 0;
+      renderList();
+      // Drop the 新 tag from a toast that is still showing.
+      if (current && !current.list.some((x) => isFresh(x.id))) toastEl.querySelector('.at-text em')?.remove();
     },
     setEnabled(on: boolean): void {
       enabled = on;

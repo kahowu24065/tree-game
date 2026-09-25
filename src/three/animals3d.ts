@@ -1108,7 +1108,6 @@ export class Animals3D {
   private perchTaken = new Set<number>();
   private rng = Math.random;
   private uidNext = 1;
-  private focusCen = new THREE.Vector3();
   private arrivals: AnimalArrival[] = [];
   private hints = new MotionHints();
   /** Camera position, world metres per CSS px at distance 1, and device pixel ratio (set by the scene). */
@@ -1176,7 +1175,21 @@ export class Animals3D {
     if (!crew || !crew.members.length) return null;
     const vis = crew.members.filter((m) => m.obj.visible);
     const list = vis.length ? vis : crew.members;
-    return { crew, member: list[Math.floor(list.length / 2)]! };
+    // v10: follow ONE member picked at random (flying ones first for a flock), with a chase cam.
+    const air = FLYERS.has(crew.def.motion) ? list.filter((m) => m.mode === 'fly') : [];
+    const pool = air.length ? air : list;
+    return { crew, member: pool[Math.floor(Math.random() * pool.length)]! };
+  }
+
+  /** v10: another member of the same group to follow (flying ones first), or null if it is alone. */
+  otherMember(ref: unknown): { crew: Crew; member: Member } | null {
+    const h = ref as { crew: Crew; member: Member } | null;
+    if (!h || !this.crews.includes(h.crew)) return null;
+    const rest = h.crew.members.filter((m) => m !== h.member && m.obj.visible);
+    if (!rest.length) return null;
+    const air = rest.filter((m) => m.mode === 'fly');
+    const pool = air.length ? air : rest;
+    return { crew: h.crew, member: pool[Math.floor(Math.random() * pool.length)]! };
   }
 
   /** Arrivals since the last call. */
@@ -1279,23 +1292,14 @@ export class Animals3D {
     return best;
   }
 
-  /** Follow-cam data for a picked animal, or null once it has left. */
-  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean } | null {
+  /** Follow-cam data for a picked animal, or null once it has left. v10: always one member (chase cam when flying). */
+  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean; flying?: boolean; perched?: boolean; group?: number } | null {
     const h = ref as { crew: Crew; member: Member } | null;
     if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
     const c = h.crew;
-    const air = c.members.filter((m) => !m.lastPerched);
-    if (c.members.length > 1 && FLYERS.has(c.def.motion) && air.length > 1) {
-      // v9: a flying flock is framed as a whole: aim at its centre, back off with its spread.
-      const cen = this.focusCen.set(0, 0, 0);
-      for (const m of air) cen.add(m.pos);
-      cen.multiplyScalar(1 / air.length);
-      let spread = 0;
-      for (const m of air) spread += m.pos.distanceTo(cen);
-      spread /= air.length;
-      return { pos: cen, size: Math.max(this.dlen(c.def), spread * 1.1), yaw: h.member.yaw, outward: true };
-    }
-    return { pos: h.member.pos, size: this.dlen(c.def), yaw: h.member.yaw, outward: FLYERS.has(c.def.motion) };
+    const m = h.member;
+    const fly = FLYERS.has(c.def.motion);
+    return { pos: m.pos, size: this.dlen(c.def), yaw: m.yaw, outward: fly, flying: fly && m.mode === 'fly', perched: fly && m.mode === 'perch', group: c.members.length };
   }
 
   flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {

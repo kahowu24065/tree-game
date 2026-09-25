@@ -752,6 +752,7 @@ document.addEventListener('click', (event) => {
       state.seenAnimals.push(id);
       persist();
       render();
+      animalHud?.refresh();
     }
     return;
   }
@@ -915,6 +916,11 @@ if (DEV_PANEL) {
     followCrew: (uid: number) => scene3d?.followCrew(uid) ?? false,
     followingUid: () => scene3d?.followingUid() ?? null,
     hints: () => scene3d?.hintStats() ?? null,
+    orbitBy: (daz: number, del?: number) => scene3d?.orbitBy(daz, del),
+    followCam: () => scene3d?.followCamInfo() ?? null,
+    propInfo: () => scene3d?.propInfo() ?? null,
+    waterShare: () => scene3d?.waterShare() ?? null,
+    seen: () => [...state.seenAnimals],
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');
@@ -952,10 +958,23 @@ function syncViewButton(): void {
 
 /** v9 animal markers / arrival toast / 島上動物 list (3D scene only). */
 let animalHud: AnimalHud | null = null;
+let lastFollowUid: number | null = null;
 function syncAnimalHud(time: number): void {
   if (!scene3d) return;
   animalHud ??= mountAnimalHud(scene3d, (id) => state.animals.includes(id) && !state.seenAnimals.includes(id));
   animalHud.setEnabled(state.started && !state.over && Boolean(document.getElementById('modal')?.hidden));
+  // v10: following an animal (marker, toast, list or a direct tap) counts as seeing it: its 新 badge goes everywhere.
+  const uid = scene3d.followingUid();
+  if (uid !== lastFollowUid) {
+    lastFollowUid = uid;
+    const crew = uid === null ? null : scene3d.crewList().find((c) => c.uid === uid);
+    if (crew && state.animals.includes(crew.id) && !state.seenAnimals.includes(crew.id)) {
+      state.seenAnimals.push(crew.id);
+      persist();
+      render();
+      animalHud.refresh();
+    }
+  }
   animalHud.update(time);
 }
 

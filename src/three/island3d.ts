@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mulberry32 } from '../util';
 import { ellipsoid, jitterGeometry, mat, merge, paint } from './util3d';
 import { FENCE_INSET_UNITS, shoreRadius } from '../scale';
+import { anchorGeometry, asProp, bucketScale, propDensity } from './propScale';
 
 export const ISLAND_R = 7;
 
@@ -14,6 +15,8 @@ export interface Island {
   grass: THREE.Mesh;
   /** Hide the garden's own underside and edge waterfall when the habitat land surrounds it. */
   setExtended(on: boolean): void;
+  /** v10: current prop scale (bridge) and density bucket (rebuilds rocks / grass / flowers / bushes when it changes). */
+  setProps(propK: number, bucket: number): void;
 }
 
 function islandRadius(angle: number): number {
@@ -67,6 +70,30 @@ export const STREAM_POINTS = [
   new THREE.Vector3(4.75, 0.03, 5.05),
 ];
 
+/** v10: the garden pond (front-left of the tree, in the default view), as an ellipse in island units. */
+export const GARDEN_POND = { x: -3.15, z: 1.75, rx: 1.55, rz: 1.0, rot: 0.45 };
+
+function inPond(x: number, z: number, pad: number): boolean {
+  const p = GARDEN_POND;
+  const dx = x - p.x;
+  const dz = z - p.z;
+  const c = Math.cos(p.rot);
+  const s = Math.sin(p.rot);
+  const lx = dx * c - dz * s;
+  const lz = dx * s + dz * c;
+  return (lx / (p.rx + pad)) ** 2 + (lz / (p.rz + pad)) ** 2 < 1;
+}
+
+/** Stream half-width along the curve parameter t (v10: wider). */
+export function streamHalfWidth(t: number): number {
+  return 0.44 + 0.14 * Math.sin(t * 9);
+}
+
+/** Garden water (stream or pond) within `pad` (island units). */
+export function onGardenWater(x: number, z: number, pad: number): boolean {
+  return onStream(x, z, pad + 0.52) || inPond(x, z, pad);
+}
+
 /** Is (x, z) (island units) on the garden stream, within `pad` of its centre line? */
 export function onStream(x: number, z: number, pad: number): boolean {
   for (let i = 0; i < STREAM_POINTS.length - 1; i++) {
@@ -83,7 +110,6 @@ export function onStream(x: number, z: number, pad: number): boolean {
 }
 
 export function buildIsland(): Island {
-  const rand = mulberry32(20260925);
   const group = new THREE.Group();
 
   // Grass top: a gently domed disc with an irregular rim.
@@ -143,7 +169,7 @@ export function buildIsland(): Island {
     const p = curve.getPoint(t);
     const tan = curve.getTangent(t);
     const side = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
-    const w = 0.32 + 0.12 * Math.sin(t * 9);
+    const w = streamHalfWidth(t);
     const dome = 0.18 * (1 - Math.min(1, Math.hypot(p.x, p.z) / ISLAND_R) ** 2);
     const y = 0.02 + dome;
     verts.push(p.x + side.x * w, y, p.z + side.z * w, p.x - side.x * w, y, p.z - side.z * w);
@@ -162,9 +188,6 @@ export function buildIsland(): Island {
   const stream = new THREE.Mesh(streamGeo, waterMat);
   stream.receiveShadow = true;
   group.add(stream);
-  const bank = new THREE.Mesh(new THREE.TubeGeometry(curve, 30, 0.1, 4, false), mat('#9aa0a3'));
-  bank.scale.set(1, 0.4, 1);
-  bank.position.y = 0.1;
   const end = STREAM_POINTS[STREAM_POINTS.length - 1]!;
   const fallTex = water.clone();
   fallTex.needsUpdate = true;
@@ -178,6 +201,30 @@ export function buildIsland(): Island {
   const spray = new THREE.Mesh(ellipsoid(0.5, 0.25, 0.5, 0), mat('#e8f6fb', { opacity: 0.6 }));
   spray.position.set(end.x, -4.9, end.z);
   group.add(spray);
+
+  // v10: garden pond (still water with a sandy bank), front-left of the tree.
+  {
+    const p = GARDEN_POND;
+    const dome = 0.18 * (1 - Math.min(1, Math.hypot(p.x, p.z) / ISLAND_R) ** 2);
+    const w = new THREE.CircleGeometry(1, 26);
+    w.rotateX(-Math.PI / 2);
+    w.scale(p.rx, 1, p.rz);
+    w.rotateY(p.rot);
+    const pondTex = water.clone();
+    pondTex.needsUpdate = true;
+    pondTex.repeat.set(0.6, 0.3);
+    const pond = new THREE.Mesh(w, new THREE.MeshStandardMaterial({ map: pondTex, roughness: 0.15, metalness: 0.1, emissive: '#1d5f80', emissiveIntensity: 0.2 }));
+    pond.position.set(p.x, dome + 0.035, p.z);
+    pond.receiveShadow = true;
+    group.add(pond);
+    const b = new THREE.RingGeometry(0.9, 1.16, 26, 1);
+    b.rotateX(-Math.PI / 2);
+    b.scale(p.rx, 1, p.rz);
+    b.rotateY(p.rot);
+    const bankMesh = new THREE.Mesh(b, mat('#b9a47a'));
+    bankMesh.position.set(p.x, dome + 0.028, p.z);
+    group.add(bankMesh);
+  }
 
   // Wooden bridge over the stream near the edge.
   const bridge = new THREE.Group();
@@ -207,113 +254,36 @@ export function buildIsland(): Island {
   bridge.rotation.y = -Math.atan2(bt.z, bt.x) + Math.PI / 2;
   group.add(bridge);
 
-  const start = 1.2;
-  const endA = start + Math.PI * 1.55;
-
-  // Rocks: a cluster by the spring, a few scattered near the rim.
-  const rockSpots: [number, number, number][] = [
-    [2.9, -2.9, 0.75], [2.1, -2.6, 0.45], [3.4, -2.1, 0.5], [5.2, 1.9, 0.6], [5.5, 2.8, 0.4],
-    [-4.6, 2.6, 0.55], [-3.9, 3.4, 0.35], [-5.3, -1.2, 0.5], [-1.6, -5.2, 0.6], [0.8, -5.6, 0.4], [1.8, 4.4, 0.3], [-2.4, 4.8, 0.45],
-  ];
-  const rockGeos: THREE.BufferGeometry[] = [];
-  rockSpots.forEach(([x, z, s], i) => {
-    const g = new THREE.DodecahedronGeometry(s, 0);
-    jitterGeometry(g, s * 0.35, i * 3.1, false);
-    g.scale(1, 0.7, 1);
-    g.rotateY(i);
-    const dome = 0.18 * (1 - Math.min(1, Math.hypot(x, z) / ISLAND_R) ** 2);
-    g.translate(x, dome + s * 0.25, z);
-    paint(g, new THREE.Color().setHSL(0.08, 0.04, 0.55 + (i % 3) * 0.06));
-    rockGeos.push(g);
-  });
-  const rocks = new THREE.Mesh(merge(rockGeos, true), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
-  rocks.castShadow = true;
-  rocks.receiveShadow = true;
-  group.add(rocks);
-
-  // Stepping stones from the bridge toward the tree.
-  const stones: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 6; i++) {
-    const t = i / 5;
-    const x = 1.2 + (bp.x - 1.5 - 1.2) * t;
-    const z = 1.0 + (bp.z - 1.0) * t;
-    const g = new THREE.CylinderGeometry(0.22 + rand() * 0.08, 0.26, 0.06, 7);
-    const dome = 0.18 * (1 - Math.min(1, Math.hypot(x, z) / ISLAND_R) ** 2);
-    g.translate(x + (rand() - 0.5) * 0.3, dome + 0.02, z + (rand() - 0.5) * 0.3);
-    stones.push(g);
-  }
-  const stoneMesh = new THREE.Mesh(merge(stones), mat('#c9c2b4'));
-  stoneMesh.receiveShadow = true;
-  group.add(stoneMesh);
-
-  // Grass tufts and flowers (instanced, cheap).
-  const tuftGeo = new THREE.ConeGeometry(0.045, 0.16, 3);
-  tuftGeo.translate(0, 0.08, 0);
-  const tuftCount = 480;
-  const tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 }), tuftCount);
-  const flowerGeo = new THREE.IcosahedronGeometry(0.07, 0);
-  const flowerCount = 120;
-  const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.7 }), flowerCount);
-  const flowerColors = ['#ffffff', '#fff6d8', '#f7b7c8', '#f3d35b', '#c9b3f0', '#ffffff'];
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const c = new THREE.Color();
-  let placed = 0;
-  let fplaced = 0;
-  for (let guard = 0; guard < 4000 && (placed < tuftCount || fplaced < flowerCount); guard++) {
-    const a = rand() * Math.PI * 2;
-    const r = Math.sqrt(rand()) * (ISLAND_R - 0.6);
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    if (r < 1.2 || onStream(x, z, 0.55)) continue;
-    const dome = 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2);
-    if (placed < tuftCount && rand() < 0.75) {
-      q.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.4, rand() * 6, (rand() - 0.5) * 0.4));
-      const s = 0.6 + rand() * 0.9;
-      m.compose(new THREE.Vector3(x, dome, z), q, new THREE.Vector3(s, s * (0.8 + rand() * 0.6), s));
-      tufts.setMatrixAt(placed, m);
-      tufts.setColorAt(placed, c.setHSL(0.24 + rand() * 0.06, 0.5, 0.36 + rand() * 0.14));
-      placed++;
-    } else if (fplaced < flowerCount) {
-      const s = 0.7 + rand() * 0.8;
-      m.compose(new THREE.Vector3(x, dome + 0.12, z), q.identity(), new THREE.Vector3(s, s * 0.7, s));
-      flowers.setMatrixAt(fplaced, m);
-      flowers.setColorAt(fplaced, c.set(flowerColors[Math.floor(rand() * flowerColors.length)]!));
-      fplaced++;
+  // v10: small props (rocks, stepping stones, grass, flowers, bushes) at animal scale; rebuilt with more of them when
+  // they are drawn smaller relative to the island.
+  let props: THREE.Group | null = null;
+  let propBucketNow = -1;
+  const buildProps = (bucket: number) => {
+    if (props) {
+      group.remove(props);
+      props.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) {
+          m.geometry.dispose();
+          (m.material as THREE.Material).dispose();
+        }
+      });
     }
-  }
-  tufts.count = placed;
-  flowers.count = fplaced;
-  tufts.receiveShadow = true;
-  group.add(tufts, flowers);
-
-  // Small bushes near the fence for a fuller rim.
-  const bushGeos: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 14; i++) {
-    const a = start + rand() * (endA - start);
-    const r = islandRadius(a) - 0.9 - rand() * 0.5;
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    if (onStream(x, z, 0.8)) continue;
-    const s = 0.35 + rand() * 0.35;
-    const g = new THREE.IcosahedronGeometry(s, 1);
-    jitterGeometry(g, s * 0.3, i, true);
-    g.scale(1, 0.75, 1);
-    const dome = 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2);
-    g.translate(x, dome + s * 0.5, z);
-    paint(g, (y) => new THREE.Color().setHSL(0.27, 0.45, 0.3 + (y - dome) * 0.25));
-    bushGeos.push(g);
-  }
-  const bushes = new THREE.Mesh(merge(bushGeos, true), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
-  bushes.castShadow = true;
-  bushes.receiveShadow = true;
-  group.add(bushes);
+    props = buildGardenProps(bucketScale(bucket), { x: bp.x, z: bp.z });
+    group.add(props);
+    propBucketNow = bucket;
+  };
+  buildProps(0);
 
   return {
     group,
     water,
     dirt,
     grass,
+    setProps(propK: number, bucket: number) {
+      bridge.scale.set(Math.max(propK, 0.8), propK, propK);
+      if (bucket !== propBucketNow) buildProps(bucket);
+    },
     setExtended(on: boolean) {
       rimMesh.visible = !on;
       underMesh.visible = !on;
@@ -327,6 +297,145 @@ export function buildIsland(): Island {
       void wind;
     },
   };
+}
+
+/** Garden props for a prop scale `pk` (island units per design unit): the smaller they are drawn, the more there are. */
+function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE.Group {
+  const rand = mulberry32(20260925 + 17);
+  const out = new THREE.Group();
+  out.name = 'garden-props';
+  const dens = (cap: number) => propDensity(pk, cap);
+  const domeAt = (x: number, z: number) => 0.18 * (1 - Math.min(1, Math.hypot(x, z) / ISLAND_R) ** 2);
+  const wet = (x: number, z: number, pad: number) => onGardenWater(x, z, pad);
+  const solidMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+
+  // Rocks: a cluster by the spring, a few near the rim, the pond's bank stones, then extra small ones on big islands.
+  const rockSpots: [number, number, number][] = [
+    [2.9, -2.9, 0.75], [2.1, -2.6, 0.45], [3.4, -2.1, 0.5], [5.2, 1.9, 0.6], [5.5, 2.8, 0.4],
+    [-5.3, -1.2, 0.5], [-1.6, -5.2, 0.6], [0.8, -5.6, 0.4], [1.8, 4.4, 0.3], [-2.4, 4.8, 0.45],
+  ];
+  const P = GARDEN_POND;
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + 0.3;
+    const lx = Math.cos(a) * P.rx * 1.2;
+    const lz = Math.sin(a) * P.rz * 1.2;
+    const c = Math.cos(P.rot);
+    const s = Math.sin(P.rot);
+    if (i % 3 !== 1) rockSpots.push([P.x + lx * c + lz * s, P.z - lx * s + lz * c, 0.14 + (i % 4) * 0.05]);
+  }
+  const extra = Math.round(14 * (dens(5) - 1));
+  for (let i = 0, guard = 0; i < extra && guard < extra * 20; guard++) {
+    const a = rand() * Math.PI * 2;
+    const r = 1.6 + Math.sqrt(rand()) * (ISLAND_R - 2.4);
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (wet(x, z, 0.35)) continue;
+    rockSpots.push([x, z, 0.18 + rand() * 0.32]);
+    i++;
+  }
+  const rockGeos: THREE.BufferGeometry[] = [];
+  rockSpots.forEach(([x, z, s], i) => {
+    const g = new THREE.DodecahedronGeometry(s, 0);
+    jitterGeometry(g, s * 0.35, i * 3.1, false);
+    g.scale(1, 0.7, 1);
+    g.rotateY(i);
+    const y = domeAt(x, z);
+    g.translate(x, y + s * 0.25, z);
+    paint(g, new THREE.Color().setHSL(0.08, 0.04, 0.55 + (i % 3) * 0.06));
+    rockGeos.push(anchorGeometry(g, x, y, z));
+  });
+  const rocks = asProp(new THREE.Mesh(merge(rockGeos, true), solidMat()), true);
+  rocks.castShadow = pk > 0.6;
+  rocks.receiveShadow = true;
+  out.add(rocks);
+
+  // Stepping stones from the bridge toward the tree (more, smaller stones when drawn small).
+  const stones: THREE.BufferGeometry[] = [];
+  const nStones = Math.round(6 * Math.min(3, 1 / pk));
+  for (let i = 0; i < nStones; i++) {
+    const t = i / Math.max(1, nStones - 1);
+    const x = 1.2 + (bridgeAt.x - 1.5 - 1.2) * t + (rand() - 0.5) * 0.3 * pk;
+    const z = 1.0 + (bridgeAt.z - 1.0) * t + (rand() - 0.5) * 0.3 * pk;
+    const g = new THREE.CylinderGeometry(0.22 + rand() * 0.08, 0.26, 0.06, 7);
+    const y = domeAt(x, z);
+    g.translate(x, y + 0.02, z);
+    paint(g, new THREE.Color('#c9c2b4'));
+    stones.push(anchorGeometry(g, x, y, z));
+  }
+  const stoneMesh = asProp(new THREE.Mesh(merge(stones, true), solidMat()), true);
+  stoneMesh.receiveShadow = true;
+  out.add(stoneMesh);
+
+  // Grass tufts and flowers (instanced, cheap).
+  const tuftGeo = new THREE.ConeGeometry(0.045, 0.16, 3);
+  tuftGeo.translate(0, 0.08, 0);
+  const tuftCount = Math.round(480 * dens(5));
+  const tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 }), tuftCount);
+  asProp(tufts, false);
+  const flowerGeo = new THREE.IcosahedronGeometry(0.07, 0);
+  flowerGeo.translate(0, 0.12 / 0.7, 0);
+  const flowerCount = Math.round(120 * dens(5));
+  const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.7 }), flowerCount);
+  asProp(flowers, false);
+  const flowerColors = ['#ffffff', '#fff6d8', '#f7b7c8', '#f3d35b', '#c9b3f0', '#ffffff'];
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const c = new THREE.Color();
+  let placed = 0;
+  let fplaced = 0;
+  for (let guard = 0; guard < (tuftCount + flowerCount) * 8 && (placed < tuftCount || fplaced < flowerCount); guard++) {
+    const a = rand() * Math.PI * 2;
+    const r = Math.sqrt(rand()) * (ISLAND_R - 0.6);
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (r < 1.2 || wet(x, z, 0.12)) continue;
+    const dome = domeAt(x, z);
+    if (placed < tuftCount && rand() < 0.75) {
+      q.setFromEuler(new THREE.Euler((rand() - 0.5) * 0.4, rand() * 6, (rand() - 0.5) * 0.4));
+      const s = 0.6 + rand() * 0.9;
+      m.compose(new THREE.Vector3(x, dome, z), q, new THREE.Vector3(s, s * (0.8 + rand() * 0.6), s));
+      tufts.setMatrixAt(placed, m);
+      tufts.setColorAt(placed, c.setHSL(0.24 + rand() * 0.06, 0.5, 0.36 + rand() * 0.14));
+      placed++;
+    } else if (fplaced < flowerCount) {
+      const s = 0.7 + rand() * 0.8;
+      m.compose(new THREE.Vector3(x, dome, z), q.identity(), new THREE.Vector3(s, s * 0.7, s));
+      flowers.setMatrixAt(fplaced, m);
+      flowers.setColorAt(fplaced, c.set(flowerColors[Math.floor(rand() * flowerColors.length)]!));
+      fplaced++;
+    }
+  }
+  tufts.count = placed;
+  flowers.count = fplaced;
+  tufts.receiveShadow = true;
+  out.add(tufts, flowers);
+
+  // Bushes near the fence for a fuller rim (+ clumps inside the garden when drawn small).
+  const start = 1.2;
+  const endA = start + Math.PI * 1.55;
+  const bushGeos: THREE.BufferGeometry[] = [];
+  const nBush = Math.round(14 * dens(5));
+  for (let i = 0; i < nBush; i++) {
+    const inner = i >= 14 && rand() < 0.45;
+    const a = inner ? rand() * Math.PI * 2 : start + rand() * (endA - start);
+    const r = inner ? 2 + rand() * (ISLAND_R - 3.4) : shoreRadius(ISLAND_R, a) - 0.9 * Math.max(pk, 0.5) - rand() * 0.5;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (wet(x, z, 0.5)) continue;
+    const s = 0.35 + rand() * 0.35;
+    const g = new THREE.IcosahedronGeometry(s, pk < 0.7 ? 0 : 1);
+    jitterGeometry(g, s * 0.3, i, true);
+    g.scale(1, 0.75, 1);
+    const dome = domeAt(x, z);
+    g.translate(x, dome + s * 0.5, z);
+    paint(g, (y) => new THREE.Color().setHSL(0.27, 0.45, 0.3 + (y - dome) * 0.25));
+    bushGeos.push(anchorGeometry(g, x, dome, z));
+  }
+  const bushes = asProp(new THREE.Mesh(merge(bushGeos, true), solidMat()), true);
+  bushes.castShadow = pk > 0.6;
+  bushes.receiveShadow = true;
+  out.add(bushes);
+  return out;
 }
 
 export interface Fence {

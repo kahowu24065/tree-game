@@ -166,8 +166,13 @@ if (want('toast')) {
   await hideDev(p);
   await p.screenshot({ path: `${OUT}/03-arrival-toast.png` });
   // Tap whatever toast is up right now (the next one if this one has just gone) and check we follow its group.
-  const hudNow = await T(p, 'hud');
-  await p.locator('#animal-toast').click({ timeout: 15000 });
+  let hudNow = await T(p, 'hud');
+  // Headless renders at a few fps, so the 4.2 s toast may be gone by now: bring in another group for a fresh one.
+  if (!hudNow.toast) {
+    await T(p, 'spawn', 'sparrow');
+    for (let i = 0; i < 80 && !hudNow.toast; i++) { await p.waitForTimeout(250); hudNow = await T(p, 'hud'); }
+  }
+  await p.locator('#animal-toast').click({ timeout: 15000, force: true });
   const uids = (await T(p, 'hud')).toastUids.length ? (await T(p, 'hud')).toastUids : hudNow.toastUids;
   await p.waitForTimeout(3000);
   const fuT = await T(p, 'followingUid');

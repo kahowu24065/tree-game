@@ -3,7 +3,8 @@ import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
 import { albumFigure, Animals3D, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, type Habitat } from './habitat3d';
-import { buildFence, buildIsland, ISLAND_R, onStream, type Fence, type Island } from './island3d';
+import { buildFence, buildIsland, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
+import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
@@ -86,7 +87,18 @@ export class Scene3D {
   private nextFlash = 0;
   private dragAz = 0;
   private dragEl = 0;
-  private dragging: { x: number; y: number; az: number; el: number } | null = null;
+  private dragging: { x: number; y: number; az: number; el: number; orbit?: boolean } | null = null;
+  /** v10: orbit around a followed animal (one-finger drag), relative to the automatic follow angle. */
+  private followOrbit = 0;
+  private followOrbitEl = 0;
+  private lastOrbit = -1e9;
+  /** v10: how long the followed animal has been hidden (e.g. perched inside the crown), and the pull-out boost. */
+  private occludedT = 0;
+  private liftGoal = 0;
+  private lift = 0;
+  private lastFocusPos = new THREE.Vector3();
+  private focusDelta = new THREE.Vector3();
+  private lastFocusRef: unknown = null;
   private lastDrag = 0;
   private quality: Quality;
   private thumbs = new Map<string, string>();
@@ -401,7 +413,7 @@ export class Scene3D {
         /* synthetic or already-released pointer */
       }
       if (this.pointers.size === 1) {
-        this.dragging = { x: e.clientX, y: e.clientY, az: this.dragAz, el: this.dragEl };
+        this.dragging = this.startDrag(e.clientX, e.clientY);
         this.tap = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
       } else if (this.pointers.size === 2) {
         // Second finger: pinch-zoom / two-finger pan instead of rotating.
@@ -429,6 +441,14 @@ export class Scene3D {
       if (!this.dragging) return;
       const dx = (e.clientX - this.dragging.x) / Math.max(200, this.width);
       const dy = (e.clientY - this.dragging.y) / Math.max(200, this.height);
+      if (this.dragging.orbit) {
+        // v10: while following, one finger orbits round the animal (it stays centred); follow is never cancelled.
+        this.followOrbit = this.dragging.az - dx * 3.4;
+        this.followOrbitEl = clamp(this.dragging.el + dy * 1.4, -0.3, 0.85);
+        if (this.tap?.moved) this.lastOrbit = performance.now();
+        this.lastDrag = performance.now();
+        return;
+      }
       const free = this.isZoomed();
       this.dragAz = clamp(this.dragging.az - dx * 2.2, free ? -Math.PI : -0.6, free ? Math.PI : 0.6);
       this.dragEl = clamp(this.dragging.el + dy * 0.8, free ? -0.5 : -0.15, free ? 0.35 : 0.15);
@@ -439,7 +459,7 @@ export class Scene3D {
       if (this.pointers.size < 2) this.pinch = null;
       if (this.pointers.size === 1) {
         const [p] = [...this.pointers.values()];
-        this.dragging = { x: p!.x, y: p!.y, az: this.dragAz, el: this.dragEl };
+        this.dragging = this.startDrag(p!.x, p!.y);
       } else if (this.pointers.size === 0) {
         this.dragging = null;
         if (e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
@@ -459,6 +479,57 @@ export class Scene3D {
       },
       { passive: false },
     );
+  }
+
+  private startDrag(x: number, y: number): { x: number; y: number; az: number; el: number; orbit?: boolean } {
+    if (this.followRef || this.follow) return { x, y, az: this.followOrbit, el: this.followOrbitEl, orbit: true };
+    return { x, y, az: this.dragAz, el: this.dragEl };
+  }
+
+  /** v10: orbit the follow camera programmatically (tests): add `daz` radians / change the elevation offset. */
+  orbitBy(daz: number, del = 0): void {
+    this.followOrbit += daz;
+    this.followOrbitEl = clamp(this.followOrbitEl + del, -0.3, 0.85);
+    this.lastOrbit = performance.now();
+  }
+
+  /** v10: follow-cam state (tests). */
+  followCamInfo(): { orbit: number; orbitEl: number; chase: boolean; az: number; lift: number; screen: { x: number; y: number } | null; px: number } {
+    const f = this.followRef ? this.animals.focusRef(this.followRef) : null;
+    let screen: { x: number; y: number } | null = null;
+    let px = 0;
+    if (f) {
+      const v = f.pos.clone().project(this.camera);
+      screen = { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height };
+      const d = this.camera.position.distanceTo(f.pos);
+      px = (f.size / Math.max(1e-4, d)) / ((2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height));
+    }
+    return { orbit: this.followOrbit, orbitEl: this.followOrbitEl, chase: Boolean(f?.flying), az: this.followAz, lift: this.lift, screen, px };
+  }
+
+  /** v10: share of the island's land area that is water (garden stream / pond + habitat water), by sampling. */
+  waterShare(): { share: number; stage: number } {
+    const R = this.habitat?.radius ?? ISLAND_R;
+    let n = 0;
+    let wet = 0;
+    for (let x = -R; x <= R; x += 0.12) {
+      for (let z = -R; z <= R; z += 0.12) {
+        const r = Math.hypot(x, z);
+        if (r > shoreRadius(R, Math.atan2(z, x)) - 0.2 || r < 1.2) continue;
+        n++;
+        const inGarden = r < ISLAND_R;
+        if ((inGarden && onGardenWater(x, z, 0)) || (this.habitat && this.habitat.isWater(x, z, 0))) wet++;
+      }
+    }
+    return { share: n ? wet / n : 0, stage: this.habitat?.stage ?? 0 };
+  }
+
+  private resetFollowCam(): void {
+    this.followOrbit = 0;
+    this.followOrbitEl = 0;
+    this.occludedT = 0;
+    this.liftGoal = 0;
+    this.lastOrbit = -1e9;
   }
 
   private ndc(x: number, y: number): THREE.Vector2 {
@@ -494,10 +565,12 @@ export class Scene3D {
   }
 
   /** Pick an orbit angle with a clear line of sight to the followed animal; else cap the distance. */
-  private clearView(target: THREE.Vector3, az: number, el: number, dist: number, size: number): { bias: number; cap: number } {
+  private clearView(target: THREE.Vector3, az: number, el: number, dist: number, size: number, lock = false): { bias: number; cap: number } {
     const skip = Math.max(0.05, size * 0.5);
     let best = { bias: 0, cap: 0 };
-    for (const b of [this.followBiasGoal, 0, 0.7, -0.7, 1.4, -1.4, 2.2, -2.2, Math.PI]) {
+    // While the player is orbiting, keep their angle (only move closer); otherwise try a few angles for a clear view.
+    const tries = lock ? [0] : [this.followBiasGoal, 0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4, Math.PI];
+    for (const b of tries) {
       const d = this.obstacle(target, az + b, el, dist, skip);
       if (d === Infinity) return { bias: b, cap: Infinity };
       if (d > best.cap) best = { bias: b, cap: d };
@@ -566,6 +639,7 @@ export class Scene3D {
       this.followRef = hit;
       this.follow = null;
       this.followZoom = 1;
+      this.resetFollowCam();
       return;
     }
     // v9: a tap that just misses a moving overview marker (flocks move fast on screen) still follows that group.
@@ -592,6 +666,7 @@ export class Scene3D {
     this.followRef = h;
     this.follow = null;
     this.followZoom = 1;
+    this.resetFollowCam();
     return true;
   }
 
@@ -631,6 +706,7 @@ export class Scene3D {
     this.followZoom = 1;
     this.dragAz = 0;
     this.dragEl = 0;
+    this.resetFollowCam();
   }
 
   /** Screen position (CSS px) of an animal of `id` — for automated tap checks. */
@@ -731,7 +807,7 @@ export class Scene3D {
 
   /** Water / obstacle test in island units (garden stream, habitat ponds, streams, inlets, hills, cliffs). */
   private wetOrBlocked(x: number, z: number, pad: number): boolean {
-    if (Math.hypot(x, z) < ISLAND_R + 0.4 && onStream(x, z, 0.46 + pad)) return true;
+    if (Math.hypot(x, z) < ISLAND_R + 0.4 && onGardenWater(x, z, 0.06 + pad)) return true;
     return Boolean(this.habitat && (this.habitat.isWater(x, z, pad) || this.habitat.isBlocked(x, z)));
   }
 
@@ -805,14 +881,16 @@ export class Scene3D {
 
   private ensureHabitat(input: SceneInput): void {
     const stage = clamp(Math.round(input.islandStage ?? input.stage), 0, 4);
-    const key = `${input.species}|${stage}|${this.quality}`;
+    // v10: props are laid out for the prop scale the tree is heading to (quantised, so only big changes rebuild).
+    const bucket = this.propBucketGoal();
+    const key = `${input.species}|${stage}|${this.quality}|p${bucket}`;
     if (key === this.habitatKey) return;
     this.habitatKey = key;
     if (this.habitat) {
       this.scene.remove(this.habitat.group);
       this.habitat.dispose();
     }
-    this.habitat = buildHabitat(input.species, stage, this.quality);
+    this.habitat = buildHabitat(input.species, stage, this.quality, bucketScale(bucket));
     this.animals.setGround(
       (x, z) => this.groundFast(x / this.islandK, z / this.islandK) * this.islandK,
       (x, z) => !this.wetOrBlocked(x / this.islandK, z / this.islandK, 0.2),
@@ -820,6 +898,21 @@ export class Scene3D {
     this.scene.add(this.habitat.group);
     this.island.setExtended(stage >= 1);
     this.animals.setIslandRadius(this.habitat.radius, this.islandK);
+  }
+
+  /** v10: prop density bucket for the tree's (goal) size. */
+  private propBucketGoal(): number {
+    const tree = this.tree;
+    if (!tree) return 0;
+    return propBucket(propScaleFor(tree.height, islandScaleFor(tree.metricScale)));
+  }
+
+  /** v10: prop scale now (island units per design unit) and the layout bucket — for tests / dev panel. */
+  propInfo(): { propK: number; bucket: number; islandK: number; treeM: number; propM: number; tris: number; calls: number } {
+    const treeM = this.tree?.height ?? 0;
+    const pk = propUniforms.uPropK.value;
+    const r = this.renderer.info.render;
+    return { propK: pk, bucket: this.propBucketGoal(), islandK: this.islandK, treeM, propM: pk * this.islandK, tris: r.triangles, calls: r.calls };
   }
 
   draw(input: SceneInput, timeMs: number): void {
@@ -922,6 +1015,10 @@ export class Scene3D {
     this.landmark.position.set(2.8 * K, 0.05 * K, 2.2 * K);
     this.animals.setIslandRadius(stageR, K);
     this.ensureFence(tree.height);
+    // v10: small props at animal scale (GPU-scaled about their anchors), bridge included.
+    const propK = propScaleFor(tree.height, K);
+    propUniforms.uPropK.value = propK;
+    this.island.setProps(propK, this.propBucketGoal());
     // Dirt patch around the trunk (v6 sizing, in island units).
     this.island.dirt.scale.setScalar(clamp(0.3 + tree.localHeight * 0.09, 0.3, 1.5));
     this.island.update(t, wind);
@@ -999,37 +1096,67 @@ export class Scene3D {
     const target = new THREE.Vector3(0, this.camTargetY, 0).add(this.panOff);
     let dist = this.camDist * this.zoom;
     // Follow cam (tap an animal, or the developer panel): frame one animal up close, at its real size.
-    let focus = this.followRef ? this.animals.focusRef(this.followRef) : this.follow ? this.animals.focus(this.follow) : null;
+    let focus: ReturnType<Animals3D['focusRef']> = this.followRef ? this.animals.focusRef(this.followRef) : this.follow ? this.animals.focus(this.follow) : null;
     if (this.followRef && !focus) this.followRef = null;
     if (focus && !Number.isFinite(focus.pos.x)) focus = null;
+    const chase = Boolean(focus?.flying);
     if (focus) {
       if (!this.followOn) this.followPos.copy(focus.pos);
-      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * 7));
+      // Chase cam keeps up tightly with a flying bird; walkers get a softer glide.
+      // The aim point moves with the animal every frame (so a fast bird never slips out of frame at low fps) and only
+      // the remaining gap — e.g. after switching to another flock member — is eased out.
+      const same = this.lastFocusRef === (this.followRef ?? this.follow);
+      if (same && this.followOn) this.followPos.add(this.focusDelta.subVectors(focus.pos, this.lastFocusPos));
+      this.lastFocusPos.copy(focus.pos);
+      this.lastFocusRef = this.followRef ?? this.follow;
+      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * (chase ? 5 : 7)));
       target.copy(this.followPos);
-      target.y += focus.size * 0.3;
-      dist = Math.max(0.25, focus.size * 4.2) * this.followZoom;
+      target.y += focus.size * (chase ? 0.12 : 0.3);
+      dist = Math.max(0.22, focus.size * (chase ? 5.5 : 4.2)) * this.followZoom;
     }
     this.followOn = Boolean(focus);
-    // Follow-cam looks from lower down so animals are seen in profile.
-    const camEl = focus ? Math.min(el, 0.38) : el;
+    // Follow-cam looks from lower down so animals are seen in profile (chase: just above and behind).
+    this.lift += (this.liftGoal - this.lift) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.5));
+    const camEl = focus ? clamp((chase ? 0.2 : Math.min(el, 0.38)) + this.followOrbitEl + this.lift, -0.25, 1.25) : el;
     let camAz = az;
     if (focus) {
-      // Three-quarter front view of the animal: its forward is (cos yaw, 0, -sin yaw).
-      // v9: birds and insects round the crown are filmed from outside the crown, looking back at the tree.
-      const out = (focus as { outward?: boolean }).outward && Math.hypot(focus.pos.x, focus.pos.z) > 0.05;
-      const want = out ? Math.atan2(focus.pos.x, focus.pos.z) + 0.35 : Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
+      // Walkers: three-quarter front view (forward is (cos yaw, 0, -sin yaw)).
+      // v10: a flying animal gets a chase cam, behind and a little to the side of it, turning with it.
+      // Birds / insects that have settled are filmed from outside the crown, looking back at the tree.
+      const out = focus.outward && Math.hypot(focus.pos.x, focus.pos.z) > 0.05;
+      const want = chase
+        ? Math.atan2(-Math.cos(focus.yaw), Math.sin(focus.yaw)) + 0.55
+        : out
+          ? Math.atan2(focus.pos.x, focus.pos.z) + 0.35
+          : Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
       const d = Math.atan2(Math.sin(want - this.followAz), Math.cos(want - this.followAz));
-      this.followAz += d * (1 - Math.exp(-dt * 1.2));
+      this.followAz += d * (1 - Math.exp(-dt * (chase ? 2.2 : 1.2)));
+      const orbiting = Boolean(this.dragging?.orbit && this.tap?.moved) || performance.now() - this.lastOrbit < 2500;
       // Keep trunk / canopy / rocks out of the way: try a few orbit angles, else move closer.
       this.followCheckT -= dt;
       if (this.followCheckT <= 0) {
         this.followCheckT = 0.35;
-        const pick = this.clearView(target, this.followAz, camEl, dist, focus.size);
-        this.followBiasGoal = pick.bias;
+        const pick = this.clearView(target, this.followAz + this.followOrbit, camEl, dist, focus.size, orbiting);
+        this.followBiasGoal = orbiting ? 0 : pick.bias;
         this.followCap = pick.cap;
+        // Hidden (e.g. perched deep in the crown): after a moment switch to another member of the group, or,
+        // if it is alone, rise above it to look down through the gap.
+        const hidden = pick.cap < focus.size * 2.4;
+        this.occludedT = hidden ? this.occludedT + 0.35 : Math.max(0, this.occludedT - 0.7);
+        if (this.occludedT >= 1.4 && this.followRef) {
+          const other = (focus.group ?? 1) > 1 ? this.animals.otherMember(this.followRef) : null;
+          if (other) {
+            this.followRef = other;
+            this.occludedT = 0;
+            this.followCheckT = 0;
+          } else {
+            this.liftGoal = Math.min(0.75, this.liftGoal + 0.25);
+            this.occludedT = 1.0;
+          }
+        } else if (!hidden && this.occludedT === 0) this.liftGoal = Math.max(0, this.liftGoal - 0.05);
       }
       this.followBias += (this.followBiasGoal - this.followBias) * (1 - Math.exp(-dt * 3));
-      camAz = this.followAz + this.followBias;
+      camAz = this.followAz + this.followBias + this.followOrbit;
       if (dist > this.followCap) dist = this.followCap;
     } else {
       this.followAz = az;

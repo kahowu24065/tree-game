@@ -5,6 +5,7 @@ import { hashString, mulberry32 } from '../util';
 import { ellipsoid, jitterGeometry, limb, merge, paint } from './util3d';
 import { FENCE_INSET_UNITS, shoreRadius } from '../scale';
 import { clampInsideShore } from './island3d';
+import { anchorGeometry, asProp, propDensity } from './propScale';
 
 /**
  * Themed land around the garden island. Built band by band (one ring per growth stage) with
@@ -81,6 +82,24 @@ interface Spot {
 
 class Builder {
   solids: THREE.BufferGeometry[] = [];
+  /** v10: small props (rocks, shrubs, ferns, reeds, small trees) — scaled on the GPU about their anchors. */
+  props: THREE.BufferGeometry[] = [];
+  private anchor: { x: number; y: number; z: number } | null = null;
+  /** Prop scale this habitat is laid out for (island units per design unit) and the matching density multiplier. */
+  pk = 1;
+  dens(cap: number): number {
+    return propDensity(this.pk, cap);
+  }
+  /** Build a prop around a ground anchor: its geometry goes to the prop mesh and scales about (x, ground, z). */
+  prop(x: number, z: number, fn: () => void): void {
+    const prev = this.anchor;
+    this.anchor = { x, y: this.groundY(x, z), z };
+    try {
+      fn();
+    } finally {
+      this.anchor = prev;
+    }
+  }
   flowing: THREE.BufferGeometry[] = [];
   still: THREE.BufferGeometry[] = [];
   keep: Spot[] = [];
@@ -162,10 +181,12 @@ class Builder {
   }
 
   push(g: THREE.BufferGeometry, color: THREE.Color | ((y: number, i: number) => THREE.Color)): void {
-    this.solids.push(paint(g, color));
+    if (this.anchor) this.props.push(anchorGeometry(paint(g, color), this.anchor.x, this.anchor.y, this.anchor.z));
+    else this.solids.push(paint(g, color));
   }
 
   rock(x: number, z: number, s: number, tint = '#9b958c', snow = false): void {
+    if (!this.anchor) return this.prop(x, z, () => this.rock(x, z, s, tint, snow));
     const g = new THREE.DodecahedronGeometry(s, 0);
     jitterGeometry(g, s * 0.35, x * 3.1 + z, false);
     g.scale(1, 0.72, 1);
@@ -177,7 +198,9 @@ class Builder {
   }
 
   bush(x: number, z: number, s: number, hex: string): void {
-    const g = new THREE.IcosahedronGeometry(s, 1);
+    if (!this.anchor) return this.prop(x, z, () => this.bush(x, z, s, hex));
+    // Small (animal-scale) bushes don't need the extra facets.
+    const g = new THREE.IcosahedronGeometry(s, this.pk < 0.7 ? 0 : 1);
     jitterGeometry(g, s * 0.3, x + z * 2, true);
     g.scale(1, 0.75, 1);
     const y = this.groundY(x, z);
@@ -234,10 +257,39 @@ class Builder {
         const c = Math.cos(rot);
         const s = Math.sin(rot);
         if (this.rand() < 0.55) this.rock(x + px * c + pz * s, z - px * s + pz * c, 0.12 + this.rand() * 0.14, '#a39d92');
+        // v10: bank stones are drawn smaller on big islands, so add a few more between them.
+        if (this.pk < 0.7 && this.rand() < 0.6) this.rock(x + (px * 1.06) * c + (pz * 1.06) * s + (this.rand() - 0.5) * 0.3, z - px * 1.06 * s + pz * 1.06 * c + (this.rand() - 0.5) * 0.3, 0.1 + this.rand() * 0.12, '#a39d92');
       }
     }
     this.waters.push({ x, z, r: Math.max(rx, rz) });
     this.pools.push({ x, z, rx: rx * 1.18, rz: rz * 1.18, rot });
+  }
+
+  /**
+   * v10: pool stretched along the ring (tangent) at a spot: `along` × r long, `across` × r wide, shrunk until it clears
+   * other scenery and the fence line.
+   */
+  longPool(s: Spot, along: number, across: number, stones = true, bank = '#b9a47a'): void {
+    const a = Math.atan2(s.z, s.x);
+    const tx = -Math.sin(a);
+    const tz = Math.cos(a);
+    let rx = s.r * along;
+    const rz = s.r * across;
+    for (; rx > s.r; rx *= 0.85) {
+      let ok = true;
+      for (const k of [-1, -0.6, 0.6, 1]) {
+        const px = s.x + tx * rx * k * 0.9;
+        const pz = s.z + tz * rx * k * 0.9;
+        const shore = shoreRadius(this.R, Math.atan2(pz, px));
+        if (Math.hypot(px, pz) + rz * 0.9 > shore - FENCE_INSET_UNITS - 0.35 || !this.free(px, pz, rz * 0.85)) ok = false;
+      }
+      if (ok) break;
+    }
+    rx = Math.max(rx, s.r);
+    this.claim(s, 0.4);
+    for (const k of [-1, -0.5, 0.5, 1]) this.keep.push({ x: s.x + tx * rx * k * 0.8, z: s.z + tz * rx * k * 0.8, r: rz + 0.3 });
+    // pool(): scale(rx, 1, rz) then rotateY(rot); rot = -a - π/2 lays the long axis along the tangent.
+    this.pool(s.x, s.z, rx, rz, -a - Math.PI / 2, stones, bank);
   }
 
   /** Point-in-water test (island units); `pad` widens every water body. */
@@ -311,6 +363,7 @@ class Builder {
   }
 
   reeds(x: number, z: number, n: number): void {
+    if (!this.anchor) return this.prop(x, z, () => this.reeds(x, z, n));
     for (let i = 0; i < n; i++) {
       const px = x + (this.rand() - 0.5) * 0.9;
       const pz = z + (this.rand() - 0.5) * 0.9;
@@ -328,6 +381,7 @@ class Builder {
   }
 
   fern(x: number, z: number, s: number, hex = '#4f8f3e'): void {
+    if (!this.anchor) return this.prop(x, z, () => this.fern(x, z, s, hex));
     const y = this.groundY(x, z);
     const n = 7;
     for (let i = 0; i < n; i++) {
@@ -341,6 +395,7 @@ class Builder {
   }
 
   treeFern(x: number, z: number, h: number): void {
+    if (!this.anchor) return this.prop(x, z, () => this.treeFern(x, z, h));
     const y = this.groundY(x, z);
     this.push(limb(new THREE.Vector3(x, y, z), new THREE.Vector3(x + 0.05, y + h, z), 0.09, 0.07, 5), col('#5a4232'));
     for (let i = 0; i < 9; i++) {
@@ -355,11 +410,12 @@ class Builder {
 
   /** Small tree of the same species' silhouette for background groves. */
   miniTree(x: number, z: number, h: number): void {
+    if (!this.anchor) return this.prop(x, z, () => this.miniTree(x, z, h));
     const y = this.groundY(x, z);
     const b = new THREE.Vector3(x, y, z);
     const leaf = (hex: string) => col(hex).offsetHSL((this.rand() - 0.5) * 0.02, 0, (this.rand() - 0.5) * 0.07);
     const blob = (cx: number, cy: number, cz: number, r: number, c: THREE.Color, sq = 0.85) => {
-      const g = new THREE.IcosahedronGeometry(r, 1);
+      const g = new THREE.IcosahedronGeometry(r, this.pk < 0.7 ? 0 : 1);
       jitterGeometry(g, r * 0.25, cx + cz, true);
       g.scale(1, sq, 1);
       g.translate(cx, cy, cz);
@@ -547,13 +603,18 @@ class Builder {
 
 const SCATTER = new Set<Feature>(['rocks', 'boulders', 'shrubs', 'flowers', 'drygrass', 'ferns', 'treeferns', 'forest', 'reeds', 'scree', 'snow']);
 
-export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' | 'high' = 'low'): Habitat {
+/**
+ * `propK` = prop scale (island units per design unit, see propScale.ts) the layout is made for: smaller props on a
+ * relatively bigger island → more of them, so the ground cover stays about the same.
+ */
+export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' | 'high' = 'low', propK = 1): Habitat {
   const def = habitatDef(species);
   const s4 = Math.max(0, Math.min(4, Math.round(stage)));
   const R = ISLAND_RADII[s4];
   const group = new THREE.Group();
   group.name = 'habitat';
   const b = new Builder(speciesDef(species).form);
+  b.pk = Math.max(0.05, Math.min(1, propK));
   const active = new Set<Feature>();
   const grass = col(def.grass);
   const seedBase = hashString(species);
@@ -584,13 +645,13 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     }
     b.rand = mulberry32(seedBase + band * 4099);
     const dry = sofar.has('drygrass');
-    const tuftN = Math.round(area * (quality === 'high' ? 5 : 3.2));
+    const tuftN = Math.round(area * (quality === 'high' ? 5 : 3.2) * b.dens(5));
     for (let i = 0; i < tuftN; i++) {
       const a = b.rand() * Math.PI * 2;
       const d = Math.sqrt(b.rIn * b.rIn + b.rand() * (b.R * b.R - b.rIn * b.rIn));
       const x = Math.cos(a) * d;
       const z = Math.sin(a) * d;
-      if (d > b.R - 0.25 || b.waters.some((w) => Math.hypot(w.x - x, w.z - z) < w.r + 0.25)) continue;
+      if (d > b.R - 0.25 || b.waters.some((w) => Math.hypot(w.x - x, w.z - z) < w.r + 0.25) || b.isWater(x, z, 0.1)) continue;
       const c = dry && b.rand() < 0.65 ? new THREE.Color().setHSL(0.12 + b.rand() * 0.03, 0.5, 0.55 + b.rand() * 0.1) : new THREE.Color().setHSL(0.24 + b.rand() * 0.06, 0.5, 0.34 + b.rand() * 0.14);
       b.tufts.push({ x, z, s: 0.7 + b.rand() * 1.0, c });
     }
@@ -696,7 +757,7 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     for (let d = CORE_R + 2.2; d < edgeR - 0.6; d += 1.8) pts.push(new THREE.Vector3(Math.cos(a + Math.sin(d) * 0.06) * d, 0, Math.sin(a + Math.sin(d) * 0.06) * d));
     pts.push(new THREE.Vector3(Math.cos(a) * (edgeR + 0.05), 0, Math.sin(a) * (edgeR + 0.05)));
     b.rand = mulberry32(seedBase + 5);
-    b.ribbon(pts, 0.34, true);
+    b.ribbon(pts, 0.5, true);
     b.falls.push({ x: Math.cos(a) * (edgeR + 0.08), z: Math.sin(a) * (edgeR + 0.08), a, top: -0.02, h: 5.5 });
   }
 
@@ -706,6 +767,15 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     const g = merge(b.solids, true);
     disposables.push(g);
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
+    m.receiveShadow = true;
+    m.castShadow = quality === 'high';
+    group.add(m);
+  }
+  if (b.props.length) {
+    const g = merge(b.props, true);
+    disposables.push(g);
+    const m = asProp(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 })), true);
+    m.name = 'habitat-props';
     m.receiveShadow = true;
     m.castShadow = quality === 'high';
     group.add(m);
@@ -772,9 +842,12 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
   tuftGeo.translate(0, 0.08, 0);
   disposables.push(tuftGeo);
   const tufts = new THREE.InstancedMesh(tuftGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 }), Math.max(1, b.tufts.length));
+  asProp(tufts, false);
   const flowerGeo = new THREE.IcosahedronGeometry(0.07, 0);
+  flowerGeo.translate(0, 0.1 / 0.7, 0);
   disposables.push(flowerGeo);
   const flowers = new THREE.InstancedMesh(flowerGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.7 }), Math.max(1, b.flowers.length));
+  asProp(flowers, false);
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
@@ -786,7 +859,7 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
   });
   tufts.count = b.tufts.length;
   b.flowers.forEach((f, i) => {
-    m4.compose(new THREE.Vector3(f.x, b.groundY(f.x, f.z) + 0.1, f.z), q.identity(), new THREE.Vector3(f.s, f.s * 0.7, f.s));
+    m4.compose(new THREE.Vector3(f.x, b.groundY(f.x, f.z), f.z), q.identity(), new THREE.Vector3(f.s, f.s * 0.7, f.s));
     flowers.setMatrixAt(i, m4);
     flowers.setColorAt(i, f.c);
   });
@@ -872,11 +945,9 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       break;
     }
     case 'pond': {
-      const s = b.spot(1.5, 'back') ?? b.spot(1.3, 'side') ?? b.spot(1.2, 'any') ?? b.spot(0.9, 'view', false, undefined, undefined, 80) ?? b.spot(0.7, 'any', false, undefined, undefined, 80);
-      if (s) {
-        b.claim(s, 0.4);
-        b.pool(s.x, s.z, s.r, s.r * 0.7, b.rand() * 3, true);
-      }
+      // v10: bigger ponds, stretched along the ring so they fit narrow bands and read from the overview.
+      const s = b.spot(2.1, 'view') ?? b.spot(1.7, 'side') ?? b.spot(1.3, 'any') ?? b.spot(1.0, 'view', false, undefined, undefined, 80) ?? b.spot(0.75, 'any', false, undefined, undefined, 80) ?? b.spot(0.6, 'any', false, undefined, undefined, 80);
+      if (s) b.longPool(s, 2.4, 0.95, true);
       break;
     }
     case 'lotus': {
@@ -901,11 +972,9 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       break;
     }
     case 'lake': {
-      const s = b.spot(2.4 * scale, 'back', false, undefined, undefined, 60) ?? b.spot(2.0 * scale, 'side', false, undefined, undefined, 60) ?? b.spot(1.8 * scale, 'any');
-      if (s) {
-        b.claim(s, 0.5);
-        b.pool(s.x, s.z, s.r * 1.2, s.r * 0.85, Math.atan2(s.z, s.x), true, '#b3a57e');
-      }
+      // v10: a real lake — as big as the land allows, long axis along the ring, in view.
+      const s = b.spot(3.2 * scale, 'view', false, undefined, undefined, 80) ?? b.spot(2.6 * scale, 'side', false, undefined, undefined, 80) ?? b.spot(2.1 * scale, 'any', false, undefined, undefined, 80) ?? b.spot(1.6 * scale, 'any', false, undefined, undefined, 80) ?? b.spot(1.2, 'any', false, undefined, undefined, 80);
+      if (s) b.longPool(s, 2.2, 1.1, true, '#b3a57e');
       break;
     }
     case 'river': {
@@ -917,7 +986,7 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
         const dd = d + Math.sin(i * 1.3) * 0.5;
         pts.push(new THREE.Vector3(Math.cos(a) * dd, 0, Math.sin(a) * dd));
       }
-      b.ribbon(pts, 0.7, true, '#cdb888');
+      b.ribbon(pts, 1.15, true, '#cdb888');
       break;
     }
     case 'creek': {
@@ -928,17 +997,17 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
         const a = a0 + i * 0.12 + Math.sin(i * 1.7) * 0.1;
         pts.push(new THREE.Vector3(Math.cos(a) * d, 0, Math.sin(a) * d));
       }
-      b.ribbon(pts, 0.22, true, '#a8a08c');
+      b.ribbon(pts, 0.42, true, '#a8a08c');
       const last = pts[pts.length - 1]!;
-      b.pool(last.x, last.z, 0.55, 0.45, 0, true);
+      b.pool(last.x, last.z, 1.05, 0.8, Math.atan2(last.z, last.x), true);
       break;
     }
     case 'wetland': {
       for (let i = 0; i < 6; i++) {
-        const s = b.spot(0.5 + b.rand() * 0.5, i < 3 ? 'side' : 'any');
+        const s = b.spot(0.8 + b.rand() * 0.6, i < 3 ? 'side' : 'any') ?? b.spot(0.6, 'any');
         if (!s) continue;
         b.claim(s, 0.2);
-        b.pool(s.x, s.z, s.r, s.r * 0.7, b.rand() * 3, false, '#8f8a5a');
+        b.pool(s.x, s.z, s.r * 1.3, s.r * 0.8, b.rand() * 3, false, '#8f8a5a');
         b.reeds(s.x + s.r, s.z, 6);
       }
       break;
@@ -956,7 +1025,7 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       for (let tries = 0; tries < 12; tries++) {
         const a0 = CAM_ANGLE + 0.75 + b.rand() * 1.1 + (tries > 6 ? Math.PI : 0);
         const shore = shoreRadius(R, a0);
-        const d0 = Math.max(CORE_R + 1.1, shore - 3.2);
+        const d0 = Math.max(CORE_R + 1.1, shore - 4.2);
         const pts: THREE.Vector3[] = [];
         for (let i = 0; i <= 5; i++) {
           const t = i / 5;
@@ -966,7 +1035,7 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
         }
         const mid = pts[2]!;
         if (b.keep.some((k) => Math.hypot(k.x - mid.x, k.z - mid.z) < k.r + 0.8)) continue;
-        b.ribbon(pts, 0.36, false, '#cdbb8a', 2.4);
+        b.ribbon(pts, 0.6, false, '#cdbb8a', 3.0);
         b.falls.push({ x: Math.cos(a0) * (shore + 0.1), z: Math.sin(a0) * (shore + 0.1), a: a0, top: -0.03, h: 4.5 });
         b.reeds(pts[1]!.x, pts[1]!.z, 5);
         break;
@@ -1105,33 +1174,37 @@ function habitatHillColour(form: TreeForm): string {
   }
 }
 
-/** Scatter features: density per band area. */
+/** Scatter features: density per band area (× more, smaller props when props are drawn at animal scale). */
 function scatter(b: Builder, f: Feature, area: number): void {
-  const count = (per: number) => Math.round(area * per);
+  const pk = b.pk;
+  const count = (per: number, cap = 5) => Math.round(area * per * b.dens(cap));
   switch (f) {
     case 'rocks':
-      for (let i = 0; i < count(0.12); i++) {
-        const s = b.spot(0.25 + b.rand() * 0.25);
-        if (s) b.rock(s.x, s.z, s.r, '#9b958c', false);
+      for (let i = 0, n = count(0.12); i < n; i++) {
+        const d = 0.25 + b.rand() * 0.25;
+        const s = b.spot(d * pk);
+        if (s) b.rock(s.x, s.z, d, '#9b958c', false);
       }
       break;
     case 'boulders':
-      for (let i = 0; i < count(0.03) + 1; i++) {
-        const s = b.spot(0.7 + b.rand() * 0.6, b.rand() < 0.6 ? 'back' : 'side');
+      for (let i = 0, n = count(0.03, 4) + 1; i < n; i++) {
+        const d = 0.7 + b.rand() * 0.6;
+        const s = b.spot(d * pk, b.rand() < 0.6 ? 'back' : 'side');
         if (!s) continue;
         b.claim(s);
-        b.rock(s.x, s.z, s.r, '#8f8a82', b.form === 'drooping' || b.form === 'cone');
-        b.rock(s.x + s.r * 0.9, s.z - s.r * 0.4, s.r * 0.5, '#9b958c');
+        b.rock(s.x, s.z, d, '#8f8a82', b.form === 'drooping' || b.form === 'cone');
+        b.rock(s.x + s.r * 0.9, s.z - s.r * 0.4, d * 0.5, '#9b958c');
       }
       break;
     case 'scree':
-      for (let i = 0; i < count(0.25); i++) {
-        const s = b.spot(0.15 + b.rand() * 0.15, 'back');
-        if (s) b.rock(s.x, s.z, s.r, '#a39e96');
+      for (let i = 0, n = count(0.25, 3); i < n; i++) {
+        const d = 0.15 + b.rand() * 0.15;
+        const s = b.spot(d * pk, 'back');
+        if (s) b.rock(s.x, s.z, d, '#a39e96');
       }
       break;
     case 'snow':
-      for (let i = 0; i < count(0.05); i++) {
+      for (let i = 0; i < Math.round(area * 0.05); i++) {
         const s = b.spot(0.6 + b.rand() * 0.8, 'back');
         if (!s) continue;
         const g = new THREE.CircleGeometry(s.r, 7);
@@ -1141,63 +1214,67 @@ function scatter(b: Builder, f: Feature, area: number): void {
       }
       break;
     case 'shrubs':
-      for (let i = 0; i < count(0.1); i++) {
-        const s = b.spot(0.3 + b.rand() * 0.35);
+      for (let i = 0, n = count(0.1); i < n; i++) {
+        const d = 0.3 + b.rand() * 0.35;
+        const s = b.spot(d * pk);
         if (!s) continue;
-        b.claim(s, -0.1);
-        b.bush(s.x, s.z, s.r, b.form === 'tiered' ? '#7a8a4a' : '#4f8a3a');
+        b.claim(s, -0.1 * pk);
+        b.bush(s.x, s.z, d, b.form === 'tiered' ? '#7a8a4a' : '#4f8a3a');
       }
       break;
     case 'flowers': {
       const palette = b.form === 'fan' ? ['#f7b7c8', '#ffffff', '#f3d35b'] : b.form === 'banyan' ? ['#f06a8a', '#ffd35b', '#ffffff'] : ['#ffffff', '#f3d35b', '#c9b3f0', '#f7b7c8'];
-      for (let i = 0; i < count(1.2); i++) {
+      for (let i = 0, n = count(1.2, 5); i < n; i++) {
         const a = b.rand() * Math.PI * 2;
         const d = b.rIn + 0.3 + b.rand() * (b.R - b.rIn - 0.6);
         const x = Math.cos(a) * d;
         const z = Math.sin(a) * d;
-        if (!b.free(x, z, 0.05) || b.waters.some((w) => Math.hypot(w.x - x, w.z - z) < w.r + 0.2)) continue;
+        if (!b.free(x, z, 0.05) || b.waters.some((w) => Math.hypot(w.x - x, w.z - z) < w.r + 0.2) || b.isWater(x, z, 0.1)) continue;
         b.flowers.push({ x, z, s: 0.7 + b.rand() * 0.8, c: col(palette[Math.floor(b.rand() * palette.length)]!) });
       }
       break;
     }
     case 'drygrass':
-      for (let i = 0; i < count(0.06); i++) {
-        const s = b.spot(0.35 + b.rand() * 0.2);
-        if (s) b.bush(s.x, s.z, s.r * 0.8, '#c2a95a');
+      for (let i = 0, n = count(0.06); i < n; i++) {
+        const d = 0.35 + b.rand() * 0.2;
+        const s = b.spot(d * pk);
+        if (s) b.bush(s.x, s.z, d * 0.8, '#c2a95a');
       }
       break;
     case 'ferns':
-      for (let i = 0; i < count(0.18); i++) {
-        const s = b.spot(0.35 + b.rand() * 0.25);
-        if (s) b.fern(s.x, s.z, s.r * 1.6, b.form === 'column' ? '#3f7f36' : '#4f8f3e');
+      for (let i = 0, n = count(0.18, 3); i < n; i++) {
+        const d = 0.35 + b.rand() * 0.25;
+        const s = b.spot(d * pk);
+        if (s) b.fern(s.x, s.z, d * 1.6, b.form === 'column' ? '#3f7f36' : '#4f8f3e');
       }
       break;
     case 'treeferns':
-      for (let i = 0; i < count(0.03) + 1; i++) {
-        const s = b.spot(0.6, b.rand() < 0.5 ? 'side' : 'back');
+      for (let i = 0, n = count(0.03, 3) + 1; i < n; i++) {
+        const s = b.spot(0.6 * pk, b.rand() < 0.5 ? 'side' : 'back');
         if (!s) continue;
         b.claim(s);
         b.treeFern(s.x, s.z, 1.3 + b.rand() * 0.8);
       }
       break;
     case 'forest':
-      for (let i = 0; i < count(0.06) + 2; i++) {
-        const s = b.spot(0.6 + b.rand() * 0.3, b.rand() < 0.65 ? 'back' : 'side');
+      for (let i = 0, n = count(0.06, 3) + 2; i < n; i++) {
+        const d = 0.6 + b.rand() * 0.3;
+        const s = b.spot(d * pk, b.rand() < 0.65 ? 'back' : 'side');
         if (!s) continue;
-        b.claim(s, 0.05);
-        const d = Math.hypot(s.x, s.z);
-        b.miniTree(s.x, s.z, (1.6 + b.rand() * 1.2) * (0.8 + (d - 7) * 0.06) * (b.form === 'column' || b.form === 'narrowCone' || b.form === 'cone' ? 1.5 : 1));
+        b.claim(s, 0.05 * pk);
+        const dist = Math.hypot(s.x, s.z);
+        b.miniTree(s.x, s.z, (1.6 + b.rand() * 1.2) * (0.8 + (dist - 7) * 0.06 * pk) * (b.form === 'column' || b.form === 'narrowCone' || b.form === 'cone' ? 1.5 : 1));
       }
       break;
     case 'reeds': {
-      const near = b.waters.slice(0, 10);
-      for (let i = 0; i < Math.max(3, count(0.04)); i++) {
+      const near = b.waters.slice(0, 14);
+      for (let i = 0, n = Math.max(3, count(0.04, 3)); i < n; i++) {
         const w = near[i % Math.max(1, near.length)];
         if (w) {
           const a = b.rand() * 6.28;
           b.reeds(w.x + Math.cos(a) * (w.r + 0.2), w.z + Math.sin(a) * (w.r + 0.2), 7);
         } else {
-          const s = b.spot(0.4);
+          const s = b.spot(0.4 * pk);
           if (s) b.reeds(s.x, s.z, 7);
         }
       }
