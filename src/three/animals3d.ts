@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
 import { allowedAt, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
 import { clamp } from '../util';
-import { fenceRadius, flightCeiling } from '../scale';
+import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius } from '../scale';
 import { ISLAND_R } from './island3d';
 import type { TreeBuild } from './tree3d';
 import { ellipsoid } from './util3d';
@@ -914,12 +914,14 @@ function foldWings(obj: THREE.Object3D, fold: number): void {
 const FLYERS = new Set(['perch', 'flock', 'soar', 'hover', 'flutter', 'bat']);
 const GROUND = new Set(['walk', 'hop', 'wade']);
 /** Hard safety limit regardless of stage (developer spawns included). */
-const MAX_MEMBERS = 48;
+const MAX_MEMBERS = 72;
 
 type Act = 'none' | 'graze' | 'sniff' | 'sit' | 'look' | 'lie' | 'climb' | 'groom' | 'peck' | 'strike' | 'preen' | 'rest';
 
 interface Member {
   lastPerched?: boolean;
+  /** Individual size variation (±3 %). */
+  jit?: number;
   obj: THREE.Object3D;
   rig: Rig;
   pos: THREE.Vector3;
@@ -993,9 +995,14 @@ function faceYaw(dir: THREE.Vector3): number {
   return Math.atan2(-dir.z, dir.x);
 }
 
-/** Island landscape scale (see scale.ts); the garden dome grows with it. */
+/** Island landscape scale (see scale.ts): the whole v6 scene is scaled by GK so the tree top reads G metres. */
 let GK = 1;
+/** Ground height (metres) supplied by the scene (garden dome / habitat land); falls back to the garden dome. */
+let GROUND_FN: ((x: number, z: number) => number) | null = null;
+/** Walkable test (metres) supplied by the scene: false on water, hills, cliffs. */
+let WALK_FN: ((x: number, z: number) => boolean) | null = null;
 function groundY(x: number, z: number): number {
+  if (GROUND_FN) return GROUND_FN(x, z) + 0.004 * GK;
   const r = Math.hypot(x, z) / GK;
   if (r > ISLAND_R) return -0.02 * GK;
   return GK * (0.02 + 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2));
@@ -1046,6 +1053,8 @@ export class Animals3D {
   private weak = false;
   private stage = 0;
   private islandR = ISLAND_R;
+  /** Current animal exaggeration factor (one for all species). */
+  private af = 1;
   private nextRotate = 8;
   private nextArrival = 3;
   private time = 0;
@@ -1058,10 +1067,60 @@ export class Animals3D {
     this.root.add(this.fly.points);
   }
 
-  /** Radius of the (growing) island, so walkers can roam a little further on bigger islands. */
+  /** Radius of the (growing) island in island units, and the scene scale K (metres per island unit). */
   setIslandRadius(r: number, k = 1): void {
     this.islandR = r;
     GK = k;
+  }
+
+  /** Ground height and walkability (both in metres), from the rendered island. */
+  setGround(ground: (x: number, z: number) => number, walkable: (x: number, z: number) => boolean): void {
+    GROUND_FN = ground;
+    WALK_FN = walkable;
+  }
+
+  /** The one exaggeration factor applied to every animal right now (see scale.ts). */
+  factor(): number {
+    return this.af;
+  }
+
+  /** Drawn body length (m) of a visible member of each species on screen — for size checks. */
+  drawnSizes(): { id: string; realLen: number; drawnLen: number; ratio: number }[] {
+    const out: { id: string; realLen: number; drawnLen: number; ratio: number }[] = [];
+    for (const c of this.visibleCrews()) {
+      const m = c.members[0];
+      if (!m) continue;
+      const box = new THREE.Box3().setFromObject(template(c.def.id)!);
+      const size = box.getSize(new THREE.Vector3());
+      const wing = (c.def.look.kind === 'butterfly' || c.def.motion === 'bat') && c.def.real.span;
+      const drawn = (wing ? size.z : size.x) * m.scale;
+      const real = wing ? c.def.real.span! : c.def.real.len;
+      out.push({ id: c.def.id, realLen: real, drawnLen: drawn, ratio: drawn / real });
+    }
+    return out;
+  }
+
+  /** Where every walker is (metres) and whether that spot is inside the fence and dry — for checks. */
+  walkerSpots(): { id: string; x: number; z: number; r: number; limit: number; wet: boolean; why: string }[] {
+    const out: { id: string; x: number; z: number; r: number; limit: number; wet: boolean; why: string }[] = [];
+    const limit = (minShoreRadius(this.islandR) - FENCE_INSET_UNITS) * GK;
+    for (const c of this.crews) {
+      if (!GROUND.has(c.def.motion) || c.leaving || c.def.motion === 'wade') continue;
+      for (const m of c.members) {
+        if (m.climb) continue;
+        const wet = WALK_FN ? !WALK_FN(m.pos.x, m.pos.z) : false;
+        out.push({
+          id: c.def.id,
+          x: m.pos.x,
+          z: m.pos.z,
+          r: Math.hypot(m.pos.x, m.pos.z),
+          limit,
+          wet,
+          why: wet ? `L${WALK_FN!(c.leader.x, c.leader.z) ? 'dry' : 'wet'} T${WALK_FN!(c.leaderTarget.x, c.leaderTarget.z) ? 'dry' : 'wet'} p${c.pause.toFixed(1)} e${c.enter.toFixed(2)} ${c.phase} L${c.leader.x.toFixed(1)},${c.leader.z.toFixed(1)} T${c.leaderTarget.x.toFixed(1)},${c.leaderTarget.z.toFixed(1)}` : '',
+        });
+      }
+    }
+    return out;
   }
 
   /** Animal nearest to a tap ray (within `tolAt(distance)` metres of it). */
@@ -1075,7 +1134,7 @@ export class Animals3D {
         if (!member.obj.visible) continue;
         const d = v.subVectors(member.pos, ray.origin).dot(ray.direction);
         if (d <= 0) continue;
-        const k = ray.distanceToPoint(member.pos) / Math.max(crew.def.real.len * 0.7, tolAt(d));
+        const k = ray.distanceToPoint(member.pos) / Math.max(this.dlen(crew.def) * 0.7, tolAt(d));
         if (k < bestK) {
           bestK = k;
           best = { crew, member };
@@ -1089,7 +1148,7 @@ export class Animals3D {
   focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number } | null {
     const h = ref as { crew: Crew; member: Member } | null;
     if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
-    return { pos: h.member.pos, size: h.crew.def.real.len, yaw: h.member.yaw };
+    return { pos: h.member.pos, size: this.dlen(h.crew.def), yaw: h.member.yaw };
   }
 
   flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {
@@ -1099,7 +1158,7 @@ export class Animals3D {
     const out: { id: string; y: number; ceiling: number; perched: boolean }[] = [];
     for (const c of this.crews) {
       if (!AIRBORNE.has(c.def.motion)) continue;
-      for (const m of c.members) out.push({ id: c.def.id, y: m.pos.y - base, ceiling: flightCeiling(tree.height), perched: m.lastPerched ?? false });
+      for (const m of c.members) out.push({ id: c.def.id, y: m.pos.y - base, ceiling: flightCeiling(tree.height), perched: m.lastPerched ?? false, len: this.dlen(c.def) } as { id: string; y: number; ceiling: number; perched: boolean });
     }
     return out;
   }
@@ -1121,7 +1180,10 @@ export class Animals3D {
     const newStage = clamp(Math.round(opts.stage ?? this.stage), 0, 4);
     const stageChanged = newStage !== this.stage;
     this.stage = newStage;
-    if (treeChanged) this.reseat();
+    const af = animalFactor(opts.tree.height);
+    const afChanged = Math.abs(af - this.af) > 1e-6;
+    this.af = af;
+    if (treeChanged || afChanged) this.reseat();
     // Residents always present; drop crews that no longer fit (night/day, locked, weak tree, too big for the stage).
     for (const c of this.crews) {
       if (c.forced) continue;
@@ -1210,7 +1272,7 @@ export class Animals3D {
     const c = this.crews.find((x) => x.def.id === id && !x.leaving) ?? this.crews.find((x) => x.def.id === id);
     const m = c?.members[c.members.length > 1 ? 1 : 0];
     if (!c || !m) return null;
-    return { pos: m.pos, size: c.def.look.kind === 'butterfly' ? (c.def.real.span ?? c.def.real.len) : c.def.real.len, yaw: m.yaw };
+    return { pos: m.pos, size: (c.def.look.kind === 'butterfly' ? (c.def.real.span ?? c.def.real.len) : c.def.real.len) * this.af, yaw: m.yaw };
   }
 
   caps(): EcoCaps {
@@ -1335,23 +1397,37 @@ export class Animals3D {
     return g;
   }
 
-  /** Real-life size in metres (1 unit = 1 m): the model is scaled to the species' real length / wingspan. */
+  /**
+   * Drawn size: the species' real length / wingspan × the one shared factor `animalFactor(tree height)`. No
+   * per-species fudge, so relative sizes between animals are always true.
+   */
   private scaleFor(def: AnimalDef): number {
-    return realScale(def);
+    return realScale(def) * this.af;
   }
 
-  /** How far walkers roam: grows with the island, always inside the fence. */
+  /** Drawn body length (metres). */
+  private dlen(def: AnimalDef): number {
+    return def.real.len * this.af;
+  }
+
+  /** How far walkers roam (metres): v6 range scaled with the island, always inside the fence (entry at ×1.08). */
   private roam(): number {
-    const want = (ISLAND_R * 0.76 + Math.max(0, this.islandR / GK - ISLAND_R) * 0.3) * GK;
-    return Math.min(want, (fenceRadius(this.islandR) - 0.6) / 1.08);
+    const want = (ISLAND_R * 0.76 + Math.max(0, this.islandR - ISLAND_R) * 0.3) * GK;
+    const fence = (minShoreRadius(this.islandR) - FENCE_INSET_UNITS - 0.3) * GK;
+    return Math.min(want, fence / 1.08);
   }
 
   private entryPoint(def: AnimalDef): THREE.Vector3 {
     const tree = this.tree!;
     const a = this.rng() * Math.PI * 2;
     if (GROUND.has(def.motion)) {
-      const r = this.roam() * 1.08;
-      const ang = 0.2 + this.rng() * 2.6;
+      // Walk in from the fence line at a dry spot (not out of a pond or through a hill).
+      let r = this.roam() * 1.08;
+      let ang = 0.2 + this.rng() * 2.6;
+      for (let tries = 0; tries < 40 && WALK_FN && !WALK_FN(Math.cos(ang) * r, Math.sin(ang) * r); tries++) {
+        ang = this.rng() * Math.PI * 2;
+        r = this.roam() * (0.6 + this.rng() * 0.48);
+      }
       return new THREE.Vector3(Math.cos(ang) * r, groundY(Math.cos(ang) * r, Math.sin(ang) * r), Math.sin(ang) * r);
     }
     if (FLYERS.has(def.motion) && def.category === 'bird') {
@@ -1368,17 +1444,47 @@ export class Animals3D {
     const outer = this.roam();
     const wade = def.motion === 'wade';
     const ang = wade ? 0.3 + this.rng() * 0.9 : -0.3 + this.rng() * 3.8;
-    const r = wade ? Math.min(outer, ISLAND_R * 0.76 * GK) * (0.75 + this.rng() * 0.2) : inner + this.rng() * (outer - inner);
-    const x = Math.cos(ang) * r;
-    const z = Math.sin(ang) * r;
+    let r = wade ? Math.min(outer, ISLAND_R * 0.76 * GK) * (0.75 + this.rng() * 0.2) : inner + this.rng() * (outer - inner);
+    let x = Math.cos(ang) * r;
+    let z = Math.sin(ang) * r;
+    // Walkers do not walk onto water (or into hills): re-pick a dry spot whose straight path from here is dry too.
+    if (!wade && WALK_FN) {
+      const from = this.pathFrom;
+      for (let tries = 0; tries < 24 && !this.dryPath(from, x, z); tries++) {
+        const a2 = -0.3 + this.rng() * 3.8;
+        r = inner + this.rng() * (outer - inner);
+        x = Math.cos(a2) * r;
+        z = Math.sin(a2) * r;
+      }
+    }
     return new THREE.Vector3(x, groundY(x, z), z);
+  }
+
+  /** Start of the next walk (set before choosing a ground target), for the dry-path test. */
+  private pathFrom: THREE.Vector3 | null = null;
+
+  /** Is the target dry, and the straight line to it from `from` dry as well? */
+  private dryPath(from: THREE.Vector3 | null, x: number, z: number): boolean {
+    if (!WALK_FN) return true;
+    if (!WALK_FN(x, z)) return false;
+    // Starting on wet ground (entry, or the island rescaled under it): any dry target will do, to walk out.
+    if (!from || !WALK_FN(from.x, from.z)) return true;
+    // Sample every ~0.25 island units so narrow creeks are not stepped over.
+    const n = Math.min(200, Math.max(12, Math.ceil(Math.hypot(x - from.x, z - from.z) / (0.25 * GK))));
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (!WALK_FN(from.x + (x - from.x) * t, from.z + (z - from.z) * t)) return false;
+    }
+    return true;
   }
 
   /** Give perchers perches, climbers trunk spots; re-run after the tree rebuilds. */
   private assignSeats(crew: Crew): void {
     const tree = this.tree!;
     for (const m of crew.members) {
-      m.scale = this.scaleFor(crew.def) * (0.9 + this.rng() * 0.2);
+      // Tiny individual variation (±3 %) only — never enough to swap two species' order.
+      m.jit ??= 0.97 + this.rng() * 0.06;
+      m.scale = this.scaleFor(crew.def) * m.jit;
       m.obj.scale.setScalar(m.scale);
       m.climb = null;
       if (crew.def.motion === 'perch' || crew.def.motion === 'flock' || (crew.def.motion === 'crawl' && crew.def.spot === 'leaf')) {
@@ -1491,11 +1597,11 @@ export class Animals3D {
     const k = (rate: number) => 1 - Math.exp(-dt * rate);
     const H = Math.max(0.05, tree.height);
     const R = Math.max(0.2, tree.canopyRadius);
-    // Flight ceiling: never above the tree top, never above 80 m (metres above the tree base).
+    // Flight ceiling: tree height + 5 m above the tree base (no fixed cap).
     const baseY = tree.group.getWorldPosition(tmp3).y;
     const ceiling = baseY + flightCeiling(tree.height);
-    const len = def.real.len;
-    const tooLow = flightCeiling(tree.height) < len * 3;
+    const len = this.dlen(def);
+    const SK = GK;
     const leaveDone = () => {
       c.gone = true;
     };
@@ -1514,13 +1620,19 @@ export class Animals3D {
     // Ground leader wanders, sometimes breaking into a run.
     if (GROUND.has(def.motion)) {
       if (c.leaving) c.leaderTarget.copy(this.entryPoint(def));
+      this.pathFrom = c.leader;
+      // Standing in water (the island rescaled under it) or heading for a spot that turned wet: walk out now.
+      if (def.motion !== 'wade' && !c.leaving && WALK_FN && !WALK_FN(c.leaderTarget.x, c.leaderTarget.z)) {
+        c.leaderTarget.copy(this.groundTarget(def));
+        c.pause = 0;
+      }
       tmp.subVectors(c.leaderTarget, c.leader).setY(0);
       const dist = tmp.length();
       const big = (def.look.size ?? 1) > 1.8;
       // Walking speed in m/s, scaled by body length (a toad is slower than a buffalo).
       let speed = (def.motion === 'wade' ? 0.35 : def.motion === 'hop' ? 0.7 : big ? 0.9 : 0.75) * clamp(len / 0.8, 0.2, 1.6);
       if (c.run || c.leaving) speed *= AGILE.has(def.id) ? 2.6 : 1.6;
-      if (dist < 0.15) {
+      if (dist < 0.15 * Math.max(0.3, SK)) {
         if (c.leaving) leaveDone();
         c.pause -= dt;
         if (c.pause <= 0) {
@@ -1531,7 +1643,15 @@ export class Animals3D {
       } else if (c.pause > 0 && !c.leaving) {
         c.pause -= dt;
       } else {
-        c.leader.addScaledVector(tmp.normalize(), Math.min(dist, speed * dt));
+        const nx = c.leader.x + (tmp.x / dist) * Math.min(dist, speed * dt);
+        const nz = c.leader.z + (tmp.z / dist) * Math.min(dist, speed * dt);
+        // Never step onto water (waders excepted): stop and pick another spot.
+        if (def.motion !== 'wade' && !c.leaving && WALK_FN && !WALK_FN(nx, nz) && WALK_FN(c.leader.x, c.leader.z)) {
+          c.leaderTarget.copy(this.groundTarget(def));
+        } else {
+          c.leader.x = nx;
+          c.leader.z = nz;
+        }
         c.leader.y = groundY(c.leader.x, c.leader.z);
       }
     }
@@ -1544,16 +1664,14 @@ export class Animals3D {
       switch (def.motion) {
         case 'perch':
         case 'flock': {
-          const air = !tooLow && (c.leaving || (def.motion === 'flock' ? c.phase === 'air' : Math.sin(ph * 0.12 + i) > 0.93));
-          if (c.leaving && tooLow) {
-            leaveDone();
-          } else if (c.leaving) {
-            m.target.set(Math.cos(m.phase) * (R + 14), H + 6, Math.sin(m.phase) * (R + 14));
-            if (m.pos.distanceTo(m.target) < 1.5) leaveDone();
+          const air = (c.leaving || (def.motion === 'flock' ? c.phase === 'air' : Math.sin(ph * 0.12 + i) > 0.93));
+          if (c.leaving) {
+            m.target.set(Math.cos(m.phase) * (R + 14 * SK), H + 3.5, Math.sin(m.phase) * (R + 14 * SK));
+            if (m.pos.distanceTo(m.target) < 1.5 * SK) leaveDone();
           } else if (air) {
             const a = t * (def.motion === 'flock' ? 0.45 : 0.9) + (def.motion === 'flock' ? 0 : m.phase);
-            const rr = R + 1.2 + (def.motion === 'flock' ? 1.5 : 0.5);
-            c.leader.set(Math.cos(a) * rr, H * 0.8 + 0.6 + Math.sin(t * 0.7) * 0.5, Math.sin(a) * rr);
+            const rr = R + (1.2 + (def.motion === 'flock' ? 1.5 : 0.5)) * SK;
+            c.leader.set(Math.cos(a) * rr, H * 0.8 + (0.6 + Math.sin(t * 0.7) * 0.5) * SK, Math.sin(a) * rr);
             m.target.copy(c.leader).add(tmp2.copy(m.offset).multiplyScalar(def.motion === 'flock' ? m.scale * 3 : 0));
           } else {
             this.perchWorld(m.perch, m.target);
@@ -1566,12 +1684,13 @@ export class Animals3D {
         }
         case 'soar': {
           if (c.leaving) {
-            m.target.set(Math.cos(m.phase) * 40, H + 14, Math.sin(m.phase) * 40);
-            if (m.pos.distanceTo(m.target) < 3) leaveDone();
+            m.target.set(Math.cos(m.phase) * 40 * SK, H + 3.5, Math.sin(m.phase) * 40 * SK);
+            if (m.pos.distanceTo(m.target) < 3 * SK) leaveDone();
           } else {
+            // Raptors circle just over the crown, up to the ceiling (tree + 5 m).
             const a = t * 0.16 + m.phase;
-            const rr = Math.max(5, R + 3.5) + i * 1.2;
-            m.target.set(Math.cos(a) * rr, Math.min(H * 0.9, H - 1.5) + Math.sin(t * 0.3 + i) * 0.8, Math.sin(a) * rr);
+            const rr = Math.max(5 * SK, R + 3.5 * SK) + i * 1.2 * SK;
+            m.target.set(Math.cos(a) * rr, H + Math.min(2.5 * SK, 3.2) + Math.sin(t * 0.3 + i) * Math.min(0.8 * SK, 1.2), Math.sin(a) * rr);
           }
           m.pos.lerp(m.target, k(1.4));
           flap = 1;
@@ -1583,8 +1702,8 @@ export class Animals3D {
           const bfly = def.look.kind === 'butterfly';
           if (c.leaving) {
             m.rest = null;
-            m.target.set(Math.cos(m.phase) * (R + 8), H * 0.7 + 3, Math.sin(m.phase) * (R + 8));
-            if (m.pos.distanceTo(m.target) < 1) leaveDone();
+            m.target.set(Math.cos(m.phase) * (R + 8 * SK), H * 0.7 + 3 * SK, Math.sin(m.phase) * (R + 8 * SK));
+            if (m.pos.distanceTo(m.target) < Math.max(0.4, SK)) leaveDone();
           } else if (def.motion === 'hover') {
             m.timer -= dt;
             if (m.timer <= 0) {
@@ -1605,8 +1724,8 @@ export class Animals3D {
             const speed = def.motion === 'bat' ? 0.9 : 0.35;
             const a = t * speed * m.speed + m.phase * 2;
             const low = bfly && i % 2 === 1;
-            const rr = (low ? R * 0.6 + 1.2 : R + 0.4) + Math.sin(ph * 0.7) * 0.4;
-            const y = low ? 0.5 + Math.sin(ph * 1.3) * 0.3 : H * (def.motion === 'bat' ? 0.75 : 0.5) + Math.sin(ph * 1.1) * H * 0.12;
+            const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(ph * 0.7) * 0.4 * SK;
+            const y = low ? (0.5 + Math.sin(ph * 1.3) * 0.3) * SK : H * (def.motion === 'bat' ? 0.75 : 0.5) + Math.sin(ph * 1.1) * H * 0.12;
             m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr);
             if (bfly) {
               m.timer -= dt;
@@ -1636,6 +1755,13 @@ export class Animals3D {
           }
           tmp.copy(m.offset).applyAxisAngle(UP, c.members[0]!.yaw);
           m.target.copy(c.leader).add(i === 0 ? tmp.set(0, 0, 0) : tmp.multiplyScalar(m.scale));
+          // Followers keep off water too: pull the formation slot in toward the leader until it is dry.
+          if (i > 0 && def.motion !== 'wade' && WALK_FN && !WALK_FN(m.target.x, m.target.z)) {
+            for (const f of [0.6, 0.3, 0]) {
+              m.target.copy(c.leader).addScaledVector(tmp, f);
+              if (WALK_FN(m.target.x, m.target.z)) break;
+            }
+          }
           m.target.y = groundY(m.target.x, m.target.z);
           m.pos.lerp(m.target, k(i === 0 ? 30 : 2.5));
           if (def.motion === 'hop') {

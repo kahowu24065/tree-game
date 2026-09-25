@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../util';
 import { ellipsoid, jitterGeometry, mat, merge, paint } from './util3d';
-import { FENCE_HEIGHT_M, fenceRadius } from '../scale';
+import { FENCE_INSET_UNITS, shoreRadius } from '../scale';
 
 export const ISLAND_R = 7;
 
@@ -10,12 +10,33 @@ export interface Island {
   water: THREE.Texture;
   dirt: THREE.Mesh;
   update(t: number, wind: number): void;
+  /** Grass top of the garden (for ground raycasts: fence posts, edge checks). */
+  grass: THREE.Mesh;
   /** Hide the garden's own underside and edge waterfall when the habitat land surrounds it. */
   setExtended(on: boolean): void;
 }
 
 function islandRadius(angle: number): number {
-  return ISLAND_R * (1 + 0.035 * Math.sin(angle * 3 + 0.6) + 0.025 * Math.sin(angle * 7 + 1.9));
+  return shoreRadius(ISLAND_R, angle);
+}
+
+/** Pull any vertex that pokes out past the shoreline back inside it (so nothing below the grass shows beyond the rim). */
+export function clampInsideShore(g: THREE.BufferGeometry, R: number, share: number, exactTopY?: number): void {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 1e-4) continue;
+    const a = Math.atan2(z, x);
+    const lim = shoreRadius(R, a);
+    const top = exactTopY !== undefined && Math.abs(pos.getY(i) - exactTopY) < 1e-3;
+    const want = top ? lim : Math.min(r, lim * share);
+    pos.setX(i, (x / r) * want);
+    pos.setZ(i, (z / r) * want);
+  }
+  pos.needsUpdate = true;
+  g.computeVertexNormals();
 }
 
 function waterTexture(): THREE.CanvasTexture {
@@ -46,7 +67,8 @@ export const STREAM_POINTS = [
   new THREE.Vector3(4.75, 0.03, 5.05),
 ];
 
-function onStream(x: number, z: number, pad: number): boolean {
+/** Is (x, z) (island units) on the garden stream, within `pad` of its centre line? */
+export function onStream(x: number, z: number, pad: number): boolean {
   for (let i = 0; i < STREAM_POINTS.length - 1; i++) {
     const a = STREAM_POINTS[i]!;
     const b = STREAM_POINTS[i + 1]!;
@@ -87,14 +109,16 @@ export function buildIsland(): Island {
   group.add(grass);
 
   // Earth rim and rocky underside: the floating island body.
-  const rim = new THREE.CylinderGeometry(ISLAND_R * 1.0, ISLAND_R * 0.9, 0.9, 30, 2);
+  const rim = new THREE.CylinderGeometry(ISLAND_R * 1.0, ISLAND_R * 0.9, 0.9, 40, 2);
   jitterGeometry(rim, 0.35, 3, false);
+  clampInsideShore(rim, ISLAND_R, 0.985);
   const rimMesh = new THREE.Mesh(rim, mat('#8a6446'));
   rimMesh.position.y = -0.9;
   group.add(rimMesh);
   const under = new THREE.ConeGeometry(ISLAND_R * 0.92, ISLAND_R * 1.35, 16, 4);
   under.rotateX(Math.PI);
   jitterGeometry(under, 0.9, 7, false);
+  clampInsideShore(under, ISLAND_R, 0.93);
   paint(under, (y) => new THREE.Color().lerpColors(new THREE.Color('#6d6a66'), new THREE.Color('#8f7155'), THREE.MathUtils.clamp((y + 6) / 6, 0, 1)));
   const underMesh = new THREE.Mesh(under, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }));
   underMesh.position.y = -1.35 - (ISLAND_R * 1.35) / 2;
@@ -289,6 +313,7 @@ export function buildIsland(): Island {
     group,
     water,
     dirt,
+    grass,
     setExtended(on: boolean) {
       rimMesh.visible = !on;
       underMesh.visible = !on;
@@ -304,15 +329,12 @@ export function buildIsland(): Island {
   };
 }
 
-/** Wobble of the island rim (fraction of the radius) at an angle — shared by the garden and the fence. */
-export function rimWobble(angle: number): number {
-  return 1 + 0.035 * Math.sin(angle * 3 + 0.6) + 0.025 * Math.sin(angle * 7 + 1.9);
-}
-
 export interface Fence {
   group: THREE.Group;
-  /** Radius (metres) the fence was built for. */
-  radius: number;
+  /** Build key (stage radius + height) — rebuilt when either changes. */
+  key: string;
+  /** Post positions in island units (x, z, the shoreline radius at that angle, and the post radius). */
+  posts: { x: number; z: number; shore: number; r: number; a: number }[];
   dispose(): void;
 }
 
@@ -320,69 +342,83 @@ export interface Fence {
 export const GATE_ANGLE = 1.25;
 
 /**
- * Garden fence on the rim of the current island, drawn 1:1 in metres (posts 1.1 m, a post every ~2 m) with a gate
- * (two taller posts and an open gap) facing the camera. `islandR` is the island radius in metres; `groundAt` gives the
- * ground height there.
+ * Garden fence that follows the rendered shoreline of the current island exactly: each post stands
+ * FENCE_INSET_UNITS inside `shoreRadius(R, angle)` (the same function that shapes the garden rim and the habitat
+ * land), on the ground height found under it. Built in island units; the scene scales it with the island.
+ * Posts are skipped where the shoreline runs through water (stream mouths, inlets) or into a hill / cliff, and rails
+ * only join neighbouring posts that both exist. `hUnits` = fence height in island units.
  */
-export function buildFence(islandR: number, groundAt: (x: number, z: number) => number): Fence {
-  const rand = mulberry32(4242 + Math.round(islandR * 10));
+export function buildFence(opts: { R: number; hUnits: number; groundAt: (x: number, z: number) => number; skip: (x: number, z: number) => boolean; key: string }): Fence {
+  const { R, hUnits: h, groundAt, skip } = opts;
+  const rand = mulberry32(4242 + Math.round(R * 10));
   const group = new THREE.Group();
   group.name = 'fence';
-  const r0 = fenceRadius(islandR);
-  const h = FENCE_HEIGHT_M;
-  const postGeo = new THREE.BoxGeometry(0.12, h, 0.12);
-  postGeo.translate(0, h / 2, 0);
-  const railGeo = new THREE.BoxGeometry(1, 0.08, 0.05);
-  const gateGap = Math.min(0.5, 1.6 / r0); // ~1.6 m opening
-  const circumference = Math.PI * 2 * r0;
-  const steps = Math.max(24, Math.round(circumference / 2));
+  const w = Math.min(0.12, Math.max(0.07, h * 0.16));
+  const postGeo = new THREE.BoxGeometry(w, 1, w);
+  postGeo.translate(0, 0.5, 0);
+  const railGeo = new THREE.BoxGeometry(1, Math.max(0.035, h * 0.08), Math.max(0.03, w * 0.45));
+  const gateGap = 1.25 / R; // ~1.25 island units opening
+  const spacing = 1.05;
+  const steps = Math.max(24, Math.round((Math.PI * 2 * R) / spacing));
   const posts: THREE.Matrix4[] = [];
   const rails: THREE.Matrix4[] = [];
+  const info: Fence['posts'] = [];
   let prev: THREE.Vector3 | null = null;
   let first: THREE.Vector3 | null = null;
+  let last: THREE.Vector3 | null = null;
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   for (let i = 0; i <= steps; i++) {
     const a = GATE_ANGLE + gateGap / 2 + ((Math.PI * 2 - gateGap) * i) / steps;
-    const r = r0 * rimWobble(a) - 0.1;
+    const shore = shoreRadius(R, a);
+    const r = shore - FENCE_INSET_UNITS;
     const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+    if (skip(p.x, p.z)) {
+      prev = null;
+      continue;
+    }
     p.y = groundAt(p.x, p.z);
     const gate = i === 0 || i === steps;
-    q.setFromEuler(e.set(0, -a, (rand() - 0.5) * 0.06));
-    posts.push(new THREE.Matrix4().compose(p.clone().setY(p.y - 0.05), q, new THREE.Vector3(gate ? 1.4 : 1, gate ? 1.25 : 0.92 + rand() * 0.14, gate ? 1.4 : 1)));
+    const hh = h * (gate ? 1.25 : 0.94 + rand() * 0.1);
+    q.setFromEuler(e.set(0, -a, (rand() - 0.5) * 0.05));
+    const gs = gate ? 1.4 : 1;
+    posts.push(new THREE.Matrix4().compose(p.clone().setY(p.y - 0.04), q, new THREE.Vector3(gs, hh + 0.04, gs)));
+    info.push({ x: p.x, z: p.z, shore, r, a });
     if (prev) {
       const mid = prev.clone().add(p).multiplyScalar(0.5);
       const len = prev.distanceTo(p);
       const ry = -Math.atan2(p.z - prev.z, p.x - prev.x);
       for (const y of [h * 0.38, h * 0.78]) rails.push(new THREE.Matrix4().compose(new THREE.Vector3(mid.x, mid.y + y, mid.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(len, 1, 1)));
     }
-    if (!first) first = p;
+    if (i === 0) first = p;
+    if (i === steps) last = p;
     prev = p;
   }
-  const postMesh = new THREE.InstancedMesh(postGeo, mat('#9b6b43'), posts.length);
+  const postMesh = new THREE.InstancedMesh(postGeo, mat('#9b6b43'), Math.max(1, posts.length));
   posts.forEach((m, i) => postMesh.setMatrixAt(i, m));
+  postMesh.count = posts.length;
   postMesh.castShadow = true;
-  const railMesh = new THREE.InstancedMesh(railGeo, mat('#b0815a'), rails.length);
+  const railMesh = new THREE.InstancedMesh(railGeo, mat('#b0815a'), Math.max(1, rails.length));
   rails.forEach((m, i) => railMesh.setMatrixAt(i, m));
+  railMesh.count = rails.length;
   railMesh.castShadow = true;
   group.add(postMesh, railMesh);
   // Gate lintel between the two gate posts.
-  if (first && prev) {
-    const mid = first.clone().add(prev).multiplyScalar(0.5);
-    const len = first.distanceTo(prev);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(len + 0.3, 0.1, 0.1), mat('#7d5535'));
-    lintel.position.set(mid.x, Math.max(first.y, prev.y) + h * 1.25, mid.z);
-    lintel.rotation.y = -Math.atan2(prev.z - first.z, prev.x - first.x);
+  if (first && last) {
+    const mid = first.clone().add(last).multiplyScalar(0.5);
+    const len = first.distanceTo(last);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(len + 0.2, Math.max(0.05, h * 0.1), Math.max(0.05, h * 0.1)), mat('#7d5535'));
+    lintel.position.set(mid.x, Math.max(first.y, last.y) + h * 1.25, mid.z);
+    lintel.rotation.y = -Math.atan2(last.z - first.z, last.x - first.x);
     lintel.castShadow = true;
     group.add(lintel);
   }
   return {
     group,
-    radius: islandR,
+    key: opts.key,
+    posts: info,
     dispose() {
-      postGeo.dispose();
-      railGeo.dispose();
-      group.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry !== postGeo && (o as THREE.Mesh).geometry.dispose());
+      group.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry.dispose());
     },
   };
 }

@@ -1,9 +1,28 @@
-import { defaultSpecies, speciesDef } from './data/species';
+import { defaultSpecies, speciesDef, speciesTargetCm } from './data/species';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
-import { seasonDef } from './rules';
+import { addLog } from './sim';
+import { formatHeight } from './util';
 
-const seasonTarget = (id: GameState['season']) => seasonDef(id ?? 's3').targetCm;
+/** Season targets before v8 (one per season), used to recognise saves made before per-species targets. */
+const V7_TARGET_CM = { s3: 2000, s6: 5000, s12: 10000 } as const;
+
+/**
+ * v8: each species has its own target (record height rounded to 10 m). Old saves keep their real height; only the
+ * goal moves. 已突破目標 is re-evaluated against the new target and a log line explains the change once.
+ */
+export function migrateTarget(data: GameState): void {
+  const t = speciesTargetCm(data.species);
+  const old = data.targetCm ?? V7_TARGET_CM[data.season ?? 's3'];
+  if (data.targetCm === t) return;
+  data.targetCm = t;
+  if (data.heightCm < t) data.passedTargetOn = null;
+  else data.passedTargetOn ??= data.log?.[0]?.date ?? data.createdOn;
+  if (old !== t && data.started !== false) {
+    const sp = speciesDef(data.species);
+    addLog(data, data.lastSeenDate ?? data.createdOn, `目標更新：${sp.name}嘅目標由 ${formatHeight(old)} 改為 ${formatHeight(t)}（真實最高紀錄 ${sp.maxM} 米，取最接近嘅 10 米）。高度照舊，冇上限。`, { kind: 'badge', title: '目標更新', reward: { text: formatHeight(t), tone: 'purple' }, time: '' });
+  }
+}
 
 /** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
 export const SAVE_KEY = 'sekai-tree-v2';
@@ -25,7 +44,8 @@ export function loadGame(): GameState | null {
       data.over = null;
     }
     data.completed ??= null;
-    data.passedTargetOn ??= data.heightCm >= seasonTarget(data.season) ? data.createdOn : null;
+    data.passedTargetOn ??= null;
+    migrateTarget(data);
     return data;
   } catch {
     return null;

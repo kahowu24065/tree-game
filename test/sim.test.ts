@@ -75,10 +75,11 @@ describe('夜間結算', () => {
     expect(settlement).toMatchObject({ event: 'typhoon8', wFactor: 5, nFactor: 5, baseDamage: 60, finalDamage: 30, hAfter: 50, rAfter: 0, hMult: 1 });
     expect(settlement.wAfter).toBe(60);
     expect(settlement.nAfter).toBe(60);
-    expect(settlement.baseGrowth).toBe(22.2);
+    // 樟樹目標 50 米 / 90 日 = 55.6 厘米一日。
+    expect(settlement.baseGrowth).toBe(55.6);
     expect(settlement.weatherBonus).toBe(0.6);
-    expect(settlement.deltaG).toBe(13.3);
-    expect(s.heightCm).toBeCloseTo(31.3, 5);
+    expect(settlement.deltaG).toBe(33.4);
+    expect(s.heightCm).toBeCloseTo(51.4, 5);
   });
 
   it('暴雨同颱風一齊：唔疊加，暴雨嘅 +60 水分都唔計', () => {

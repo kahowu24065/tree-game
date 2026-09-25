@@ -2,7 +2,7 @@ import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_OPTIMAL, WEATHER_EVEN
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
-import { SPECIES, STAGE_NAMES, speciesDef, speciesForSeason, stageSampleCm, type SpeciesId } from './data/species';
+import { SPECIES, STAGE_NAMES, speciesDef, speciesTargetCm, speciesForSeason, stageSampleCm, type SpeciesId } from './data/species';
 import type { SeasonId } from './balance';
 import { daysBetween, formatShort, weekdayIndex } from './dates';
 import { drawAnimal } from './draw-animals';
@@ -99,7 +99,7 @@ export function renderChrome(view: View): void {
   const status = document.getElementById('status-card');
   if (status) {
     const season = seasonDef(state.season);
-    const stage = stageFor(state.heightCm, season.targetCm);
+    const stage = stageFor(state.heightCm, speciesTargetCm(state.species));
     const drains = actionLimit(state, 'drain');
     status.innerHTML = `
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
@@ -523,11 +523,11 @@ function speciesAlbum(view: View): string {
     const stages = sp.stages.map((txt, i) => `<li><b>${STAGE_NAMES[i]}</b>${esc(txt)}</li>`).join('');
     return `<article class="card species-card ${mine ? 'mine' : ''}">
       <div class="species-head">
-        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, season.targetCm)}"></span>
-        <div><p class="eyebrow">${esc(season.label)}・目標 ${season.targetCm / 100} 米${mine ? '・你棵樹' : ''}</p>
+        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, sp.targetM * 100)}"></span>
+        <div><p class="eyebrow">${esc(season.label)}・目標 ${sp.targetM} 米${mine ? '・你棵樹' : ''}</p>
         <h2>${esc(sp.name)}</h2>
         <p class="sci">${esc(sp.english)} · <i>${esc(sp.scientific)}</i></p>
-        <p class="fine">一般 ${esc(sp.typicalM)} 米・最高紀錄 ${sp.maxM} 米</p></div>
+        <p class="fine">一般 ${esc(sp.typicalM)} 米・最高紀錄 ${sp.maxM} 米（目標取最接近嘅 10 米）</p></div>
       </div>
       <p>${esc(sp.blurb)}</p>
       <p class="fine">${esc(sp.record)}。資料：<a href="${esc(sp.source.url)}" target="_blank" rel="noopener">${esc(sp.source.label)}</a></p>
@@ -535,7 +535,7 @@ function speciesAlbum(view: View): string {
       ${habitatBlock(sp.id)}
     </article>`;
   }).join('');
-  return `<p class="status">九個樹種，每個賽季三款，真實成樹高度對應賽季目標。</p>${cards}`;
+  return `<p class="status">九個樹種，每個賽季三款。每個樹種嘅目標＝佢嘅真實最高紀錄，四捨五入到最接近嘅 10 米。</p>${cards}`;
 }
 
 /** 原生地：the island scenery that grows with each stage for this species. */
@@ -554,8 +554,9 @@ function seasonTab(view: View): string {
   const dayN = dayNumber(state, view.today);
   const day = Math.min(season.days, dayN);
   const extra = dayN > season.days ? dayN - season.days : 0;
-  const pct = Math.min(100, (state.heightCm / season.targetCm) * 100);
-  const beyond = state.heightCm >= season.targetCm;
+  const targetCm = speciesTargetCm(state.species);
+  const pct = Math.min(100, (state.heightCm / targetCm) * 100);
+  const beyond = state.heightCm >= targetCm;
   const meters = state.heightCm / 100;
   const next = MILESTONES.find((m) => meters < m.meters);
   const badges = ([1, 2, 3] as const)
@@ -572,7 +573,7 @@ function seasonTab(view: View): string {
     <article class="card">
       <p class="eyebrow">${esc(season.label)}</p>
       <h2>${extra ? `賽季完成・加時第 ${extra} 日` : `第 ${day} / ${season.days} 日`} · ${esc(formatHeight(state.heightCm))}</h2>
-      <p>${beyond ? `已突破目標（${season.targetCm / 100} 米，達成 ${Math.round((state.heightCm / season.targetCm) * 100)}%）。目標只係里程碑，冇高度上限。` : `目標 ${season.targetCm / 100} 米（只係目標，唔係上限）。`}每日基本生長 ${(season.targetCm / season.days).toFixed(1)} 厘米 × 健康係數 × 天氣加成${extra ? '，賽季完咗都照樣計' : ''}。</p>
+      <p>${beyond ? `已突破目標（${targetCm / 100} 米，達成 ${Math.round((state.heightCm / targetCm) * 100)}%）。目標只係里程碑，冇高度上限。` : `目標 ${targetCm / 100} 米＝${esc(speciesDef(state.species).name)}真實紀錄 ${speciesDef(state.species).maxM} 米取整（只係目標，唔係上限）。`}每日基本生長 ${(targetCm / season.days).toFixed(1)} 厘米 × 健康係數 × 天氣加成${extra ? '，賽季完咗都照樣計' : ''}。</p>
       <div class="track fat"><div class="fill food" style="width:${pct.toFixed(1)}%"></div></div>
       <p class="fine">碳吸收量約 ${carbonKg(state.heightCm)} 公斤 CO₂／年。將軍樹 ${SHERMAN_M} 米（而家 ${esc(percentOf(meters, SHERMAN_M))}%），海波龍 ${HYPERION_M} 米。${next ? `下一個里程：${esc(next.title)}（${next.meters} 米）。` : ''}</p>
     </article>
@@ -697,15 +698,15 @@ export function startModal(current: string, meta: MetaState, rename: boolean, pi
   const sel: Pick = pick ?? { season: 's3', species: speciesForSeason('s3')[0]!.id };
   const legacy = meta.pendingLegacy && meta.landmark ? `<p class="legacy">${esc(meta.landmark.name)}留低嘅養分地標會令新樹開局養分 +40。</p>` : '';
   const seasons = SEASONS.map(
-    (s) => `<button type="button" class="season ${s.id === sel.season ? 'on' : ''}" data-pick-season="${s.id}" aria-pressed="${s.id === sel.season}"><b>${esc(s.label)}</b><span>目標 ${s.targetCm / 100} 米</span><small>${s.days} 日</small></button>`,
+    (s) => `<button type="button" class="season ${s.id === sel.season ? 'on' : ''}" data-pick-season="${s.id}" aria-pressed="${s.id === sel.season}"><b>${esc(s.label)}</b><span>目標 ${speciesForSeason(s.id).map((x) => x.targetM).sort((a, b) => a - b).filter((v, i, a) => a.indexOf(v) === i).join('／')} 米</span><small>${s.days} 日</small></button>`,
   ).join('');
   const season = SEASONS.find((s) => s.id === sel.season)!;
   const cards = speciesForSeason(sel.season)
     .map(
       (sp) => `<button type="button" class="species ${sp.id === sel.species ? 'on' : ''}" data-species="${sp.id}" aria-pressed="${sp.id === sel.species}">
-        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, season.targetCm)}"></span>
+        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, sp.targetM * 100)}"></span>
         <b>${esc(sp.name)}</b><i>${esc(sp.scientific.split('（')[0]!)}</i>
-        <small>真實 ${esc(sp.typicalM)} 米・紀錄 ${sp.maxM} 米</small>
+        <small>紀錄 ${sp.maxM} 米・目標 ${sp.targetM} 米</small>
       </button>`,
     )
     .join('');
@@ -716,7 +717,7 @@ export function startModal(current: string, meta: MetaState, rename: boolean, pi
     <p>每日生存壓力一樣，分別只係時間長短、目標高度同徽章。天氣跟住現實；水分、養分保持喺最佳範圍，惡劣天氣前加固。</p>
     ${legacy}
     <div class="seasons pick">${seasons}</div>
-    <p class="fine">${esc(season.sub)}・每日約 ${(season.targetCm / season.days).toFixed(0)} 厘米</p>
+    <p class="fine">${esc(season.sub)}・${esc(chosen.name)}目標 ${chosen.targetM} 米・每日約 ${((chosen.targetM * 100) / season.days).toFixed(0)} 厘米</p>
     <div class="species-pick">${cards}</div>
     <p class="species-blurb"><b>${esc(chosen.name)}</b>：${esc(chosen.blurb)}</p>
     <label>樹的名字<input id="tree-name" maxlength="12" value="${esc(current)}" autocomplete="off" /></label>
@@ -741,7 +742,8 @@ export function completeModal(state: GameState, meta: MetaState, lines: string[]
   const done = state.completed!;
   const season = seasonDef(state.season);
   const got = lines.length ? `<ul class="badges">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
-  const beyond = state.heightCm > season.targetCm ? `已經突破 ${esc(formatHeight(season.targetCm))} 嘅目標！` : `目標係 ${esc(formatHeight(season.targetCm))}。`;
+  const tCm = speciesTargetCm(state.species);
+  const beyond = state.heightCm > tCm ? `已經突破 ${esc(formatHeight(tCm))} 嘅目標！` : `目標係 ${esc(formatHeight(tCm))}。`;
   return `
     <p class="eyebrow">賽季結算</p>
     <h2>${esc(season.label)}完成！</h2>
@@ -833,7 +835,7 @@ function niceCeilCm(cm: number): number {
  * scale that extends past the target (no cap), with a 目標 tick; beyond the target it reads 已突破目標.
  */
 export function railHtml(state: GameState): string {
-  const target = seasonDef(state.season).targetCm;
+  const target = speciesTargetCm(state.species);
   const stages = stagesFor(target);
   const stage = stageFor(state.heightCm, target);
   const next = stages[stage.index + 1];

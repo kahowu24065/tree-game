@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
-import { albumFigure, Animals3D, type EcoInfo, type EcoCaps } from './animals3d';
+import { albumFigure, Animals3D, realScale, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, type Habitat } from './habitat3d';
-import { buildFence, buildIsland, ISLAND_R, type Fence, type Island } from './island3d';
-import { islandScaleFor } from '../scale';
+import { buildFence, buildIsland, ISLAND_R, onStream, type Fence, type Island } from './island3d';
+import { animalFactor, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
@@ -343,6 +343,26 @@ export class Scene3D {
     return this.animals.caps();
   }
 
+  /** Size audit: drawn vs real length of every species on screen, and the shared factor — for checks. */
+  animalSizes(): { factor: number; sizes: { id: string; realLen: number; drawnLen: number; ratio: number }[] } {
+    return { factor: this.animals.factor(), sizes: this.animals.drawnSizes() };
+  }
+
+  /** Walkers: distance from centre vs the fence limit, and whether they stand on water — for checks. */
+  walkerSpots(): { id: string; r: number; limit: number; wet: boolean }[] {
+    return this.animals.walkerSpots();
+  }
+
+  /** Aim the overview camera at an island point (island angle, radius share) and zoom — for close-up checks. */
+  lookAtRim(angle: number, share: number, zoom: number, az?: number): void {
+    const K = this.islandK;
+    const R = shoreRadius(this.habitat?.radius ?? ISLAND_R, angle) * share * K;
+    const p = new THREE.Vector3(Math.cos(angle) * R, 0.1 * K, Math.sin(angle) * R);
+    this.zoomGoal = zoom;
+    this.panGoal.copy(p.sub(new THREE.Vector3(0, this.camTargetY, 0)));
+    if (az !== undefined) this.dragAz = az;
+  }
+
   animalInfo(): EcoInfo[] {
     return this.animals.info();
   }
@@ -461,6 +481,7 @@ export class Scene3D {
   private obstacle(from: THREE.Vector3, az: number, el: number, dist: number, skip: number): number {
     const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
     this.raycaster.set(from, dir);
+    this.raycaster.camera = this.camera; // sprites (labels, sparkles) need it
     this.raycaster.near = skip;
     this.raycaster.far = dist;
     const objs: THREE.Object3D[] = [this.island.group];
@@ -641,27 +662,101 @@ export class Scene3D {
     }
   }
 
-  /** Rebuild the fence when the island's rim has moved by more than ~1.5 %. */
-  private ensureFence(radiusM: number): void {
-    if (this.fence && Math.abs(this.fence.radius - radiusM) / radiusM < 0.015) return;
-    if (this.fence) {
-      this.scene.remove(this.fence.group);
-      this.fence.dispose();
-    }
+  /** Ground height (island units) under (x, z), read from the rendered garden / habitat land meshes. */
+  private groundRay = new THREE.Raycaster();
+  private groundUnits(x: number, z: number): number {
     const K = this.islandK;
-    const hab = this.habitat;
-    const groundAt = (x: number, z: number) => {
-      const r = Math.hypot(x, z) / K;
-      if (r < ISLAND_R) return K * (0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2) - 0.02);
-      return K * (hab ? hab.groundAt(x / K, z / K) : -0.02);
-    };
-    this.fence = buildFence(radiusM, groundAt);
-    this.scene.add(this.fence.group);
+    const meshes: THREE.Object3D[] = [this.island.grass, ...(this.habitat?.ground ?? [])];
+    this.groundRay.set(new THREE.Vector3(x * K, 60 * K, z * K), new THREE.Vector3(0, -1, 0));
+    this.groundRay.far = 200 * K;
+    const hit = this.groundRay.intersectObjects(meshes, false)[0];
+    if (hit) return hit.point.y / K;
+    const r = Math.hypot(x, z);
+    return r < ISLAND_R ? 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2) : (this.habitat?.groundAt(x, z) ?? -0.02);
+  }
+
+  /** Analytic ground height (island units) matching the garden dome and the habitat land — cheap, for animals. */
+  private groundFast(x: number, z: number): number {
+    const r = Math.hypot(x, z);
+    if (r < shoreRadius(ISLAND_R, Math.atan2(z, x)) - 0.05) {
+      const dome = 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2);
+      return this.habitat && this.habitat.stage > 0 ? Math.max(dome, this.habitat.groundAt(x, z)) : dome;
+    }
+    return this.habitat?.groundAt(x, z) ?? -0.02;
+  }
+
+  /** Water / obstacle test in island units (garden stream, habitat ponds, streams, inlets, hills, cliffs). */
+  private wetOrBlocked(x: number, z: number, pad: number): boolean {
+    if (Math.hypot(x, z) < ISLAND_R + 0.4 && onStream(x, z, 0.46 + pad)) return true;
+    return Boolean(this.habitat && (this.habitat.isWater(x, z, pad) || this.habitat.isBlocked(x, z)));
+  }
+
+  /** (Re)build the fence on the current island's rendered shoreline; the fence group scales with the island. */
+  private ensureFence(treeM: number): void {
+    const R = this.habitat?.radius ?? ISLAND_R;
+    const hU = fenceHeightUnits(this.islandK, treeM);
+    const key = `${this.habitatKey}|${R}`;
+    const stale = !this.fence || !this.fence.key.startsWith(key + '|') || Math.abs(Number(this.fence.key.split('|').pop()) - hU) / hU > 0.04;
+    if (stale) {
+      if (this.fence) {
+        this.scene.remove(this.fence.group);
+        this.fence.dispose();
+      }
+      this.island.group.updateMatrixWorld(true);
+      this.habitat?.group.updateMatrixWorld(true);
+      this.fence = buildFence({
+        R,
+        hUnits: hU,
+        key: `${key}|${hU}`,
+        groundAt: (x, z) => this.groundUnits(x, z),
+        skip: (x, z) => this.wetOrBlocked(x, z, 0.02),
+      });
+      this.scene.add(this.fence.group);
+    }
+    this.fence!.group.scale.setScalar(this.islandK);
   }
 
   /** Fence radius in metres (for tests / dev panel). */
   fenceInfo(): { fenceRadius: number; islandRadius: number } {
-    return { fenceRadius: this.fence ? this.fence.radius - 0.35 : 0, islandRadius: (this.habitat?.radius ?? ISLAND_R) * this.islandK };
+    const K = this.islandK;
+    const posts = this.fence?.posts ?? [];
+    const mean = posts.length ? posts.reduce((n, p) => n + p.r, 0) / posts.length : 0;
+    return { fenceRadius: mean * K, islandRadius: (this.habitat?.radius ?? ISLAND_R) * K };
+  }
+
+  /**
+   * Check every fence post against the rendered island: march outward from the post along its angle, raycasting down
+   * onto the garden / habitat land meshes, until the land ends. Returns the gap (metres and island units) between each
+   * post and the real edge, plus how many posts are off the land.
+   */
+  fenceCheck(): { posts: number; offLand: number; maxGapUnits: number; meanGapUnits: number; maxGapM: number; K: number; stage: number; skipped: number } {
+    const K = this.islandK;
+    const posts = this.fence?.posts ?? [];
+    this.island.group.updateMatrixWorld(true);
+    this.habitat?.group.updateMatrixWorld(true);
+    const meshes: THREE.Object3D[] = [this.island.grass, ...(this.habitat?.ground ?? [])];
+    const onLand = (x: number, z: number) => {
+      this.groundRay.set(new THREE.Vector3(x * K, 60 * K, z * K), new THREE.Vector3(0, -1, 0));
+      this.groundRay.far = 200 * K;
+      return this.groundRay.intersectObjects(meshes, false).length > 0;
+    };
+    let off = 0;
+    let maxGap = 0;
+    let sum = 0;
+    for (const p of posts) {
+      if (!onLand(p.x, p.z)) {
+        off++;
+        continue;
+      }
+      let d = 0;
+      const step = 0.01;
+      while (d < 3 && onLand(p.x + Math.cos(p.a) * (d + step), p.z + Math.sin(p.a) * (d + step))) d += step;
+      maxGap = Math.max(maxGap, d);
+      sum += d;
+    }
+    const R = this.habitat?.radius ?? ISLAND_R;
+    const all = Math.max(24, Math.round((Math.PI * 2 * R) / 1.05)) + 1;
+    return { posts: posts.length, offLand: off, maxGapUnits: maxGap, meanGapUnits: posts.length ? sum / posts.length : 0, maxGapM: maxGap * K, K, stage: this.habitat?.stage ?? 0, skipped: all - posts.length };
   }
 
   private ensureHabitat(input: SceneInput): void {
@@ -674,9 +769,13 @@ export class Scene3D {
       this.habitat.dispose();
     }
     this.habitat = buildHabitat(input.species, stage, this.quality);
+    this.animals.setGround(
+      (x, z) => this.groundFast(x / this.islandK, z / this.islandK) * this.islandK,
+      (x, z) => !this.wetOrBlocked(x / this.islandK, z / this.islandK, 0.2),
+    );
     this.scene.add(this.habitat.group);
     this.island.setExtended(stage >= 1);
-    this.animals.setIslandRadius(this.habitat.radius * this.islandK, this.islandK);
+    this.animals.setIslandRadius(this.habitat.radius, this.islandK);
   }
 
   draw(input: SceneInput, timeMs: number): void {
@@ -767,7 +866,8 @@ export class Scene3D {
 
     // Island landscape scale and the fence on its current rim.
     const stageR = this.habitat?.radius ?? ISLAND_R;
-    const kGoal = islandScaleFor(stageR, tree.height);
+    // v8: the island is scaled exactly like the tree model, so tree : island keeps the v6 proportions.
+    const kGoal = islandScaleFor(tree.metricScale);
     this.islandK += (kGoal - this.islandK) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 2));
     if (Math.abs(this.islandK - kGoal) < 0.002) this.islandK = kGoal;
     const K = this.islandK;
@@ -776,10 +876,10 @@ export class Scene3D {
     this.pivot.position.y = 0.18 * K;
     this.landmark.scale.setScalar(K);
     this.landmark.position.set(2.8 * K, 0.05 * K, 2.2 * K);
-    this.animals.setIslandRadius(stageR * K, K);
-    this.ensureFence(stageR * K);
-    // Dirt patch around the trunk: a little wider than the (metric) trunk.
-    this.island.dirt.scale.setScalar(clamp(Math.max(0.22, tree.trunkRadius * 3.2) / 1.1 / K, 0.05, 1.5));
+    this.animals.setIslandRadius(stageR, K);
+    this.ensureFence(tree.height);
+    // Dirt patch around the trunk (v6 sizing, in island units).
+    this.island.dirt.scale.setScalar(clamp(0.3 + tree.localHeight * 0.09, 0.3, 1.5));
     this.island.update(t, wind);
     this.habitat?.update(t, wind);
     this.landmark.visible = Boolean(input.landmark);
@@ -810,13 +910,16 @@ export class Scene3D {
     this.cloudMat.color.copy(cloudTint);
     this.cloudMat.emissiveIntensity = 0.35 * day * (1 - over * 0.6);
     const visibleClouds = 8 + Math.round(over * 8);
+    // Clouds keep their v6 layout, scaled with the island (K).
+    const KC = this.islandK;
+    const cd = this.camDist / KC;
     this.clouds.forEach((c, i) => {
       c.a += c.speed * dt * (1 + wind * 0.02);
       c.mesh.visible = i < visibleClouds;
-      const scale = 1 + over * 0.6 + (this.camDist / 40) * (c.low ? 0 : 0.8);
-      c.mesh.scale.setScalar(scale);
-      const r = c.low ? Math.max(c.r, islandR + 3 + c.r * 0.3) : c.r + this.camDist * 0.35;
-      c.mesh.position.set(Math.cos(c.a) * r, c.y + (c.low ? 0 : over * 2), Math.sin(c.a) * r);
+      const scale = 1 + over * 0.6 + (cd / 40) * (c.low ? 0 : 0.8);
+      c.mesh.scale.setScalar(scale * KC);
+      const r = c.low ? Math.max(c.r, islandR / KC + 3 + c.r * 0.3) : c.r + cd * 0.35;
+      c.mesh.position.set(Math.cos(c.a) * r * KC, (c.y + (c.low ? 0 : over * 2)) * KC, Math.sin(c.a) * r * KC);
     });
     (this.stars.material as THREE.PointsMaterial).opacity = night * (1 - over * 0.9);
     this.stars.visible = night > 0.02;
@@ -824,8 +927,10 @@ export class Scene3D {
 
     // Camera: keep the whole tree framed at a 45-degree look-down, rising as it grows.
     const H = tree.height * tree.group.scale.y;
-    const W = Math.max(0.05, tree.canopyRadius * tree.group.scale.x);
-    const R = Math.max(0.3, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.03, 0.2, 0.3, 0.36, 0.38][islandStage]!);
+    // v6 framing, in metres: every v6 constant is multiplied by the scene scale K.
+    const KF = this.islandK;
+    const W = Math.max(1.0 * KF, tree.canopyRadius * tree.group.scale.x);
+    const R = Math.max(2.0 * KF, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.2, 0.28, 0.32, 0.36, 0.38][islandStage]!);
     const vHalf = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
     const portrait = this.camera.aspect < 0.8;
@@ -899,7 +1004,7 @@ export class Scene3D {
     this.sea.position.set(this.camera.position.x, -22 * this.islandK, this.camera.position.z);
     this.camera.updateProjectionMatrix();
     fog.near = Math.max(dist, this.camDist) * 1.15;
-    fog.far = Math.max(dist, this.camDist) * 2.6 + 40;
+    fog.far = Math.max(dist, this.camDist) * 2.6 + 40 * this.islandK;
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
@@ -1119,5 +1224,84 @@ export class Scene3D {
     const url = c.toDataURL('image/png');
     this.thumbs.set(key, url);
     return url;
+  }
+
+  /**
+   * Check render: the given species side by side at exactly the size the scene draws them next to a `treeM` tree
+   * (real length × the shared animalFactor), with a 1 m ruler. Returns a PNG data URL.
+   */
+  lineup(ids: string[], treeM: number, w = 1200, h = 420): string {
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#dfeef5');
+    scene.add(new THREE.HemisphereLight('#ffffff', '#b0a080', 1.5));
+    const d = new THREE.DirectionalLight('#fff1d6', 2.2);
+    d.position.set(-1, 3, 4);
+    scene.add(d);
+    const f = animalFactor(treeM);
+    let x = 0;
+    let top = 0;
+    const figs: THREE.Object3D[] = [];
+    for (const id of ids) {
+      const def = animalById(id);
+      const fig = albumFigure(id);
+      if (!def || !fig) continue;
+      fig.scale.setScalar(realScale(def) * f);
+      const kind = def.look.kind;
+      fig.rotation.set(kind === 'butterfly' || kind === 'dragonfly' || kind === 'bee' ? 1.2 : 0, kind === 'butterfly' ? 0 : -0.25, 0);
+      const box = new THREE.Box3().setFromObject(fig);
+      const size = box.getSize(new THREE.Vector3());
+      fig.position.set(x - box.min.x, -box.min.y, 0);
+      x += size.x + Math.max(0.25, size.x * 0.15);
+      top = Math.max(top, size.y);
+      scene.add(fig);
+      figs.push(fig);
+    }
+    const span = Math.max(1, x);
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(span + 1, 0.02, 1.5), new THREE.MeshStandardMaterial({ color: '#9cc27a' }));
+    ground.position.set(span / 2 - 0.3, -0.011, 0);
+    scene.add(ground);
+    // Ruler: 1 m bar with 10 cm ticks, in front of the animals.
+    const ruler = new THREE.Group();
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(1, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: '#222' }));
+    bar.position.set(0.5, 0, 0);
+    ruler.add(bar);
+    for (let i = 0; i <= 10; i++) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.008, i % 5 === 0 ? 0.08 : 0.04, 0.02), new THREE.MeshBasicMaterial({ color: '#222' }));
+      t.position.set(i / 10, 0.02, 0);
+      ruler.add(t);
+    }
+    ruler.position.set(0, 0.01, 0.6);
+    scene.add(ruler);
+    const aspect = w / h;
+    const viewW = Math.max(span + 0.6, (top + 0.4) * aspect);
+    const viewH = viewW / aspect;
+    const cam = new THREE.OrthographicCamera(-viewW / 2, viewW / 2, viewH / 2, -viewH / 2, -50, 50);
+    cam.position.set(span / 2 - 0.1, viewH / 2 - 0.15, 10);
+    cam.lookAt(span / 2 - 0.1, viewH / 2 - 0.15, 0);
+    const rt = new THREE.WebGLRenderTarget(w, h, { colorSpace: THREE.SRGBColorSpace, samples: 4 });
+    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(rt);
+    this.renderer.setClearColor(0xdfeef5, 1);
+    this.renderer.clear();
+    this.renderer.render(scene, cam);
+    const px = new Uint8Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+    this.renderer.setRenderTarget(prevTarget);
+    this.renderer.setClearColor(0x000000, 1);
+    rt.dispose();
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+    ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = '#222';
+    ctx.font = '22px sans-serif';
+    const pxPerM = w / viewW;
+    ctx.fillRect(12, 44, pxPerM, 5);
+    for (let i = 0; i <= 10; i++) ctx.fillRect(12 + (pxPerM * i) / 10 - 1, i % 5 === 0 ? 36 : 40, 2, i % 5 === 0 ? 13 : 9);
+    ctx.fillText(`黑尺 = 場景 1 米（全部動物同一放大系數 ×${f.toFixed(2)}，樹高 ${treeM} 米）`, 12, 26);
+    return c.toDataURL('image/png');
   }
 }

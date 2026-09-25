@@ -30,7 +30,7 @@ import {
   type WeatherEventId,
 } from './balance';
 import { ANIMALS, eventById, eventForDate, stageFor } from './content';
-import { defaultSpecies, speciesDef, type SpeciesId } from './data/species';
+import { defaultSpecies, speciesDef, speciesTargetCm, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
 import { dayEvent, mildEvent } from './events';
 import {
@@ -113,9 +113,11 @@ export function createGame(today: string, opts: { season?: SeasonId; name?: stri
     over: null,
     completed: null,
     passedTargetOn: null,
+    targetCm: 0,
     lastSettlement: null,
     legacyBonus,
   };
+  state.targetCm = speciesTargetCm(state.species);
   addLog(state, today, legacyBonus ? `一棵幼苗喺上一棵樹留低嘅養分地標旁邊種低，一開始就有 +${legacyBonus} 養分。` : '一棵幼苗種低咗，由今日開始慢慢陪佢大。', {
     kind: 'plant',
     title: '種低幼苗',
@@ -225,7 +227,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const mult = hMult(state.health);
   const survived = def.damage > 0 && dmg <= def.damage * STORM_SURVIVE_SHARE;
   const bonus = Math.round(def.growth * (survived ? STORM_SURVIVE_GROWTH : 1) * (state.eventBonus || 1) * 100) / 100;
-  const base = r1(baseDailyGrowth(season));
+  const target = speciesTargetCm(state.species);
+  const base = r1(baseDailyGrowth(season, target));
   const dG = deltaG(base, mult, bonus);
   const beforeCm = state.heightCm;
   state.heightCm = Math.max(5, r1(state.heightCm + dG));
@@ -363,9 +366,9 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   noteStage(state, beforeCm, date);
 
   // The season target is a goal, not a cap: growth carries on by the same formula after it.
-  if (!state.over && !state.passedTargetOn && state.heightCm >= season.targetCm) {
+  if (!state.over && !state.passedTargetOn && state.heightCm >= speciesTargetCm(state.species)) {
     state.passedTargetOn = date;
-    addLog(state, date, `${state.treeName}突破咗 ${formatHeight(season.targetCm)} 嘅目標，繼續長高！`, { kind: 'badge', title: '已突破目標', reward: { text: formatHeight(state.heightCm), tone: 'purple' }, time: '' });
+    addLog(state, date, `${state.treeName}突破咗 ${formatHeight(speciesTargetCm(state.species))} 嘅目標，繼續長高！`, { kind: 'badge', title: '已突破目標', reward: { text: formatHeight(state.heightCm), tone: 'purple' }, time: '' });
   }
   let completed = false;
   if (!state.over && !state.completed) {
@@ -380,7 +383,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
 }
 
 function noteStage(state: GameState, beforeCm: number, date: string, time = ''): string | null {
-  const target = seasonDef(state.season).targetCm;
+  const target = speciesTargetCm(state.species);
   const before = stageFor(beforeCm, target);
   const after = stageFor(state.heightCm, target);
   if (before.id === after.id || state.heightCm < beforeCm) return null;

@@ -67,9 +67,9 @@ export function seasonDef(id: SeasonId): SeasonDef {
   return SEASONS.find((s) => s.id === id) ?? SEASONS[0]!;
 }
 
-/** 最終目標高度 / 週期總日數 (cm per day). */
-export function baseDailyGrowth(season: SeasonDef): number {
-  return season.targetCm / season.days;
+/** 最終目標高度 / 週期總日數 (cm per day). The target is the species' own (record height rounded to 10 m). */
+export function baseDailyGrowth(season: SeasonDef, targetCm: number): number {
+  return targetCm / season.days;
 }
 
 /** ΔG = base × H_mult × 天氣獎勵加成. Losses (H_mult < 0) ignore the weather bonus. */

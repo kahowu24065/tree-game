@@ -1,8 +1,8 @@
 import type { SeasonId } from '../balance';
 
 /**
- * 9 tree species, 3 per season. Each species' real mature height matches its season target
- * (3 個月 ≈ 20 米、6 個月 ≈ 50 米、1 年 ≈ 100 米). Heights checked 2026-09 against the sources listed.
+ * 9 tree species, 3 per season. v8: each species has its own season target = its real-world record height
+ * rounded to the nearest 10 m (see `targetM`). Records checked 2026-09 against the sources listed.
  */
 export type SpeciesId = 'camphor' | 'cotton' | 'banyan' | 'metasequoia' | 'ginkgo' | 'deodar' | 'redwood' | 'eucalyptus' | 'douglas';
 
@@ -17,8 +17,10 @@ export interface SpeciesDef {
   scientific: string;
   /** Usual mature height (m). */
   typicalM: string;
-  /** Tallest reliably recorded height (m). */
+  /** Tallest reliably recorded height (m) — the species' real-world record. */
   maxM: number;
+  /** Season target (m) = record height rounded to the nearest 10 m. */
+  targetM: number;
   /** Note on the record (where / which tree). */
   record: string;
   source: { label: string; url: string };
@@ -40,9 +42,10 @@ export const SPECIES: SpeciesDef[] = [
     english: 'Camphor tree',
     scientific: 'Camphora officinarum（Cinnamomum camphora）',
     typicalM: '20–30',
-    maxM: 30,
-    record: '《中國植物誌》：高可達 30 米',
-    source: { label: 'Wikipedia／Flora of China', url: 'https://en.wikipedia.org/wiki/Camphor_tree' },
+    maxM: 46.4,
+    targetM: 50,
+    record: '台灣南投神木村「樟樹公」2018 年攀樹拉尺實測 46.4 米，世界最高嘅樟樹',
+    source: { label: 'MonumentalTrees／Taiwan News', url: 'https://www.monumentaltrees.com/en/trees/cinnamomumcamphora/records/' },
     form: 'round',
     blurb: '香港郊野同公園常見，樹冠又闊又密，葉有樟腦香。',
     stages: ['兩片圓葉加一個嫩芽', '幼幹分出幾枝，樹冠細細個', '樹冠開始變圓，春天有紅銅色嫩葉', '闊大濃密嘅圓頂樹冠，開細白花', '粗壯灰褐樹幹、板根，樹冠比樹身仲闊'],
@@ -55,7 +58,8 @@ export const SPECIES: SpeciesDef[] = [
     scientific: 'Bombax ceiba',
     typicalM: '約 20',
     maxM: 60,
-    record: '一般約 20 米；濕熱地區老樹可達 60 米',
+    targetM: 60,
+    record: '一般約 20 米；濕熱地區老樹可達 60 米（有記載嘅最高高度）',
     source: { label: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Bombax_ceiba' },
     form: 'tiered',
     blurb: '「英雄樹」，樹幹筆直，枝條一層層平伸，春天未出葉先開大紅花。',
@@ -68,9 +72,10 @@ export const SPECIES: SpeciesDef[] = [
     english: 'Chinese banyan',
     scientific: 'Ficus microcarpa',
     typicalM: '20–25',
-    maxM: 25,
-    record: '香港原生，成年可達約 25 米',
-    source: { label: '綠化香港 Greening.gov.hk／香港動植物公園', url: 'https://www.greening.gov.hk/en/community-outreach/qrcode-tree-labels/index_id_4.html' },
+    maxM: 30,
+    targetM: 30,
+    record: '最高可達 30 米（新加坡國家公園局植物誌、Flora Malesiana）',
+    source: { label: 'NParks Flora & Fauna Web', url: 'https://www.nparks.gov.sg/florafaunaweb/flora/2/9/2912' },
     form: 'banyan',
     blurb: '香港村口、廟前最常見嘅大樹，枝上垂落氣根，落地變成支柱根。',
     stages: ['幾塊細細嘅深綠葉', '樹幹開始扭曲，枝條向外伸', '樹冠又闊又密，開始有氣根垂落', '一簾簾氣根，樹冠闊過樹高', '多條氣根落地成柱，好似一片細樹林，結滿細榕果'],
@@ -82,9 +87,10 @@ export const SPECIES: SpeciesDef[] = [
     english: 'Dawn redwood',
     scientific: 'Metasequoia glyptostroboides',
     typicalM: '30–45',
-    maxM: 50,
-    record: '湖北水杉壩谷有多棵約 50 米',
-    source: { label: 'Arnold Arboretum／conifers.org', url: 'https://conifers.org/cu/Metasequoia.php' },
+    maxM: 51,
+    targetM: 50,
+    record: '2000 年代全面普查湖北野生水杉，最高 51 米（栽培紀錄：美國長木花園 41.45 米）',
+    source: { label: 'Wikipedia／MonumentalTrees', url: 'https://en.wikipedia.org/wiki/Metasequoia_glyptostroboides' },
     form: 'narrowCone',
     blurb: '「活化石」，1940 年代先喺湖北重新發現。落葉針葉樹，樹形窄長如塔。',
     stages: ['一撮羽毛似嘅軟針葉', '幼幹筆直，細枝對生', '窄長圓錐形，葉色嫩綠', '高聳尖塔，樹幹紅褐有溝紋', '基部板根，葉轉銅紅色，好似秋天'],
@@ -97,8 +103,9 @@ export const SPECIES: SpeciesDef[] = [
     scientific: 'Ginkgo biloba',
     typicalM: '20–40',
     maxM: 60,
-    record: '甘肅大堡一棵高 60 米（conifers.org）',
-    source: { label: 'conifers.org／Journal of Ecology (2022)', url: 'https://www.conifers.org/~conifers/gi/Ginkgoaceae.php' },
+    targetM: 60,
+    record: '甘肅大堡一棵高 60 米（湖南張家界 70 米嘅報告未經證實）',
+    source: { label: 'conifers.org／Journal of Ecology (2022)', url: 'https://www.conifers.org/gi/Ginkgoaceae.php' },
     form: 'fan',
     blurb: '兩億幾年前已經存在嘅物種，扇形葉，秋天變金黃。',
     stages: ['兩三塊扇形小葉', '瘦長樹幹，枝條疏疏落落', '枝條 45 度向上，樹冠開始成形', '寬卵形樹冠，扇葉開始轉金', '滿樹金黃，樹下鋪滿落葉'],
@@ -111,7 +118,8 @@ export const SPECIES: SpeciesDef[] = [
     scientific: 'Cedrus deodara',
     typicalM: '40–50',
     maxM: 60,
-    record: '喜馬拉雅原生地 40–50 米，個別達 60 米',
+    targetM: 60,
+    record: '喜馬拉雅原生地一般 40–50 米，個別達 60 米',
     source: { label: 'Wikipedia／Trees and Shrubs Online', url: 'https://en.wikipedia.org/wiki/Cedrus_deodara' },
     form: 'drooping',
     blurb: '喜馬拉雅山嘅「神木」，一層層水平枝，枝尖下垂，樹頂微微彎低。',
@@ -125,8 +133,9 @@ export const SPECIES: SpeciesDef[] = [
     scientific: 'Sequoia sempervirens',
     typicalM: '60–100',
     maxM: 116.2,
-    record: '「海波龍」（Hyperion）116.22 米，世界最高嘅樹',
-    source: { label: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Sequoia_sempervirens' },
+    targetM: 120,
+    record: '「海波龍」（Hyperion）約 116.2 米，世界最高嘅樹',
+    source: { label: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Hyperion_(tree)' },
     form: 'column',
     blurb: '加州海岸霧林嘅巨人，樹皮厚而紅褐，可以活二千年。',
     stages: ['細細一撮扁平針葉', '筆直幼幹，樹皮開始泛紅', '窄長圓錐，樹冠延到地面', '粗大紅褐樹幹，下半段光禿，樹冠集中喺高處', '巨大有溝紋嘅紅幹、火燒疤痕，頂部分出幾條副幹'],
@@ -139,6 +148,7 @@ export const SPECIES: SpeciesDef[] = [
     scientific: 'Eucalyptus regnans',
     typicalM: '70–90',
     maxM: 100.5,
+    targetM: 100,
     record: '塔斯曼尼亞「百夫長」（Centurion）2018 年量得 100.5 米，最高嘅開花植物',
     source: { label: 'Giant Tree Expeditions／ABC News', url: 'https://giant-trees.com/project/how-tall-is-the-tallest-flowering-tree/' },
     form: 'eucalypt',
@@ -152,9 +162,10 @@ export const SPECIES: SpeciesDef[] = [
     english: 'Coast Douglas-fir',
     scientific: 'Pseudotsuga menziesii',
     typicalM: '60–75',
-    maxM: 99.8,
-    record: '俄勒岡「Doerner Fir」量得 99.3–99.8 米（2025 年山火後剩約 85 米）',
-    source: { label: 'Wikipedia／Monumental Trees', url: 'https://en.wikipedia.org/wiki/Doerner_Fir' },
+    maxM: 99.7,
+    targetM: 100,
+    record: '俄勒岡「Doerner Fir」量得約 99.7 米（2025 年山火後剩約 85 米）',
+    source: { label: 'Wikipedia／Jefferson Public Radio', url: 'https://en.wikipedia.org/wiki/Doerner_Fir' },
     form: 'cone',
     blurb: '北美太平洋岸嘅經典聖誕樹形，係世界第二高嘅針葉樹種。',
     stages: ['一圈細針葉', '細細嘅三角形小松', '濃密圓錐形，枝到地面', '高大深綠圓錐，掛滿有「鼠尾」苞片嘅球果', '下半段枝條自然脫落，粗厚深溝樹皮'],
@@ -171,6 +182,16 @@ export function speciesForSeason(season: SeasonId): SpeciesDef[] {
 
 export function defaultSpecies(season: SeasonId): SpeciesId {
   return speciesForSeason(season)[0]!.id;
+}
+
+/** Season target (cm) for a species: its record height rounded to the nearest 10 m. */
+export function speciesTargetCm(id: SpeciesId | string | undefined): number {
+  return speciesDef(id).targetM * 100;
+}
+
+/** Record height rounded to the nearest 10 m (how targetM is derived). */
+export function roundTo10(m: number): number {
+  return Math.round(m / 10) * 10;
 }
 
 /** Growth stage index 0–4 for a height, relative to the season target. */

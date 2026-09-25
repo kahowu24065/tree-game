@@ -15,12 +15,13 @@ export interface StageCap {
   flock: number;
 }
 
+/** v8: same number of species (groups) per stage as before, but bigger groups / more individuals in total. */
 export const STAGE_CAPS: StageCap[] = [
-  { groups: 1, members: 3, maxSize: 0, flock: 0.5 },
-  { groups: 2, members: 6, maxSize: 1, flock: 0.7 },
-  { groups: 3, members: 12, maxSize: 1, flock: 1 },
-  { groups: 5, members: 22, maxSize: 2, flock: 1.2 },
-  { groups: 7, members: 36, maxSize: 3, flock: 1.5 },
+  { groups: 1, members: 5, maxSize: 0, flock: 0.8 },
+  { groups: 2, members: 10, maxSize: 1, flock: 1.1 },
+  { groups: 3, members: 20, maxSize: 1, flock: 1.5 },
+  { groups: 5, members: 36, maxSize: 2, flock: 1.9 },
+  { groups: 7, members: 56, maxSize: 3, flock: 2.3 },
 ];
 
 export const SIZE_LABEL = ['細小', '小型', '中型', '大型'] as const;

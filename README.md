@@ -26,19 +26,19 @@
 
 ### 樹種（`src/data/species.ts`）
 
-| 賽季 | 樹種 | 學名 | 真實高度 | 來源 |
-|---|---|---|---|---|
-| 3 個月（20 米） | 樟樹 | *Camphora officinarum*（*Cinnamomum camphora*） | 20–30 米，最高約 30 米 | [Wikipedia](https://en.wikipedia.org/wiki/Camphor_tree)／《中國植物誌》 |
-| 3 個月 | 木棉 | *Bombax ceiba* | 一般約 20 米；濕熱地區老樹可達 60 米 | [Wikipedia](https://en.wikipedia.org/wiki/Bombax_ceiba) |
-| 3 個月 | 細葉榕 | *Ficus microcarpa* | 20–25 米 | 香港綠化網／漁護署 |
-| 6 個月（50 米） | 水杉 | *Metasequoia glyptostroboides* | 30–45 米，原生谷地約 50 米 | Arnold Arboretum／conifers.org |
-| 6 個月 | 銀杏 | *Ginkgo biloba* | 20–40 米；甘肅大堡老樹約 60 米 | conifers.org |
-| 6 個月 | 雪松 | *Cedrus deodara* | 40–50 米，個別 60 米 | Wikipedia／Trees and Shrubs Online |
-| 1 年（100 米） | 北美紅杉 | *Sequoia sempervirens* | 60–100 米；Hyperion 116.2 米 | [Wikipedia](https://en.wikipedia.org/wiki/Hyperion_(tree)) |
-| 1 年 | 杏仁桉 | *Eucalyptus regnans* | 70–90 米；Centurion 100.5 米（2018） | giant-trees.com |
-| 1 年 | 花旗松 | *Pseudotsuga menziesii* | 60–75 米；Doerner Fir 約 99.8 米 | Wikipedia／Monumental Trees |
+| 賽季 | 樹種 | 學名 | 真實紀錄 | 目標（紀錄取整到 10 米） | 來源 |
+|---|---|---|---|---|---|
+| 3 個月 | 樟樹 | *Camphora officinarum* | 46.4 米（台灣「神木」大樟樹，2018 捲尺實測） | 50 米 | MonumentalTrees／Taiwan News |
+| 3 個月 | 木棉 | *Bombax ceiba* | 60 米（濕熱地區老樹；冇單株實測紀錄） | 60 米 | [Wikipedia](https://en.wikipedia.org/wiki/Bombax_ceiba) |
+| 3 個月 | 細葉榕 | *Ficus microcarpa* | 30 米（文獻最高） | 30 米 | NParks Flora & Fauna Web |
+| 6 個月 | 水杉 | *Metasequoia glyptostroboides* | 51 米（2000 年代野生普查 12–51 米） | 50 米 | [Wikipedia](https://en.wikipedia.org/wiki/Metasequoia_glyptostroboides) |
+| 6 個月 | 銀杏 | *Ginkgo biloba* | 60 米（甘肅大堡；張家界 70 米未核實） | 60 米 | conifers.org |
+| 6 個月 | 雪松 | *Cedrus deodara* | 60 米（文獻「個別可達」） | 60 米 | Wikipedia／Trees and Shrubs Online |
+| 1 年 | 北美紅杉 | *Sequoia sempervirens* | 116.2 米（Hyperion） | 120 米 | [Wikipedia](https://en.wikipedia.org/wiki/Hyperion_(tree)) |
+| 1 年 | 杏仁桉 | *Eucalyptus regnans* | 100.5 米（Centurion，2018） | 100 米 | Giant Tree Expeditions／ABC |
+| 1 年 | 花旗松 | *Pseudotsuga menziesii* | 99.7 米（Doerner Fir，2025 山火前） | 100 米 | Wikipedia／JPR |
 
-每個樹種有獨立嘅程序化 3D 模型（輪廓、樹皮色、葉形），分五個生長階段：幼苗、小樹、青年樹、成年樹、巨樹（按賽季目標高度嘅 0／2.5／10／40／85%）。例如木棉成年開紅花、巨樹掛棉絮；銀杏成年轉金、巨樹落葉鋪地；紅杉巨樹有火疤同多個樹頂。
+每個樹種有獨立嘅程序化 3D 模型（輪廓、樹皮色、葉形），分五個生長階段：幼苗、小樹、青年樹、成年樹、巨樹（按樹種目標高度嘅 0／2.5／10／40／85%）。例如木棉成年開紅花、巨樹掛棉絮；銀杏成年轉金、巨樹落葉鋪地；紅杉巨樹有火疤同多個樹頂。
 
 樹會跟天氣搖：晴天幾乎唔郁，有風、陣風會擺，暴雨、狂風雷暴、颱風擺得最勁。酷熱天會有一道柔和暖光由畫面右上角照落樹度：幾條淡淡嘅光柱加一團暖色光暈，慢慢一呼一吸咁變光暗，太陽光亦會轉暖、轉去右上方向；唔會閃白成個畫面（系統設定「減少動態」時光暈唔會呼吸，保持靜止）。
 
@@ -46,7 +46,7 @@
 
 ### 島嶼同原生地（`src/data/habitat.ts`）
 
-個島會跟生長階段自動擴建（唔使錢）：半徑 7 → 8.6 → 10.6 → 13 → 16。每次擴建都會加入該樹種原生地嘅景物，舊景物保留：
+個島會跟生長階段自動擴建（唔使錢）：半徑 7 → 9.4 → 11.4 → 13.8 → 16.6 島單位（v8 起每個島單位代表幾多米跟樹高變，見下面 v8）。每次擴建都會加入該樹種原生地嘅景物，舊景物保留：
 
 | 樹種 | 原生地 | 小樹 | 青年樹 | 成年樹 | 巨樹 |
 | --- | --- | --- | --- | --- | --- |
@@ -103,9 +103,19 @@
 
 關閉：`VITE_DEV_PANEL=0 npm run build`（或者喺 `.env.production` 寫 `VITE_DEV_PANEL=0`）。關閉時面板程式碼唔會打包入成品。
 
+## v8：v6 比例、同一個動物放大系數、貼邊圍欄、紀錄目標
+
+- **比例（`src/scale.ts`）**：成個 v6 場景（樹、島、原生地、圍欄、雲）用同一個倍數 k = G ÷ v6 模型高度 放大。樹頂仍然等於 G 米（高度尺同畫面一致），但樹同島嘅比例同 v6 一模一樣；代價係島代表嘅米數跟樹長大（幼苗時花園大約 2 米闊，120 米紅杉時半徑約 150 米）。v7 嗰種「樹大過島就另外放大島」已經取消。
+- **動物：全部用同一個放大系數** `animalFactor(G) = clamp((G/8)^0.4, 1, 3)`：3 米 ×1、20 米 ×1.44、50 米 ×2.1、60 米 ×2.24、100 米 ×2.75、120 米 ×2.95、上限 ×3。同一刻所有動物之間嘅比例係真實嘅（水牛 2.8 米、獼猴 75 厘米、麻雀 14 厘米），個體差異只有 ±3%。
+- **目標 = 樹種真實紀錄取整到 10 米**（上表），賽季日數唔變。舊存檔會自動換新目標（按賽季推斷舊目標 20／50／100 米），高度保留，「已突破」會重新計，日誌加一句「目標更新」。
+- **圍欄貼住真正嘅島邊**：島邊係不規則形（`shoreRadius`），每條柱擺喺該方向島邊向內 0.16 島單位；地面高度用射線量度。水面或者山／懸崖位置會跳過唔起柱，欄杆只接相鄰兩條都存在嘅柱。實測九個樹種、幼苗到 160 米：冇一條柱出界，最大離邊 0.16–0.17 島單位。
+- **飛行上限 = 樹高 + 5 米**（取消 80 米上限）。
+- **更多水**：每個樹種每個階段都加咗池塘／小溪／湖／濕地／河，新景物「水灣」（開向島邊嘅靜水灣加瀑布同蘆葦）。行地動物揀目的地同行路時會避開水面（涉禽除外）。
+- **更多動物**：總隻數上限 5／10／20／36／56（原本 3／6／12／22／36），鳥群倍數 0.8–2.3。
+
 ## v7：米制比例、冇高度上限、真實尺寸動物
 
-- **比例：1 個單位 = 1 米**（`src/scale.ts`，`METRES_PER_UNIT = 1`）。`buildTree` 會量度模型頂點，再按比例縮放，令畫面上嘅樹頂高度剛好等於 G。實測 0.20／3／20／50／120／160 米全部吻合（`test/scale-v7.test.ts` 驗到 250 米）。v6 用嘅係對數曲線：20 米樟樹只畫到 9 米，100 米紅杉只畫到 12.7 米。
+- **比例：1 個單位 = 1 米**（`src/scale.ts`，`METRES_PER_UNIT = 1`）。`buildTree` 會量度模型頂點，再按比例縮放，令畫面上嘅樹頂高度剛好等於 G。實測 0.20／3／20／50／120／160 米全部吻合（v8 起由 `test/scale-v8.test.ts` 驗）。v6 用嘅係對數曲線：20 米樟樹只畫到 9 米，100 米紅杉只畫到 12.7 米。
 - **冇上限**：季尾只會記低「賽季完成」並頒發徽章，棵樹會繼續長。高度計超過目標之後會自動延伸刻度，加一條「目標」刻線，同埋顯示「已突破目標／冇上限」。舊存檔入面嘅「完成」會自動轉換，繼續生長。
 - **飛行上限 = min(80 米, 樹高)**：雀鳥、蝴蝶、蝙蝠喺空中嗰陣唔會高過樹頂或者 80 米。樹太矮嘅話，鳥會留喺枝頭。
 - **圍欄跟住島邊**：每個階段都沿島嘅邊緣起欄（1.1 米高，大約每 2 米一條柱，留一個閘口）。棵樹大過個島嘅時候，島會跟住放大（islandK），圍欄同動物就保持 1:1。動物嘅活動範圍限喺欄內。
@@ -145,5 +155,6 @@ npm run preview
 - `node scripts/v4-check.mjs`：揀賽季、狀態卡、照顧、加固、開發者面板、高級颱風結算、瀕死同救返，並輸出截圖去 `/workspace/tree-game-shots/v4/`。
 - `node scripts/v5-shots.mjs`：樹種揀選、九個樹種、生長階段、颱風搖擺影片（mp4）、酷熱眩光、動物群組同圖鑑，輸出去 `/workspace/tree-game-shots/v5/`。
 - `node scripts/v6-shots.mjs`：島嶼五個階段（水杉、雪松、杏仁桉）、九樹種巨樹原生地、樹冠健康對比、酷熱柔光前後、動物特寫同動物影片（mp4）、動物上限，輸出去 `/workspace/tree-game-shots/v6/`（可以用 `ONLY=islands,grid,canopy,heat,animals,video,caps` 揀部分）。
+- `node scripts/v8-shots.mjs`：v8 檢查（樹頂 = G、圍欄離邊、同一動物系數、行地動物喺欄內同唔落水、飛鳥 ≤ 樹高 + 5 米、樹種目標、舊存檔轉換、冇 console 錯誤）同截圖，輸出去 `/workspace/tree-game-shots/v8/`（`ONLY=audit,fence,animals,lineup,flyers,water,rail,migrate`）。
 - `node scripts/weather-check.mjs`、`node scripts/forecast-check.mjs`：真實天氣同預報卡。
 

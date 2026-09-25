@@ -126,6 +126,8 @@ export interface GameState {
   completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean };
   /** Date the tree first passed the season's target height (the target is a goal, not a cap). */
   passedTargetOn?: string | null;
+  /** v8: the target (cm) this save was last checked against — the species' record height rounded to 10 m. */
+  targetCm?: number;
   lastSettlement: Settlement | null;
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
   legacyBonus: number;

@@ -3,6 +3,8 @@ import { habitatDef, ISLAND_RADII, type Feature } from '../data/habitat';
 import { speciesDef, type SpeciesId, type TreeForm } from '../data/species';
 import { hashString, mulberry32 } from '../util';
 import { ellipsoid, jitterGeometry, limb, merge, paint } from './util3d';
+import { FENCE_INSET_UNITS, shoreRadius } from '../scale';
+import { clampInsideShore } from './island3d';
 
 /**
  * Themed land around the garden island. Built band by band (one ring per growth stage) with
@@ -18,6 +20,12 @@ export interface Habitat {
   radius: number;
   /** Ground height of the habitat land (island units). */
   groundAt(x: number, z: number): number;
+  /** Is (x, z) (island units) on water (pond, lake, stream, inlet, incl. its bank when pad > 0)? */
+  isWater(x: number, z: number, pad?: number): boolean;
+  /** Is (x, z) inside a big solid (hill, mountain, cliff) — no fence posts, no walking. */
+  isBlocked(x: number, z: number): boolean;
+  /** Land meshes (for ground raycasts). */
+  ground: THREE.Mesh[];
   stage: number;
   update(t: number, wind: number): void;
   dispose(): void;
@@ -77,6 +85,12 @@ class Builder {
   still: THREE.BufferGeometry[] = [];
   keep: Spot[] = [];
   waters: Spot[] = [];
+  /** Stream / inlet centre lines with half-width (bank included) for water tests. */
+  lines: { pts: THREE.Vector3[]; w: number }[] = [];
+  /** Pools as ellipses (bank included). */
+  pools: { x: number; z: number; rx: number; rz: number; rot: number }[] = [];
+  /** Big solids that the fence and walkers must avoid. */
+  blocks: Spot[] = [];
   tufts: { x: number; z: number; s: number; c: THREE.Color }[] = [];
   flowers: { x: number; z: number; s: number; c: THREE.Color }[] = [];
   fog: { x: number; y: number; z: number; s: number }[] = [];
@@ -121,7 +135,10 @@ class Builder {
         else if (sec === 'side') a = BACK_ANGLE + (this.rand() < 0.5 ? 1 : -1) * (0.42 + this.rand() * 0.55);
         else a = this.rand() * Math.PI * 2;
         if (hi <= lo) continue;
-        const d = edge ? this.R - r * 0.35 : lo + this.rand() * (hi - lo);
+        const shore = shoreRadius(this.R, a);
+        const d = edge ? shore - r * 0.35 : lo + this.rand() * (hi - lo);
+        // Keep ordinary scenery clear of the fence line just inside the shoreline.
+        if (!edge && d + r * 0.75 > shore - FENCE_INSET_UNITS - 0.3) continue;
         const x = Math.cos(a) * d;
         const z = Math.sin(a) * d;
         if (this.free(x, z, r * 0.85)) return { x, z, r };
@@ -170,6 +187,7 @@ class Builder {
   }
 
   mountain(x: number, z: number, r: number, h: number, snow: boolean, base = '#6f9f5c', rockC = '#8b8378'): void {
+    this.blocks.push({ x, z, r: r * 1.1 });
     const g = new THREE.ConeGeometry(r, h, 8, 5);
     jitterGeometry(g, r * 0.22, x * 1.7 + z, false);
     const y0 = this.groundY(x, z) - 0.3;
@@ -182,6 +200,7 @@ class Builder {
   }
 
   hill(x: number, z: number, r: number, h: number, hex: string): void {
+    this.blocks.push({ x, z, r: r * 0.95 });
     const g = new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
     g.scale(r, h, r * (0.8 + this.rand() * 0.3));
     jitterGeometry(g, r * 0.08, x + z * 3, false);
@@ -218,12 +237,41 @@ class Builder {
       }
     }
     this.waters.push({ x, z, r: Math.max(rx, rz) });
+    this.pools.push({ x, z, rx: rx * 1.18, rz: rz * 1.18, rot });
+  }
+
+  /** Point-in-water test (island units); `pad` widens every water body. */
+  isWater(x: number, z: number, pad = 0): boolean {
+    for (const p of this.pools) {
+      const dx = x - p.x;
+      const dz = z - p.z;
+      // pool(): w.scale(rx, 1, rz) then rotateY(rot) — undo the rotation.
+      const c = Math.cos(p.rot);
+      const s = Math.sin(p.rot);
+      const lx = dx * c - dz * s;
+      const lz = dx * s + dz * c;
+      if ((lx / (p.rx + pad)) ** 2 + (lz / (p.rz + pad)) ** 2 < 1) return true;
+    }
+    for (const l of this.lines) {
+      for (let i = 0; i < l.pts.length - 1; i++) {
+        const a = l.pts[i]!;
+        const b = l.pts[i + 1]!;
+        const abx = b.x - a.x;
+        const abz = b.z - a.z;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / Math.max(1e-6, abx * abx + abz * abz)));
+        const w = (a.y + (b.y - a.y) * t) + pad;
+        if ((a.x + abx * t - x) ** 2 + (a.z + abz * t - z) ** 2 < w * w) return true;
+      }
+    }
+    return false;
   }
 
   /** Water ribbon along points (flowing). */
-  ribbon(pts: THREE.Vector3[], width: number, flowing = true, bank = '#b9a47a'): void {
+  ribbon(pts: THREE.Vector3[], width: number, flowing = true, bank = '#b9a47a', flare = 0): void {
     const curve = new THREE.CatmullRomCurve3(pts);
     const n = Math.max(12, Math.round(curve.getLength() * 3));
+    const line: THREE.Vector3[] = [];
+    this.lines.push({ pts: line, w: width });
     const verts: number[] = [];
     const uvs: number[] = [];
     const bankV: number[] = [];
@@ -233,7 +281,8 @@ class Builder {
       const p = curve.getPoint(t);
       const tan = curve.getTangent(t);
       const side = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
-      const w = width * (0.85 + 0.2 * Math.sin(t * 11 + p.x));
+      const w = width * (0.85 + 0.2 * Math.sin(t * 11 + p.x)) * (1 + flare * t * t);
+      line.push(new THREE.Vector3(p.x, w * 1.35, p.z));
       const y = this.groundY(p.x, p.z) + 0.04;
       verts.push(p.x + side.x * w, y, p.z + side.z * w, p.x - side.x * w, y, p.z - side.z * w);
       bankV.push(p.x + side.x * w * 1.35, y - 0.012, p.z + side.z * w * 1.35, p.x - side.x * w * 1.35, y - 0.012, p.z - side.z * w * 1.35);
@@ -481,6 +530,7 @@ class Builder {
 
   cliffFall(x: number, z: number, h: number): void {
     const a = Math.atan2(z, x);
+    this.blocks.push({ x, z, r: 1.2 });
     const g = new THREE.BoxGeometry(1.8, h, 1.3, 2, 3, 2);
     jitterGeometry(g, 0.25, x + z, false);
     g.rotateY(-a);
@@ -548,6 +598,7 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
   b.R = R;
 
   // Outer land: polar disc with gentle undulation, coloured by theme.
+  const groundMeshes: THREE.Mesh[] = [];
   if (s4 >= 1) {
     const rings = Math.ceil(R / 0.9);
     const segs = 72;
@@ -585,7 +636,12 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
           const cz = (p[A][1] + p[B][1] + p[C][1]) / 3;
           const cc = colourAt(cx, cz, Math.hypot(cx, cz));
           for (const k of [A, B, C]) {
-            verts.push(p[k][0], vy(p[k][0], p[k][1], p[k][2]), p[k][1]);
+            // Irregular shoreline: blend from round (inner land) to shoreRadius(R, a) at the outer edge.
+            const rr = p[k][2];
+            const ang = Math.atan2(p[k][1], p[k][0]);
+            const tt = THREE.MathUtils.clamp((rr - CORE_R) / (R - CORE_R), 0, 1);
+            const f = rr > 0 ? 1 + (shoreRadius(R, ang) / R - 1) * tt : 1;
+            verts.push(p[k][0] * f, vy(p[k][0] * f, p[k][1] * f, p[k][2]), p[k][1] * f);
             colors.push(cc.r, cc.g, cc.b);
           }
         };
@@ -602,15 +658,29 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     land.computeVertexNormals();
     const landMesh = new THREE.Mesh(land, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95, side: THREE.DoubleSide }));
     landMesh.receiveShadow = true;
+    landMesh.name = 'habitat-land';
     group.add(landMesh);
+    groundMeshes.push(landMesh);
 
     // Earth rim and rocky underside, scaled to the new radius.
-    const rim = new THREE.CylinderGeometry(R, R * 0.9, 1.0, 48, 2, true);
+    const rim = new THREE.CylinderGeometry(R, R * 0.9, 1.0, 72, 2, true);
     jitterGeometry(rim, 0.35, 5, false);
+    // Top ring exactly on the shoreline (so the land edge, the rim and the fence agree); nothing pokes out below.
+    const rp = rim.getAttribute('position') as THREE.BufferAttribute;
+    const topIdx: number[] = [];
+    for (let i = 0; i < rp.count; i++) if (rp.getY(i) > 0.3) {
+      rp.setY(i, 0.5);
+      topIdx.push(i);
+    }
+    clampInsideShore(rim, R, 0.985, 0.5);
     rim.translate(0, -0.62, 0);
+    // Rim top follows the land's edge height, so there is no slit between land and rim.
+    for (const i of topIdx) rp.setY(i, b.groundY(rp.getX(i), rp.getZ(i)) - 0.125);
+    rim.computeVertexNormals();
     const under = new THREE.ConeGeometry(R * 0.92, Math.min(R * 1.3, 17), 20, 5);
     under.rotateX(Math.PI);
     jitterGeometry(under, 1.0, 9, false);
+    clampInsideShore(under, R, 0.93);
     const uh = Math.min(R * 1.3, 17);
     under.translate(0, -1.1 - uh / 2, 0);
     paint(rim, col('#8a6446'));
@@ -622,11 +692,12 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     const end = new THREE.Vector3(4.75, 0, 5.05);
     const a = Math.atan2(end.z, end.x);
     const pts = [end.clone(), new THREE.Vector3(Math.cos(a + 0.05) * (CORE_R + 1), 0, Math.sin(a + 0.05) * (CORE_R + 1))];
-    for (let d = CORE_R + 2.2; d < R - 0.4; d += 1.8) pts.push(new THREE.Vector3(Math.cos(a + Math.sin(d) * 0.06) * d, 0, Math.sin(a + Math.sin(d) * 0.06) * d));
-    pts.push(new THREE.Vector3(Math.cos(a) * (R + 0.05), 0, Math.sin(a) * (R + 0.05)));
+    const edgeR = shoreRadius(R, a);
+    for (let d = CORE_R + 2.2; d < edgeR - 0.6; d += 1.8) pts.push(new THREE.Vector3(Math.cos(a + Math.sin(d) * 0.06) * d, 0, Math.sin(a + Math.sin(d) * 0.06) * d));
+    pts.push(new THREE.Vector3(Math.cos(a) * (edgeR + 0.05), 0, Math.sin(a) * (edgeR + 0.05)));
     b.rand = mulberry32(seedBase + 5);
     b.ribbon(pts, 0.34, true);
-    b.falls.push({ x: Math.cos(a) * (R + 0.08), z: Math.sin(a) * (R + 0.08), a, top: -0.02, h: 5.5 });
+    b.falls.push({ x: Math.cos(a) * (edgeR + 0.08), z: Math.sin(a) * (edgeR + 0.08), a, top: -0.02, h: 5.5 });
   }
 
   // Assemble meshes.
@@ -739,6 +810,9 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     radius: R,
     stage: s4,
     groundAt: (x: number, z: number) => b.groundY(x, z),
+    isWater: (x: number, z: number, pad = 0) => b.isWater(x, z, pad),
+    isBlocked: (x: number, z: number) => b.blocks.some((k) => Math.hypot(k.x - x, k.z - z) < k.r),
+    ground: groundMeshes,
     update(t: number) {
       flowTex.offset.y = -t * 0.35;
       fallTex.offset.y = t * 0.9;
@@ -798,7 +872,7 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       break;
     }
     case 'pond': {
-      const s = b.spot(1.5, 'back') ?? b.spot(1.3, 'side') ?? b.spot(1.2, 'any');
+      const s = b.spot(1.5, 'back') ?? b.spot(1.3, 'side') ?? b.spot(1.2, 'any') ?? b.spot(0.9, 'view', false, undefined, undefined, 80) ?? b.spot(0.7, 'any', false, undefined, undefined, 80);
       if (s) {
         b.claim(s, 0.4);
         b.pool(s.x, s.z, s.r, s.r * 0.7, b.rand() * 3, true);
@@ -877,6 +951,28 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       }
       break;
     }
+    case 'inlet': {
+      // A still-water bay that opens onto the shoreline (and spills off the island edge), in view on the front-left.
+      for (let tries = 0; tries < 12; tries++) {
+        const a0 = CAM_ANGLE + 0.75 + b.rand() * 1.1 + (tries > 6 ? Math.PI : 0);
+        const shore = shoreRadius(R, a0);
+        const d0 = Math.max(CORE_R + 1.1, shore - 3.2);
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 5; i++) {
+          const t = i / 5;
+          const d = d0 + (shore + 0.06 - d0) * t;
+          const a = a0 + Math.sin(t * 2.4) * 0.05;
+          pts.push(new THREE.Vector3(Math.cos(a) * d, 0, Math.sin(a) * d));
+        }
+        const mid = pts[2]!;
+        if (b.keep.some((k) => Math.hypot(k.x - mid.x, k.z - mid.z) < k.r + 0.8)) continue;
+        b.ribbon(pts, 0.36, false, '#cdbb8a', 2.4);
+        b.falls.push({ x: Math.cos(a0) * (shore + 0.1), z: Math.sin(a0) * (shore + 0.1), a: a0, top: -0.03, h: 4.5 });
+        b.reeds(pts[1]!.x, pts[1]!.z, 5);
+        break;
+      }
+      break;
+    }
     case 'fog': {
       for (let i = 0; i < 7; i++) {
         const a = BACK_ANGLE + (b.rand() - 0.5) * 3.2;
@@ -889,8 +985,8 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
       // Sandy strip and sea stacks along the outer rim on the left side.
       for (let i = 0; i < 26; i++) {
         const a = CAM_ANGLE + 1.0 + (i / 26) * 2.2;
-        const d = R - 0.5;
-        const g = new THREE.CircleGeometry(0.75, 6);
+        const d = shoreRadius(R, a) - 0.85;
+        const g = new THREE.CircleGeometry(0.72, 6);
         g.rotateX(-Math.PI / 2);
         g.translate(Math.cos(a) * d, b.groundY(Math.cos(a) * d, Math.sin(a) * d) + 0.015, Math.sin(a) * d);
         b.push(g, col('#d9c9a0'));

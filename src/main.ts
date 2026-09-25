@@ -51,8 +51,7 @@ import {
   type View,
 } from './ui';
 import { ANIMALS } from './data/animals';
-import { defaultSpecies, speciesDef, speciesForSeason, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
-import { seasonDef } from './rules';
+import { defaultSpecies, speciesTargetCm, speciesForSeason, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import {
   WEATHER_STALE_MS,
   WEATHER_TTL_MS,
@@ -243,10 +242,10 @@ function sceneInput(): SceneInput {
   const timeMode = DEV_PANEL ? dev.time : 'auto';
   // Residents always stay; up to three recent visitors drop by.
   const visitors = state.animals.filter((id) => !state.residents.includes(id)).slice(-3);
-  const target = seasonDef(state.season).targetCm;
+  const target = speciesTargetCm(state.species);
   const preview = DEV_PANEL ? dev.preview : {};
   const species: SpeciesId = preview.species ?? state.species;
-  const previewSeason = preview.species ? seasonDef(speciesDef(preview.species).season).targetCm : target;
+  const previewSeason = preview.species ? speciesTargetCm(preview.species) : target;
   const stage = preview.stage ?? stageIndexFor(state.heightCm, previewSeason);
   const islandStage = preview.island;
   const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : state.heightCm) : state.heightCm;
@@ -901,6 +900,13 @@ if (DEV_PANEL) {
     viewState: () => scene3d?.viewState(),
     flyers: () => scene3d?.flyerHeights() ?? [],
     animalScreen: (id: string) => scene3d?.animalScreen(id) ?? null,
+    fenceCheck: () => scene3d?.fenceCheck() ?? null,
+    animalSizes: () => scene3d?.animalSizes() ?? null,
+    walkers: () => scene3d?.walkerSpots() ?? [],
+    lookAtRim: (a: number, share: number, zoom: number, az?: number) => scene3d?.lookAtRim(a, share, zoom, az),
+    spawn: (id: string) => scene3d?.spawnAnimal(id),
+    follow: (id: string | null) => scene3d?.followAnimal(id),
+    lineup: (ids: string[], treeM: number) => scene3d?.lineup(ids, treeM) ?? null,
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');

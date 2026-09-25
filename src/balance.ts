@@ -80,19 +80,19 @@ export const MIN_HEIGHT_CM = 5;
 export const CARBON_K = 0.35;
 
 /* ---------- Seasons & badges ---------- */
+/** v8: the target height is per species (record height rounded to 10 m) — see speciesTargetCm in data/species.ts. */
 export type SeasonId = 's3' | 's6' | 's12';
 export interface SeasonDef {
   id: SeasonId;
   label: string;
   sub: string;
   days: number;
-  targetCm: number;
   tier: 1 | 2 | 3;
 }
 export const SEASONS: SeasonDef[] = [
-  { id: 's3', label: '3 個月・速成局', sub: '目標約 20 米，解鎖一級徽章', days: 90, targetCm: 2000, tier: 1 },
-  { id: 's6', label: '6 個月・標準局', sub: '目標約 50 米，解鎖二級徽章', days: 180, targetCm: 5000, tier: 2 },
-  { id: 's12', label: '1 年・史詩局', sub: '目標 100 米以上，解鎖三級徽章', days: 365, targetCm: 10000, tier: 3 },
+  { id: 's3', label: '3 個月・速成局', sub: '目標＝樹種真實紀錄（細葉榕 30、樟樹 50、木棉 60 米），解鎖一級徽章', days: 90, tier: 1 },
+  { id: 's6', label: '6 個月・標準局', sub: '目標＝樹種真實紀錄（水杉 50、銀杏 60、雪松 60 米），解鎖二級徽章', days: 180, tier: 2 },
+  { id: 's12', label: '1 年・史詩局', sub: '目標＝樹種真實紀錄（杏仁桉 100、花旗松 100、紅杉 120 米），解鎖三級徽章', days: 365, tier: 3 },
 ];
 /** Tier N badge needs this many days survived (used for completion and the fail-safe). */
 export const TIER_DAYS: Record<1 | 2 | 3, number> = { 1: 90, 2: 180, 3: 365 };
