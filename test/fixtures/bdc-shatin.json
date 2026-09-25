@@ -1,0 +1,102 @@
+{
+  "latitude": 22.38,
+  "lookupSource": "coordinates",
+  "longitude": 114.19,
+  "localityLanguageRequested": "zh-hant",
+  "continent": "亞洲",
+  "continentCode": "AS",
+  "countryName": "香港",
+  "countryCode": "HK",
+  "principalSubdivision": "",
+  "principalSubdivisionCode": "",
+  "city": "香港",
+  "locality": "香港",
+  "postcode": "",
+  "plusCode": "7PJP95JR+22",
+  "localityInfo": {
+    "administrative": [
+      {
+        "name": "中華人民共和國",
+        "description": "東亞國家",
+        "isoName": "China",
+        "order": 2,
+        "adminLevel": 2,
+        "isoCode": "CN",
+        "wikidataId": "Q148",
+        "geonameId": 1814991
+      },
+      {
+        "name": "香港",
+        "description": "中華人民共和國的特別行政區",
+        "order": 5,
+        "adminLevel": 3,
+        "wikidataId": "Q8646",
+        "geonameId": 1819729,
+        "chinaAdminCode": "81"
+      },
+      {
+        "name": "香港",
+        "description": "中華人民共和國的特別行政區",
+        "isoName": "Hong Kong",
+        "order": 6,
+        "adminLevel": 3,
+        "isoCode": "HK",
+        "wikidataId": "Q8646",
+        "geonameId": 1819730
+      },
+      {
+        "name": "香港",
+        "description": "中華人民共和國的特別行政區",
+        "isoName": "Hong Kong SAR (see also separate country code entry under HK)",
+        "order": 7,
+        "adminLevel": 3,
+        "isoCode": "CN-HK",
+        "wikidataId": "Q8646",
+        "geonameId": 1819730,
+        "chinaAdminCode": "81"
+      },
+      {
+        "name": "香港",
+        "order": 8,
+        "adminLevel": 4
+      },
+      {
+        "name": "新界",
+        "description": "香港的主要地域",
+        "order": 9,
+        "adminLevel": 5,
+        "wikidataId": "Q596660"
+      },
+      {
+        "name": "沙田區",
+        "description": "香港十八區之一",
+        "order": 10,
+        "adminLevel": 6,
+        "wikidataId": "Q15019",
+        "geonameId": 7533618
+      }
+    ],
+    "informative": [
+      {
+        "name": "亞洲",
+        "description": "七大洲之一",
+        "isoName": "Asia",
+        "order": 1,
+        "isoCode": "AS",
+        "wikidataId": "Q48",
+        "geonameId": 6255147
+      },
+      {
+        "name": "粵港澳大灣區",
+        "description": "中國廣東省珠江三角洲伶仃洋沿岸的九座城市與香港、澳門特別行政區組成的城市群",
+        "order": 3,
+        "wikidataId": "Q29583237"
+      },
+      {
+        "name": "Asia/Hong_Kong",
+        "description": "時區",
+        "order": 4
+      }
+    ]
+  }
+}

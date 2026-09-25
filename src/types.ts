@@ -26,6 +26,10 @@ export interface Storm {
   resolved: boolean;
   outcome?: StormOutcome;
   debug: boolean;
+  /** Set when a real Hong Kong Observatory signal drives this storm. */
+  official?: { code: string; name: string; short: string };
+  /** TC1 heads-up for tomorrow: only becomes a real storm if a stronger signal follows. */
+  provisional?: boolean;
 }
 
 export type LogKind =

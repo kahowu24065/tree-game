@@ -2,10 +2,11 @@ import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stage
 import { addDays, daysBetween, formatLong, formatShort, weekdayIndex } from './dates';
 import { drawAnimal } from './draw-animals';
 import { ICONS, weatherArt, type IconName } from './icons';
-import { advice, dayNumber, eventTitle, prepNeeded, prepScore, treeMetrics, upcomingStorm } from './sim';
+import type { HkoWarning } from './hko';
+import { advice, dayNumber, eventTitle, prepNeeded, prepScore, stormTitle, treeMetrics, upcomingStorm } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, TabId } from './types';
 import { esc, formatHeight, percentOf } from './util';
-import { classify, stormLabel, weatherLabel } from './weather';
+import { classify, stormLabel, weatherLabel, type WeatherProvider } from './weather';
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -20,6 +21,25 @@ export interface View {
   forecast: ForecastDay[];
   night: boolean;
   debug: boolean;
+  wx: WeatherView;
+}
+
+export interface WeatherView {
+  provider: WeatherProvider;
+  origin: 'live' | 'cache' | 'offline';
+  loading: boolean;
+  fetchedAt: number;
+  updated: string;
+  hkoUsed: boolean;
+  warnings: HkoWarning[];
+  messages: string[];
+  situation: string;
+  hkoDays: Record<string, string>;
+  conditionText?: string;
+  station?: string;
+  rainInHours: number | null;
+  error?: string;
+  overridden: boolean;
 }
 
 function icon(name: IconName): string {
@@ -36,31 +56,7 @@ export function renderChrome(view: View): void {
   const storm = upcomingStorm(state, view.today);
   const tomorrow = view.forecast.find((d) => d.date === addDays(view.today, 1));
   const card = document.getElementById('weather-card');
-  if (card) {
-    const nowStorm = cond.stormKind;
-    const soon = storm && daysBetween(view.today, storm.date) <= 2 ? storm : undefined;
-    const severe = Boolean(nowStorm || soon);
-    card.classList.toggle('severe', severe);
-    card.classList.toggle('hot', !severe && cond.hot);
-    const label = nowStorm ? stormLabel(nowStorm) : weatherLabel(cond.code);
-    let line: string;
-    if (soon) {
-      const when = soon.date === view.today ? '今日' : soon.date === addDays(view.today, 1) ? '明日' : formatShort(soon.date);
-      const score = prepScore(state.reinforcement);
-      const need = prepNeeded(soon.kind);
-      line = `<span class="warn-line">${icon('warn')}${when}${esc(stormLabel(soon.kind))} · ${score >= need ? '已經加固' : `記得加固 ${score}/${need}`}</span>`;
-    } else if (nowStorm) {
-      line = `<span class="warn-line">${icon('warn')}而家${esc(stormLabel(nowStorm))}，留意棵樹</span>`;
-    } else if (tomorrow) {
-      line = `預測：明日 ${Math.round(tomorrow.tempMin)}–${Math.round(tomorrow.tempMax)}°C ${esc(weatherLabel(tomorrow.code))}`;
-    } else {
-      line = esc(view.statusLine);
-    }
-    card.innerHTML = `
-      <span class="wx-art">${weatherArt(cond.code, view.night, Boolean(nowStorm))}</span>
-      <span class="wx-main"><b>${Math.round(cond.tempC)}°C</b><span>${esc(label)}</span></span>
-      <span class="wx-line">${line}</span>`;
-  }
+  if (card) renderWeatherCard(card, view, storm, tomorrow);
   const pill = document.getElementById('place-pill');
   if (pill) pill.innerHTML = `${icon('pin')}<span>${esc(view.place)}</span>${view.placeNote ? `<small>${esc(view.placeNote)}</small>` : ''}${icon('chevronDown')}`;
   const gear = document.getElementById('gear');
@@ -120,6 +116,84 @@ export function renderChrome(view: View): void {
   document.body.classList.toggle('night', view.night);
   document.getElementById('scene')?.setAttribute('aria-label', `${state.treeName}，${weatherLabel(cond.code)}，高 ${formatHeight(state.heightCm)}`);
   document.title = `${state.treeName} · 一日一樹`;
+}
+
+function renderWeatherCard(card: HTMLElement, view: View, storm: ReturnType<typeof upcomingStorm>, tomorrow: ForecastDay | undefined): void {
+  const { state, cond, wx } = view;
+  const simulated = wx.provider === 'sim' && !wx.overridden;
+  const firstLoad = simulated && wx.loading;
+  const nowStorm = cond.stormKind;
+  const soon = storm && daysBetween(view.today, storm.date) <= 2 ? storm : undefined;
+  const drivers = wx.warnings.filter((w) => w.kind || w.standby);
+  const severe = Boolean(nowStorm || soon || drivers.length);
+  card.classList.toggle('severe', severe && !firstLoad);
+  card.classList.toggle('hot', !severe && cond.hot);
+  card.classList.toggle('sim', simulated && !wx.loading);
+  // Simulated weather: the whole card becomes a retry button.
+  if (simulated) {
+    delete card.dataset.open;
+    card.dataset.action = 'retry-weather';
+    card.setAttribute('aria-label', '模擬天氣，撳一下再試攞真實天氣');
+  } else {
+    delete card.dataset.action;
+    card.dataset.open = 'forecast';
+    card.setAttribute('aria-label', '天氣同預報');
+  }
+  const officialNow = state.storms.find((s) => s.date === view.today && !s.resolved && s.official && !s.provisional);
+  const label = officialNow ? officialNow.official!.short : nowStorm ? stormLabel(nowStorm) : wx.conditionText || weatherLabel(cond.code);
+  let line: string;
+  if (soon) {
+    const when = soon.date === view.today ? '今日' : soon.date === addDays(view.today, 1) ? '明日' : formatShort(soon.date);
+    const score = prepScore(state.reinforcement);
+    const need = prepNeeded(soon.kind);
+    const what = soon.provisional ? `可能有${stormLabel(soon.kind)}` : stormTitle(soon);
+    line = `<span class="warn-line">${icon('warn')}${when}${esc(what)} · ${score >= need ? '已經加固' : `記得加固 ${score}/${need}`}</span>`;
+  } else if (nowStorm) {
+    line = `<span class="warn-line">${icon('warn')}而家${esc(stormLabel(nowStorm))}，留意棵樹</span>`;
+  } else if (wx.rainInHours !== null && !cond.raining && !simulated) {
+    line = wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`;
+  } else if (tomorrow && !firstLoad) {
+    line = `預測：明日 ${Math.round(tomorrow.tempMin)}–${Math.round(tomorrow.tempMax)}°C ${esc(weatherLabel(tomorrow.code))}`;
+  } else {
+    line = '';
+  }
+  const chips = wx.warnings
+    .slice(0, 4)
+    .map((w) => `<span class="wchip ${w.tone}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(w.short)}</span></span>`)
+    .join('');
+  const source = sourceLabel(wx);
+  const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
+  card.innerHTML = `
+    <span class="wx-art">${weatherArt(cond.code, view.night, Boolean(nowStorm))}</span>
+    <span class="wx-main"><b>${temp}</b><span>${esc(firstLoad ? '攞緊天氣…' : label)}</span></span>
+    <span class="wx-place">${icon('pin')}${esc(view.place)}${wx.station && !simulated ? `<small>· ${esc(wx.station)}站</small>` : ''}</span>
+    ${chips ? `<span class="wx-warns">${chips}</span>` : ''}
+    ${line ? `<span class="wx-line">${line}</span>` : ''}
+    <span class="wx-src ${simulated ? 'sim' : ''}">${source}</span>`;
+}
+
+function sourceLabel(wx: WeatherView): string {
+  if (wx.overridden) return '測試場景';
+  if (wx.provider === 'sim') {
+    if (wx.loading) return '攞緊真實天氣…';
+    return `模擬天氣・撳一下重試${wx.hkoUsed ? '（天文台警告係真嘅）' : ''}`;
+  }
+  const names = wx.provider === 'hko' ? '天文台' : wx.hkoUsed ? 'Open-Meteo／天文台' : 'Open-Meteo';
+  if (wx.origin === 'cache') return `上次天氣 ${esc(wx.updated)}・${names}`;
+  return `即時天氣・${names}${wx.updated ? ` · ${esc(wx.updated)}` : ''}${wx.loading ? ' · 更新緊' : ''}`;
+}
+
+/** Small badge in the spirit of HKO's warning icons (drawn locally, not the official artwork). */
+export function warnIcon(w: HkoWarning): string {
+  if (w.group === 'WTCSGNL') {
+    const n = w.code.replace(/^TC(\d+).*/, '$1');
+    return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5l8.5 16H1.5z" fill="currentColor"/><text x="10" y="15.5" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${esc(n)}</text></svg>`;
+  }
+  if (w.group === 'WRAIN') return '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="2" width="16" height="16" rx="3" fill="currentColor"/><path d="M7 6l-1.5 3M11 6l-1.5 3M15 6l-1.5 3M8 11l-1.5 3M12 11l-1.5 3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  if (w.group === 'WHOT') return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path d="M10 4.5v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="10" cy="13.5" r="2.3" fill="#fff"/></svg>';
+  if (w.group === 'WFIRE') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5c1 3.5 5.5 5.5 5.5 10a5.5 5.5 0 0 1-11 0c0-2.5 1.5-4 2.5-5 .2 1.7 1 2.6 2 3-.5-3 .3-5.8 1-8z" fill="currentColor"/></svg>';
+  if (w.group === 'WTS') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.5 1.5L4 11h5l-1.5 7.5L16 8h-5z" fill="currentColor"/></svg>';
+  return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path d="M10 5.5v5.5M10 13.8v.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
 }
 
 function statRow(ic: IconName, label: string, value: string, tone: string): string {
@@ -299,7 +373,8 @@ function forecastTab(view: View): string {
   const warn = next
     ? `<article class="card warn">
         <p class="eyebrow">${icon('warn')}風暴準備</p>
-        <h2>${esc(formatLong(next.date))} · ${esc(stormLabel(next.kind))}</h2>
+        <h2>${esc(formatLong(next.date))} · ${esc(next.provisional ? `${next.official?.short ?? ''}・可能有${stormLabel(next.kind)}` : stormTitle(next))}</h2>
+        ${next.official ? `<p class="official">${next.provisional ? '天文台戒備信號：如果之後冇升級，呢場唔會打中棵樹。' : `真實天文台信號（${esc(next.official.name)}），捱過有額外加成。`}</p>` : ''}
         <p>${next.date === view.today ? '今日就係嗰日，而家加固都仲趕得切，聽日先結算。' : '趁未到先準備。'}打樁、綁繩、修枝，做齊就最穩陣。颱風最好三樣都做，強風兩樣，暴雨一樣都有用。而家 ${score}/3。</p>
         ${preps}
       </article>`
@@ -324,6 +399,7 @@ function forecastTab(view: View): string {
         <div><strong>${day.date === view.today ? '今日' : `星期${WEEK[weekdayIndex(day.date)] ?? ''}`}</strong><span>${esc(formatShort(day.date))}</span></div>
         <div><b>${esc(weatherLabel(day.code))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
         <div class="tags">${tags}</div>
+        ${view.wx.hkoDays[day.date] ? `<p class="hko-day">天文台：${esc(view.wx.hkoDays[day.date]!)}</p>` : ''}
       </article>`;
     })
     .join('');
@@ -331,14 +407,28 @@ function forecastTab(view: View): string {
     .filter((s) => s.resolved)
     .slice(-3)
     .reverse()
-    .map((s) => `<li>${esc(formatShort(s.date))} ${esc(stormLabel(s.kind))} · ${s.outcome === 'safe' ? '捱過並有獎' : s.outcome === 'partial' ? '輕傷' : '受損'}</li>`)
+    .map((s) => `<li>${esc(formatShort(s.date))} ${esc(stormTitle(s))} · ${!s.outcome ? '虛驚一場' : s.outcome === 'safe' ? '捱過並有獎' : s.outcome === 'partial' ? '輕傷' : '受損'}</li>`)
     .join('');
+  const wx = view.wx;
+  const hkoCard = wx.hkoUsed
+    ? `<article class="card hko">
+        <p class="eyebrow">香港天文台</p>
+        ${
+          wx.warnings.length
+            ? `<ul class="hko-warns">${wx.warnings.map((w) => `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(w.name)}</b>${w.kind ? `<small>遊戲會當${esc(stormLabel(w.kind))}結算</small>` : w.standby ? '<small>遊戲會預告明日可能有風暴</small>' : ''}</span></li>`).join('')}</ul>`
+            : '<p>而家冇天氣警告生效。</p>'
+        }
+        ${wx.messages.length ? `<p class="fine">${wx.messages.map(esc).join('<br>')}</p>` : ''}
+        ${wx.situation ? `<p class="fine">${esc(wx.situation)}</p>` : ''}
+      </article>`
+    : '';
   return `
     ${warn}
-    <p class="status">${esc(view.statusLine)}</p>
+    ${hkoCard}
+    <p class="status">${esc(view.statusLine)}${wx.provider === 'sim' && !wx.overridden ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
     <div class="days">${rows}</div>
     ${history ? `<h3 class="sub">風暴紀錄</h3><ul class="log">${history}</ul>` : ''}
-    <p class="fine">遊戲根據雨量同風速自己判斷，唔係香港天文台的正式警告。暴雨：日雨量 25 毫米或以上。強風：陣風 62 km/h 或持續風 41 km/h 或以上。颱風級：陣風 118 km/h 或持續風 63 km/h 或以上。酷熱：最高 33°C 或以上。</p>
+    <p class="fine">數字來自 Open-Meteo 預報${view.wx.hkoUsed ? '，香港嘅氣溫、天氣同警告來自香港天文台開放數據' : ''}。喺香港，天文台嘅三號或以上風球、強烈季候風信號同黃／紅／黑雨會直接變成遊戲入面嘅風暴；一號風球會預告明日可能有風暴。其餘由遊戲按預報自己判斷，唔係正式警告。暴雨：日雨量 25 毫米或以上。強風：陣風 62 km/h 或持續風 41 km/h 或以上。颱風級：陣風 118 km/h 或持續風 63 km/h 或以上。酷熱：最高 33°C 或以上。</p>
     <button type="button" class="texty" data-action="locate">用我所在位置更新天氣</button>
   `;
 }

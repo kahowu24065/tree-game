@@ -12,6 +12,7 @@ import {
   performAction,
   setLogClock,
   setReinforcement,
+  syncOfficialWarnings,
   syncStorms,
   type CatchupReport,
 } from './sim';
@@ -35,9 +36,15 @@ import {
   type View,
 } from './ui';
 import {
+  WEATHER_STALE_MS,
+  WEATHER_TTL_MS,
+  activeHot,
   condFromForecast,
-  describePlace,
+  districtRain,
   fetchForecast,
+  hkoForecast,
+  inHongKong,
+  nearHongKong,
   classify,
   isRainCode,
   isSnowCode,
@@ -46,8 +53,12 @@ import {
   offlineSnapshot,
   overrideDay,
   presentForecast,
+  type ForecastResult,
+  type WeatherProvider,
   type WeatherSnapshot,
 } from './weather';
+import { fetchHko, hkoIconLabel, hkoIconToWmo } from './hko';
+import { reverseGeocode } from './place';
 
 type ActionName = 'water' | 'fertilize' | 'deworm' | 'prune';
 
@@ -63,12 +74,13 @@ let state: GameState = loadGame() ?? createGame(formatDateInTz(new Date(), timez
 let tab: TabId = 'care';
 let sceneOverride: SceneOverride | null = null;
 let timeMode: TimeMode = 'auto';
-let weather: WeatherSnapshot = loadWeatherCache() ?? offlineSnapshot(realToday(), '');
-let statusLine = weather.origin === 'cache' ? '用緊較早的天氣記錄，更新緊…' : '睇緊天空…';
+let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
+let weather: WeatherSnapshot = initialWeather();
+let weatherLoading = weather.provider === 'sim';
+let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
 const debug = new URLSearchParams(location.search).get('debug') === '1';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingStorm = '';
-let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
 let quality: Quality = localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'low';
 
 const canvas = document.getElementById('scene');
@@ -88,6 +100,18 @@ const drawerBackdrop = document.getElementById('drawer-backdrop');
 const sheet = document.getElementById('sheet');
 const sheetHandle = document.getElementById('sheet-handle');
 const debugRoot = document.getElementById('debug-root');
+
+/** Cached weather: fresh (<30 min, same location choice) counts as live; older real data is shown as cached. */
+function initialWeather(): WeatherSnapshot {
+  const cached = loadWeatherCache();
+  const choice = placeChoice && placeChoice !== 'geo' ? placeChoice : 'auto';
+  if (cached && cached.provider !== 'sim' && (cached.choice ?? 'auto') === choice) {
+    const age = Date.now() - cached.fetchedAt;
+    if (age < WEATHER_TTL_MS) return { ...cached, origin: 'live' };
+    if (age < WEATHER_STALE_MS) return { ...cached, origin: 'cache' };
+  }
+  return offlineSnapshot(formatDateInTz(new Date(), 'Asia/Hong_Kong'), '');
+}
 
 function realToday(): string {
   return formatDateInTz(new Date(), timezone);
@@ -128,6 +152,24 @@ function todayCond(): DayCond {
       tempMax: Math.max(day.tempMax, cond.tempC),
     }).stormKind;
   }
+  if (!sceneOverride) {
+    // A real HKO signal in force today drives the scene and the day's conditions.
+    const official = state.storms.find((s) => s.date === today() && !s.resolved && s.official && !s.provisional);
+    if (official) {
+      const rank = { 'heavy-rain': 1, gale: 2, typhoon: 3 } as const;
+      if (!cond.stormKind || rank[official.kind] > rank[cond.stormKind]) cond.stormKind = official.kind;
+      if (official.kind !== 'gale') {
+        cond.raining = true;
+        cond.precipMm = Math.max(cond.precipMm, 10);
+        cond.code = official.kind === 'typhoon' ? 95 : Math.max(cond.code, 63);
+      }
+      if (official.kind !== 'heavy-rain') {
+        cond.windKmh = Math.max(cond.windKmh, official.windKmh * 0.7);
+        cond.gustKmh = Math.max(cond.gustKmh, official.gustKmh * 0.7);
+      }
+    }
+    if (activeHot(weather.hko?.warnings)) cond.hot = true;
+  }
   return cond;
 }
 
@@ -145,11 +187,15 @@ function condForDate(date: string): DayCond {
   return condFromForecast(mildDay(date));
 }
 
+function choiceKey(): string {
+  return placeChoice && placeChoice !== 'geo' ? placeChoice : 'auto';
+}
+
 function placeLabel(): { place: string; note: string } {
   const manual = PLACES.find((p) => p.id === placeChoice);
-  if (manual) return { place: manual.name, note: weather.origin === 'offline' ? '離線' : '' };
-  const place = describePlace(weather.lat, weather.lon, weather.timezone || timezone);
-  return { place, note: weather.origin === 'offline' ? '離線' : weather.source === 'fallback' ? '預設' : '' };
+  if (manual) return { place: manual.name, note: '' };
+  if (weather.provider === 'sim' && !weather.fetchedAt) return { place: '香港', note: '' };
+  return { place: weather.place || '你嘅位置', note: weather.source === 'fallback' ? '預設' : '' };
 }
 
 function sceneInput(): SceneInput {
@@ -190,6 +236,23 @@ function view(input: SceneInput): View {
     forecast: presentedDays(),
     night: input.daylight < 0.45,
     debug,
+    wx: {
+      provider: weather.provider ?? (weather.origin === 'offline' ? 'sim' : 'open-meteo'),
+      origin: weather.origin,
+      loading: weatherLoading,
+      fetchedAt: weather.fetchedAt,
+      updated: clockOf(weather.fetchedAt),
+      hkoUsed: Boolean(weather.hko && usesHko(weather)),
+      warnings: weather.hko && usesHko(weather) ? weather.hko.warnings : [],
+      messages: weather.hko && usesHko(weather) ? weather.hko.messages : [],
+      situation: weather.hko && usesHko(weather) ? weather.hko.situation : '',
+      hkoDays: weather.hko && usesHko(weather) ? Object.fromEntries(weather.hko.forecast.map((d) => [d.date, d.text])) : {},
+      conditionText: sceneOverride ? undefined : weather.conditionText,
+      station: weather.station,
+      rainInHours: weather.rainInHours ?? null,
+      error: weather.error,
+      overridden: Boolean(sceneOverride),
+    },
   };
 }
 
@@ -234,12 +297,16 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   if (snapshot.origin === 'live') saveWeatherCache(snapshot);
   statusLine =
     snapshot.origin === 'live'
-      ? '天氣剛剛更新'
+      ? `天氣 ${clockOf(snapshot.fetchedAt)} 更新`
       : snapshot.origin === 'cache'
-        ? '用緊較早的天氣記錄'
-        : `而家攞唔到天氣，暫時當係平靜。${snapshot.error ?? ''}`;
+        ? `更新唔到（${snapshot.error ?? '網絡問題'}），用緊 ${clockOf(snapshot.fetchedAt)} 的記錄。`
+        : `而家攞唔到真實天氣，暫時用模擬天氣。${snapshot.error ?? ''}`;
   reconcileClock();
-  if (snapshot.origin !== 'offline') syncStorms(state, weather.daily, today());
+  if (snapshot.provider !== 'sim') syncStorms(state, weather.daily, today());
+  if (snapshot.hko && usesHko(snapshot)) {
+    const note = syncOfficialWarnings(state, snapshot.hko.warnings, today());
+    if (note && state.started) toast(note);
+  }
   if (today() !== before) {
     const report = catchUp(state, today(), condForDate, todayCond().hot);
     showReport(report);
@@ -249,41 +316,116 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   render();
 }
 
-async function refreshWeather(forceLocate = false): Promise<void> {
-  statusLine = '睇緊天空…';
+function clockOf(ms: number): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const sameDay = formatDateInTz(d, timezone) === realToday();
+  const hm = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  if (sameDay) return hm;
+  const [, m, day] = formatDateInTz(d, timezone).split('-');
+  return `${Number(m)}/${Number(day)} ${hm}`;
+}
+
+function usesHko(snapshot: WeatherSnapshot): boolean {
+  return snapshot.source !== 'geo' || nearHongKong(snapshot.lat, snapshot.lon);
+}
+
+let refreshing: Promise<void> | null = null;
+let refreshTimer = 0;
+
+function scheduleRefresh(ms: number): void {
+  window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(() => {
+    if (document.hidden) return;
+    void refreshWeather();
+  }, ms);
+}
+
+function refreshWeather(forceLocate = false): Promise<void> {
+  if (refreshing) return refreshing;
+  weatherLoading = true;
+  statusLine = '攞緊真實天氣…';
   render();
-  try {
-    const manual = PLACES.find((p) => p.id === placeChoice);
-    const loc = manual
-      ? { lat: manual.lat, lon: manual.lon, source: 'manual' as const }
-      : forceLocate || weather.origin === 'offline'
-        ? await locate()
-        : { lat: weather.lat, lon: weather.lon, source: weather.source };
-    const fresh = await fetchForecast(loc.lat, loc.lon);
-    applyWeather({
-      lat: loc.lat,
-      lon: loc.lon,
-      timezone: fresh.timezone,
-      place: manual?.name ?? describePlace(loc.lat, loc.lon, fresh.timezone),
-      source: loc.source,
-      origin: 'live',
-      fetchedAt: Date.now(),
-      current: fresh.current,
-      daily: fresh.daily,
-    });
-  } catch (error) {
+  refreshing = loadWeather(forceLocate).finally(() => {
+    refreshing = null;
+    weatherLoading = false;
+    render();
+    scheduleRefresh(weather.origin === 'live' ? WEATHER_TTL_MS : 2 * 60 * 1000);
+  });
+  return refreshing;
+}
+
+/**
+ * Real weather first: Open-Meteo for the player's spot (plus HKO in/near Hong Kong); if Open-Meteo is down,
+ * HKO alone; then the last good snapshot; simulated weather only when all of that fails.
+ */
+async function loadWeather(forceLocate: boolean): Promise<void> {
+  const manual = PLACES.find((p) => p.id === placeChoice);
+  const reuseGeo = !forceLocate && weather.source === 'geo' && weather.choice === 'auto' && Date.now() - weather.fetchedAt < WEATHER_TTL_MS;
+  const loc = manual
+    ? { lat: manual.lat, lon: manual.lon, source: 'manual' as const }
+    : reuseGeo
+      ? { lat: weather.lat, lon: weather.lon, source: 'geo' as const }
+      : await locate(8000);
+  const hk = loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon);
+  const [om, hkoRes, placeRes] = await Promise.allSettled([
+    fetchForecast(loc.lat, loc.lon),
+    hk ? fetchHko(loc.lat, loc.lon) : Promise.resolve(null),
+    loc.source === 'geo' ? reverseGeocode(loc.lat, loc.lon) : Promise.resolve(null),
+  ]);
+  const hko = hkoRes.status === 'fulfilled' ? hkoRes.value : null;
+  const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
+  const place = manual?.name ?? found?.name ?? (loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
+  const district = manual?.name ?? found?.district;
+  let base: ForecastResult | null = om.status === 'fulfilled' ? om.value : null;
+  let provider: WeatherProvider = 'open-meteo';
+  const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : '未知錯誤') : undefined;
+  if (!base && hko) {
+    base = hkoForecast(hko, today());
+    provider = 'hko';
+  }
+  if (!base) {
     const cached = loadWeatherCache();
-    const message = error instanceof Error ? error.message : '未知錯誤';
-    if (cached) {
-      cached.origin = 'cache';
-      cached.error = message;
-      applyWeather(cached);
-      statusLine = '更新失敗，用緊上次的天氣。';
-      render();
+    if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS) {
+      applyWeather({ ...cached, origin: 'cache', error, hko: hko ?? cached.hko });
       return;
     }
-    applyWeather(offlineSnapshot(today(), message));
+    // Last resort: simulated numbers, but still pass along any real HKO warnings.
+    applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko, choice: choiceKey() });
+    return;
   }
+  const snapshot: WeatherSnapshot = {
+    lat: loc.lat,
+    lon: loc.lon,
+    timezone: base.timezone,
+    place,
+    source: loc.source,
+    origin: 'live',
+    fetchedAt: Date.now(),
+    current: { ...base.current },
+    daily: base.daily,
+    provider,
+    hko,
+    district,
+    rainInHours: base.rainInHours,
+    choice: choiceKey(),
+    error: provider === 'hko' ? error : undefined,
+  };
+  if (hko?.current && hk) {
+    // Prefer what the Observatory actually measured nearby over model values.
+    if (hko.current.tempC !== null) {
+      snapshot.current.tempC = hko.current.tempC;
+      snapshot.station = hko.current.station;
+    }
+    if (hko.current.icon) {
+      snapshot.current.code = hkoIconToWmo(hko.current.icon);
+      snapshot.conditionText = hkoIconLabel(hko.current.icon);
+    }
+    if (hko.current.humidity !== null) snapshot.current.humidity = hko.current.humidity;
+    const mm = districtRain(hko, district);
+    if (mm && mm > 0) snapshot.current.precipMm = Math.max(snapshot.current.precipMm, Math.min(8, mm));
+  }
+  applyWeather(snapshot);
 }
 
 function renameOrStart(): void {
@@ -417,6 +559,10 @@ function doAction(action: string, target: HTMLElement): void {
       state.morningNote = null;
       saveGame(state);
       render();
+      return;
+    case 'retry-weather':
+      toast('再試緊攞真實天氣…');
+      void refreshWeather(false);
       return;
     case 'locate':
       placeChoice = 'geo';
@@ -587,7 +733,10 @@ function frame(time: number): void {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) requestAnimationFrame(frame);
+  if (document.hidden) return;
+  requestAnimationFrame(frame);
+  const age = Date.now() - weather.fetchedAt;
+  if (!refreshing && (weather.origin !== 'live' || age > WEATHER_TTL_MS)) void refreshWeather();
 });
 
 const resize = () => {
@@ -602,4 +751,9 @@ if (debug && debugRoot) mountDebug(debugRoot);
 runCatchup();
 if (!state.started) openModal(nameModal('窗前小樹'));
 requestAnimationFrame(frame);
-void refreshWeather(!placeChoice && weather.source !== 'geo');
+if (weather.origin === 'live' && !weatherLoading) {
+  applyWeather(weather);
+  scheduleRefresh(Math.max(5000, WEATHER_TTL_MS - (Date.now() - weather.fetchedAt)));
+} else {
+  void refreshWeather(!placeChoice && weather.source !== 'geo');
+}

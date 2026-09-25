@@ -14,6 +14,11 @@ export function freshReinforcement(): Reinforcement {
   return { stakes: false, ropes: false, prune: false };
 }
 
+/** Name shown for a storm: the real HKO signal (e.g. 八號風球) when there is one, else the game category. */
+export function stormTitle(storm: Pick<Storm, 'kind' | 'official'>): string {
+  return storm.official?.short ?? stormLabel(storm.kind);
+}
+
 export function prepScore(r: Reinforcement): number {
   return (r.stakes ? 1 : 0) + (r.ropes ? 1 : 0) + (r.prune ? 1 : 0);
 }
@@ -208,6 +213,12 @@ function resolveStormsOn(state: GameState, date: string): StormResult[] {
   const due = state.storms.filter((s) => !s.resolved && s.date === date);
   const results: StormResult[] = [];
   for (const storm of due) {
+    if (storm.provisional) {
+      // A TC1 heads-up that never turned into a stronger signal: no storm, keep the reinforcement.
+      storm.resolved = true;
+      addLog(state, date, `${storm.official?.short ?? '戒備信號'}之後，風暴冇正面吹到嚟。加固保留住，下次用得返。`, { kind: 'event', title: '虛驚一場', time: '' });
+      continue;
+    }
     results.push(resolveStorm(state, storm, date));
   }
   return results;
@@ -216,17 +227,19 @@ function resolveStormsOn(state: GameState, date: string): StormResult[] {
 export function resolveStorm(state: GameState, storm: Storm, date: string): StormResult {
   const score = prepScore(state.reinforcement);
   const outcome = stormOutcome(storm.kind, score);
-  const label = stormLabel(storm.kind);
+  const label = stormTitle(storm);
   let bonusCm = 0;
   let message = '';
   let meta: LogMeta;
   if (outcome === 'safe') {
     state.health = clamp(state.health + 8, HEALTH_FLOOR, 100);
     bonusCm = 6 + stageIndex(state.heightCm) * 3;
+    // Real Observatory signals are worth more than model-only forecasts.
+    if (storm.official) bonusCm = Math.round(bonusCm * 1.5);
     state.heightCm += bonusCm;
     state.stormSurvivals += 1;
     if (state.scars > 0) state.scars -= 1;
-    message = `${label}過咗。你預先加固，棵樹唔單止捱住，仲長多 ${bonusCm} 厘米。`;
+    message = `${label}過咗。你預先加固，棵樹唔單止捱住，仲長多 ${bonusCm} 厘米${storm.official ? '（真實天文台信號，額外加成）' : ''}。`;
     meta = { kind: 'storm-safe', title: `捱過${label}`, reward: { text: `+${bonusCm} 厘米`, tone: 'green' } };
   } else if (outcome === 'partial') {
     state.health = clamp(state.health - 8, HEALTH_FLOOR, 100);
@@ -382,13 +395,18 @@ export function syncStorms(state: GameState, days: ForecastDay[], today: string)
     });
     const existing = state.storms.find((s) => s.date === day.date && !s.resolved);
     if (!severity.stormKind) {
-      if (existing && !existing.debug) {
+      if (existing && !existing.debug && !existing.official) {
         state.storms = state.storms.filter((s) => s !== existing);
       }
       continue;
     }
     if (existing) {
-      if (!existing.debug) {
+      if (existing.official) {
+        if (!existing.provisional && KIND_RANK[severity.stormKind] > KIND_RANK[existing.kind]) existing.kind = severity.stormKind;
+        existing.rainMm = Math.max(existing.rainMm, day.precipMm);
+        existing.windKmh = Math.max(existing.windKmh, day.windKmh);
+        existing.gustKmh = Math.max(existing.gustKmh, day.gustKmh);
+      } else if (!existing.debug) {
         existing.kind = severity.stormKind;
         existing.rainMm = day.precipMm;
         existing.windKmh = day.windKmh;
@@ -406,7 +424,82 @@ export function syncStorms(state: GameState, days: ForecastDay[], today: string)
       });
     }
   }
-  state.storms = state.storms.filter((s) => s.resolved || s.debug || s.date < today || dates.has(s.date));
+  state.storms = state.storms.filter((s) => s.resolved || s.debug || s.official || s.date < today || dates.has(s.date));
+}
+
+const KIND_RANK: Record<StormKind, number> = { 'heavy-rain': 1, gale: 2, typhoon: 3 };
+
+const OFFICIAL_LEVELS: Record<StormKind, { rainMm: number; windKmh: number; gustKmh: number }> = {
+  'heavy-rain': { rainMm: 60, windKmh: 22, gustKmh: 40 },
+  gale: { rainMm: 12, windKmh: 50, gustKmh: 80 },
+  typhoon: { rainMm: 110, windKmh: 90, gustKmh: 140 },
+};
+
+export interface OfficialSignal {
+  code: string;
+  name: string;
+  short: string;
+  kind: StormKind | null;
+  standby: boolean;
+}
+
+/**
+ * Turn live Hong Kong Observatory signals into in-game storms.
+ * - A typhoon signal No. 3+, strong monsoon, or amber/red/black rainstorm makes (or upgrades) today's storm,
+ *   which resolves at the end of the day with the usual reinforce check and an extra bonus.
+ * - Standby signal No. 1 adds a provisional storm tomorrow so the player can reinforce early;
+ *   it only hits if a stronger signal is actually hoisted.
+ * Returns a short message when something new was added (for a toast), else null.
+ */
+export function syncOfficialWarnings(state: GameState, signals: OfficialSignal[], today: string): string | null {
+  let message: string | null = null;
+  let driver: OfficialSignal | null = null;
+  for (const sig of signals) {
+    if (sig.kind && (!driver || KIND_RANK[sig.kind] > KIND_RANK[driver.kind!])) driver = sig;
+  }
+  if (driver?.kind) {
+    const levels = OFFICIAL_LEVELS[driver.kind];
+    const existing = state.storms.find((s) => s.date === today && !s.resolved);
+    const official = { code: driver.code, name: driver.name, short: driver.short };
+    if (existing && existing.debug) return null;
+    if (existing) {
+      let upgraded = false;
+      if (existing.provisional || !existing.official || KIND_RANK[driver.kind] > KIND_RANK[existing.kind] || (KIND_RANK[driver.kind] === KIND_RANK[existing.kind] && existing.official.code !== driver.code)) {
+        upgraded = existing.official?.code !== driver.code || existing.kind !== driver.kind || Boolean(existing.provisional);
+        existing.kind = driver.kind;
+        existing.official = official;
+      }
+      existing.provisional = false;
+      existing.rainMm = Math.max(existing.rainMm, levels.rainMm);
+      existing.windKmh = Math.max(existing.windKmh, levels.windKmh);
+      existing.gustKmh = Math.max(existing.gustKmh, levels.gustKmh);
+      if (upgraded) message = `天文台${driver.name}生效，今晚結算前仲可以加固。`;
+    } else {
+      state.storms.push({ date: today, kind: driver.kind, ...levels, resolved: false, debug: false, official });
+      message = `天文台${driver.name}生效，今晚結算前仲可以加固。`;
+    }
+    if (message) addLog(state, today, message, { kind: 'event', title: `天文台：${driver.short}`, reward: { text: '真實信號', tone: 'red' } });
+  }
+  const standby = signals.find((s) => s.standby);
+  if (standby && !(driver && (driver.kind === 'typhoon' || driver.kind === 'gale'))) {
+    const tomorrow = addDays(today, 1);
+    if (!state.storms.some((s) => s.date === tomorrow && !s.resolved)) {
+      state.storms.push({
+        date: tomorrow,
+        kind: 'gale',
+        ...OFFICIAL_LEVELS.gale,
+        resolved: false,
+        debug: false,
+        official: { code: standby.code, name: standby.name, short: standby.short },
+        provisional: true,
+      });
+      state.storms.sort((a, b) => a.date.localeCompare(b.date));
+      const note = `天文台發出${standby.name}，熱帶氣旋可能影響香港。可以預早加固；如果冇再升級，就唔會打中棵樹。`;
+      addLog(state, today, note, { kind: 'event', title: `天文台：${standby.short}`, reward: { text: '預早加固', tone: 'orange' } });
+      message ??= note;
+    }
+  }
+  return message;
 }
 
 export function insertDebugStorm(state: GameState, date: string, kind: StormKind): Storm {

@@ -1,8 +1,12 @@
 import { addDays } from './dates';
+import { hkoIconToWmo, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, SceneOverride, Storm, StormKind } from './types';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
+
+/** Where the numbers came from: Open-Meteo model data, HKO observations/forecast, or the built-in simulation. */
+export type WeatherProvider = 'open-meteo' | 'hko' | 'sim';
 
 export interface WeatherSnapshot {
   lat: number;
@@ -15,7 +19,25 @@ export interface WeatherSnapshot {
   current: CurrentWeather;
   daily: ForecastDay[];
   error?: string;
+  provider?: WeatherProvider;
+  /** HKO warnings, readings and 9-day forecast when the player is in or near Hong Kong. */
+  hko?: HkoData | null;
+  /** Condition text from HKO (e.g. 間有陽光) when it describes the current weather better than the model code. */
+  conditionText?: string;
+  /** HKO station the temperature came from. */
+  station?: string;
+  /** District name used for HKO rainfall (e.g. 沙田). */
+  district?: string;
+  /** Hours until rain is expected in the next 6 h (0 = now), from Open-Meteo hourly data. */
+  rainInHours?: number | null;
+  /** Location choice this snapshot was made for ('auto' or a PLACES id), so a changed choice refetches. */
+  choice?: string;
 }
+
+/** Fresh weather is reused for this long before fetching again. */
+export const WEATHER_TTL_MS = 30 * 60 * 1000;
+/** Older cached weather is still better than simulated weather for this long. */
+export const WEATHER_STALE_MS = 3 * 24 * 60 * 60 * 1000;
 
 interface OpenMeteoCurrent {
   temperature_2m?: number;
@@ -43,6 +65,11 @@ interface OpenMeteoDaily {
 
 export function inHongKong(lat: number, lon: number): boolean {
   return lat >= 22.13 && lat <= 22.58 && lon >= 113.82 && lon <= 114.45;
+}
+
+/** Hong Kong plus Shenzhen/Macau/Pearl River Delta edge, where HKO warnings are still the relevant ones. */
+export function nearHongKong(lat: number, lon: number): boolean {
+  return lat >= 21.8 && lat <= 22.9 && lon >= 113.3 && lon <= 114.7;
 }
 
 export function describePlace(lat: number, lon: number, timezone: string): string {
@@ -173,6 +200,7 @@ export function offlineSnapshot(today: string, error: string): WeatherSnapshot {
     },
     daily,
     error,
+    provider: 'sim',
   };
 }
 
@@ -244,9 +272,38 @@ function num(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-export function parseOpenMeteo(data: unknown): { timezone: string; current: CurrentWeather; daily: ForecastDay[] } {
+export interface ForecastResult {
+  timezone: string;
+  current: CurrentWeather;
+  daily: ForecastDay[];
+  rainInHours: number | null;
+}
+
+interface OpenMeteoHourly {
+  time?: string[];
+  precipitation?: number[];
+  weather_code?: number[];
+  wind_gusts_10m?: number[];
+}
+
+/** First hour (0-5) from the current hour on where rain is expected, or null. */
+export function rainSoon(hourly: OpenMeteoHourly | undefined, nowIso: string): number | null {
+  const times = hourly?.time ?? [];
+  if (!times.length) return null;
+  const hour = nowIso.slice(0, 13);
+  let start = times.findIndex((t) => t.slice(0, 13) === hour);
+  if (start < 0) start = 0;
+  for (let i = 0; i < 6 && start + i < times.length; i++) {
+    const mm = num(hourly?.precipitation?.[start + i], 0);
+    const code = num(hourly?.weather_code?.[start + i], 0);
+    if (mm >= 0.3 || (isRainCode(code) && code >= 61)) return i;
+  }
+  return null;
+}
+
+export function parseOpenMeteo(data: unknown): ForecastResult {
   if (!data || typeof data !== 'object') throw new Error('天氣資料格式不對');
-  const body = data as { timezone?: string; current?: OpenMeteoCurrent; daily?: OpenMeteoDaily };
+  const body = data as { timezone?: string; current?: OpenMeteoCurrent; daily?: OpenMeteoDaily; hourly?: OpenMeteoHourly };
   const daily = body.daily;
   const dates = daily?.time ?? [];
   if (!dates.length) throw new Error('沒有預報');
@@ -276,33 +333,124 @@ export function parseOpenMeteo(data: unknown): { timezone: string; current: Curr
       time: current.time ?? '',
     },
     daily: days,
+    rainInHours: rainSoon(body.hourly, current.time ?? ''),
   };
 }
 
-export async function fetchForecast(lat: number, lon: number): Promise<{ timezone: string; current: CurrentWeather; daily: ForecastDay[] }> {
+export function forecastUrl(lat: number, lon: number): string {
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', lat.toFixed(4));
   url.searchParams.set('longitude', lon.toFixed(4));
   url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,is_day');
+  url.searchParams.set('hourly', 'precipitation,weather_code,wind_gusts_10m');
   url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset');
   url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '7');
+  url.searchParams.set('forecast_hours', '12');
   url.searchParams.set('wind_speed_unit', 'kmh');
-  let lastStatus = 0;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * attempt * attempt));
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    lastStatus = res.status;
+  return url.toString();
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Open-Meteo forecast with up to 3 tries (backs off on 429/5xx/network errors, honours Retry-After up to 8 s). */
+export async function fetchForecast(lat: number, lon: number, opts: { tries?: number; timeoutMs?: number } = {}): Promise<ForecastResult> {
+  const url = forecastUrl(lat, lon);
+  const tries = opts.tries ?? 3;
+  let lastError = '天氣服務冇回應';
+  let wait = 0;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    if (attempt > 0) await sleep(wait || 1000 * 3 ** (attempt - 1));
+    wait = 0;
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: timeoutSignal(opts.timeoutMs ?? 8000) });
+    } catch {
+      lastError = '連唔到天氣服務';
+      continue;
+    }
     if (res.ok) return parseOpenMeteo(await res.json());
+    lastError = res.status === 429 ? '天氣服務暫時太繁忙（429）' : `天氣服務回應 ${res.status}`;
+    const retryAfter = Number(res.headers.get('retry-after'));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) wait = Math.min(8000, retryAfter * 1000);
     if (res.status !== 429 && res.status < 500) break;
   }
-  throw new Error(lastStatus === 429 ? '天氣服務暫時太繁忙（429）' : `天氣服務回應 ${lastStatus}`);
+  throw new Error(lastError);
+}
+
+/** Build a forecast purely from HKO (used when Open-Meteo is unreachable but HKO answers). */
+export function hkoForecast(hko: HkoData, today: string): ForecastResult | null {
+  if (!hko.current && !hko.forecast.length) return null;
+  const nowTemp = hko.current?.tempC ?? hko.forecast[0]?.tempMax ?? 28;
+  const nowCode = hko.current?.icon ? hkoIconToWmo(hko.current.icon) : 2;
+  const days: ForecastDay[] = [];
+  const first = hko.forecast[0];
+  if (!first || first.date > today) {
+    days.push({
+      date: today,
+      code: nowCode,
+      tempMax: Math.max(nowTemp, first ? first.tempMax - 1 : nowTemp),
+      tempMin: Math.min(nowTemp, first ? first.tempMin : nowTemp - 4),
+      precipMm: 0,
+      precipProb: 10,
+      windKmh: 12,
+      gustKmh: 20,
+      sunrise: `${today}T06:10`,
+      sunset: `${today}T18:25`,
+    });
+  }
+  for (const d of hko.forecast) {
+    if (d.date < today) continue;
+    const rain = rainFromPsr(d.psr);
+    const wind = windFromText(d.wind);
+    days.push({
+      date: d.date,
+      code: hkoIconToWmo(d.icon),
+      tempMax: d.tempMax,
+      tempMin: d.tempMin,
+      precipMm: rain.mm,
+      precipProb: rain.prob,
+      windKmh: wind,
+      gustKmh: Math.round(wind * 1.5),
+      sunrise: `${d.date}T06:10`,
+      sunset: `${d.date}T18:25`,
+    });
+  }
+  const rainNow = hko.current ? Math.max(0, ...Object.values(hko.current.rainByDistrict)) : 0;
+  return {
+    timezone: 'Asia/Hong_Kong',
+    current: {
+      tempC: nowTemp,
+      humidity: hko.current?.humidity ?? 70,
+      precipMm: rainNow > 0 ? Math.min(8, rainNow) : 0,
+      code: nowCode,
+      windKmh: 12,
+      gustKmh: 20,
+      isDay: true,
+      time: hko.current?.updated ?? '',
+    },
+    daily: days.slice(0, 7),
+    rainInHours: null,
+  };
+}
+
+/** Rainfall in the player's district over the past hour, if HKO reports one. */
+export function districtRain(hko: HkoData | null | undefined, district: string | undefined): number | null {
+  const table = hko?.current?.rainByDistrict;
+  if (!table || !district) return null;
+  const bare = district.replace(/區$/, '');
+  for (const key of [district, bare, `${bare}區`]) if (key in table) return table[key] ?? 0;
+  return null;
+}
+
+export function activeHot(warnings: HkoWarning[] | undefined): boolean {
+  return Boolean(warnings?.some((w) => w.group === 'WHOT'));
 }
 
 export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; source: LocationSource }> {
   const fallback = { lat: HK_LAT, lon: HK_LON, source: 'fallback' as const };
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(fallback);
-  return new Promise((resolve) => {
+  const ask = () => new Promise<{ lat: number; lon: number; source: LocationSource }>((resolve) => {
     const timer = setTimeout(() => resolve(fallback), timeoutMs);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -313,7 +461,14 @@ export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; so
         clearTimeout(timer);
         resolve(fallback);
       },
-      { enableHighAccuracy: false, timeout: timeoutMs - 500, maximumAge: 60 * 60 * 1000 },
+      { enableHighAccuracy: false, timeout: timeoutMs - 500, maximumAge: 30 * 60 * 1000 },
     );
   });
+  // Skip the wait entirely when the player has already said no.
+  const perms = (navigator as Navigator & { permissions?: Permissions }).permissions;
+  if (!perms?.query) return ask();
+  return perms
+    .query({ name: 'geolocation' as PermissionName })
+    .then((status) => (status.state === 'denied' ? fallback : ask()))
+    .catch(() => ask());
 }
