@@ -122,6 +122,10 @@ export interface GameState {
   morningNote: string | null;
   dying: { since: string; at: number } | null;
   over: null | { kind: 'dead' | 'complete'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean };
+  /** Season finished (badges earned) — the tree keeps growing afterwards; there is no height cap. */
+  completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean };
+  /** Date the tree first passed the season's target height (the target is a goal, not a cap). */
+  passedTargetOn?: string | null;
   lastSettlement: Settlement | null;
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
   legacyBonus: number;

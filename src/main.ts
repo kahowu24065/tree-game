@@ -3,7 +3,9 @@ import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type SeasonId, type We
 import { addDays, clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
 import { condForEvent, currentEvents, severeCountdown, type Countdown } from './events';
 import { DEV_PANEL } from './flags';
-import { bookGameEnd, loadMeta, newGame, saveMeta } from './meta';
+import { ICONS } from './icons';
+import { esc } from './util';
+import { bookGameEnd, bookSeasonComplete, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { Scene3D, type Quality } from './three/scene3d';
@@ -34,6 +36,7 @@ import {
   locationModal,
   openModal,
   overModal,
+  completeModal,
   renderChrome,
   renderPanel,
   renderSheet,
@@ -246,7 +249,7 @@ function sceneInput(): SceneInput {
   const previewSeason = preview.species ? seasonDef(speciesDef(preview.species).season).targetCm : target;
   const stage = preview.stage ?? stageIndexFor(state.heightCm, previewSeason);
   const islandStage = preview.island;
-  const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : Math.min(state.heightCm, previewSeason)) : state.heightCm;
+  const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : state.heightCm) : state.heightCm;
   return {
     treeName: state.treeName,
     species,
@@ -338,6 +341,13 @@ function persist(): void {
 
 /** When a game ends: book badges / landmark once, then show the result. */
 function handleOver(): boolean {
+  if (!state.over && state.completed && !state.completed.booked) {
+    // Season finished: badges now, but the tree keeps growing.
+    const lines = bookSeasonComplete(meta, state);
+    persist();
+    if (state.started) openModal(completeModal(state, meta, lines));
+    return true;
+  }
   if (!state.over) return false;
   const lines = bookGameEnd(meta, state);
   persist();
@@ -665,6 +675,9 @@ function doAction(action: string, target: HTMLElement): void {
     case 'new-game':
       openStart();
       return;
+    case 'reset-view':
+      scene3d?.resetView();
+      return;
     case 'location':
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
@@ -797,6 +810,8 @@ export interface DevApi {
   ecoInfo: () => { id: string; name: string; count: number; resident: boolean }[];
   ecoCaps: () => EcoCaps | null;
   followAnimal: (id: string | null) => void;
+  /** Camera / scale readout: zoom, camera distance (m), island scale, tree height (m), fence radius (m). */
+  viewInfo: () => { zoom: number; distM: number; islandK: number; treeM: number; fenceRadius: number; islandRadius: number } | null;
   habitatInfo: () => string;
   sway: () => number;
 }
@@ -869,6 +884,7 @@ if (DEV_PANEL) {
     ecoInfo: () => (scene3d?.animalInfo() ?? []).map((g) => ({ id: g.id, name: animalName(g.id), count: g.count, resident: g.resident })),
     ecoCaps: () => scene3d?.animalCaps() ?? null,
     followAnimal: (id) => scene3d?.followAnimal(id),
+    viewInfo: () => (scene3d ? { ...scene3d.cameraInfo(), ...scene3d.fenceInfo() } : null),
     habitatInfo: () => {
       const input = sceneInput();
       const island = input.islandStage ?? input.stage;
@@ -878,6 +894,14 @@ if (DEV_PANEL) {
     },
     sway: () => swayLevel(todayCond()),
   };
+  (window as unknown as { __tree?: unknown }).__tree = {
+    viewInfo: api.viewInfo,
+    zoomBy: (f: number, x?: number, y?: number) => scene3d?.zoomBy(f, x, y),
+    resetView: () => scene3d?.resetView(),
+    viewState: () => scene3d?.viewState(),
+    flyers: () => scene3d?.flyerHeights() ?? [],
+    animalScreen: (id: string) => scene3d?.animalScreen(id) ?? null,
+  };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');
     if (root) devRender = m.mountDevPanel(root, api);
@@ -886,9 +910,36 @@ if (DEV_PANEL) {
 }
 
 let lastChrome = 0;
+let viewKey = '';
+let hintShown = localStorage.getItem('sekai-tree-zoom-hint') === '1';
+/** Show 「返回全景」 while the player is zoomed in or following an animal; a one-off zoom hint on first visit. */
+function syncViewButton(): void {
+  if (!scene3d) return;
+  if (!hintShown && state.started && !state.over && document.getElementById('modal')?.hidden) {
+    hintShown = true;
+    localStorage.setItem('sekai-tree-zoom-hint', '1');
+    const hint = document.getElementById('zoom-hint');
+    if (hint) {
+      hint.hidden = false;
+      window.setTimeout(() => (hint.hidden = true), 9000);
+    }
+  }
+  const v = scene3d.viewState();
+  const key = `${v.active}|${v.following ?? ''}`;
+  if (key === viewKey) return;
+  viewKey = key;
+  const btn = document.getElementById('view-reset');
+  if (btn) {
+    btn.hidden = !v.active;
+    btn.innerHTML = `${ICONS.locate}<span>${v.following ? `跟緊${esc(v.following)}・返回全景` : '返回全景'}</span>`;
+  }
+  if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
+}
+
 function frame(time: number): void {
   const input = sceneInput();
   drawScene(input, time);
+  syncViewButton();
   // Keep the clock-driven chrome (countdowns, night styling) fresh without re-rendering every frame.
   if (time - lastChrome > 15000) {
     lastChrome = time;

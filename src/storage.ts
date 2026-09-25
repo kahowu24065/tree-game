@@ -1,6 +1,9 @@
 import { defaultSpecies, speciesDef } from './data/species';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
+import { seasonDef } from './rules';
+
+const seasonTarget = (id: GameState['season']) => seasonDef(id ?? 's3').targetCm;
 
 /** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
 export const SAVE_KEY = 'sekai-tree-v2';
@@ -16,6 +19,13 @@ export function loadGame(): GameState | null {
     data.residents ??= [];
     if (!data.species || speciesDef(data.species).season !== data.season) data.species = defaultSpecies(data.season ?? 's3');
     data.log ??= [];
+    // v7: finishing a season no longer ends the game — the tree keeps growing.
+    if (data.over?.kind === 'complete') {
+      data.completed = { date: data.over.date, tiers: data.over.tiers, days: data.over.days, heightCm: data.heightCm, booked: data.over.booked };
+      data.over = null;
+    }
+    data.completed ??= null;
+    data.passedTargetOn ??= data.heightCm >= seasonTarget(data.season) ? data.createdOn : null;
     return data;
   } catch {
     return null;

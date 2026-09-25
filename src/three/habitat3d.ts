@@ -16,6 +16,8 @@ import { ellipsoid, jitterGeometry, limb, merge, paint } from './util3d';
 export interface Habitat {
   group: THREE.Group;
   radius: number;
+  /** Ground height of the habitat land (island units). */
+  groundAt(x: number, z: number): number;
   stage: number;
   update(t: number, wind: number): void;
   dispose(): void;
@@ -736,6 +738,7 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     group,
     radius: R,
     stage: s4,
+    groundAt: (x: number, z: number) => b.groundY(x, z),
     update(t: number) {
       flowTex.offset.y = -t * 0.35;
       fallTex.offset.y = t * 0.9;

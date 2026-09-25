@@ -198,12 +198,13 @@ describe('瀕死、枯死、遺產', () => {
     expect(meta.pendingLegacy).toBe(false);
   });
 
-  it('完成賽季發徽章', () => {
+  it('完成賽季發徽章，但遊戲唔會完結', () => {
     const s = createGame('2026-01-01', { season: 's3' });
     Object.assign(s, { moisture: 60, nutrients: 90 });
     const r = settleDay(s, '2026-03-31', ['clear'], null, NOW);
     expect(r.completed).toBe(true);
-    expect(s.over).toMatchObject({ kind: 'complete', tiers: [1] });
+    expect(s.over).toBeNull();
+    expect(s.completed).toMatchObject({ tiers: [1] });
   });
 });
 

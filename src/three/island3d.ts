@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../util';
 import { ellipsoid, jitterGeometry, mat, merge, paint } from './util3d';
+import { FENCE_HEIGHT_M, fenceRadius } from '../scale';
 
 export const ISLAND_R = 7;
 
@@ -182,40 +183,8 @@ export function buildIsland(): Island {
   bridge.rotation.y = -Math.atan2(bt.z, bt.x) + Math.PI / 2;
   group.add(bridge);
 
-  // Fence around most of the rim; the front-right gap lets the stream out.
-  const postGeo = new THREE.BoxGeometry(0.14, 0.75, 0.14);
-  const railGeo = new THREE.BoxGeometry(1, 0.07, 0.06);
-  const posts: THREE.Matrix4[] = [];
-  const rails: THREE.Matrix4[] = [];
   const start = 1.2;
   const endA = start + Math.PI * 1.55;
-  const steps = 30;
-  let prev: THREE.Vector3 | null = null;
-  for (let i = 0; i <= steps; i++) {
-    const a = start + ((endA - start) * i) / steps;
-    const r = islandRadius(a) - 0.35;
-    const p = new THREE.Vector3(Math.cos(a) * r, 0.0, Math.sin(a) * r);
-    const dome = 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2);
-    p.y = dome;
-    posts.push(new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y + 0.37, p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -a, (rand() - 0.5) * 0.08)), new THREE.Vector3(1, 0.85 + rand() * 0.3, 1)));
-    if (prev) {
-      const mid = prev.clone().add(p).multiplyScalar(0.5);
-      const len = prev.distanceTo(p);
-      const ry = -Math.atan2(p.z - prev.z, p.x - prev.x);
-      for (const h of [0.28, 0.56]) {
-        rails.push(new THREE.Matrix4().compose(new THREE.Vector3(mid.x, mid.y + h, mid.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(len, 1, 1)));
-      }
-    }
-    prev = p;
-  }
-  const postMesh = new THREE.InstancedMesh(postGeo, mat('#9b6b43'), posts.length);
-  posts.forEach((m, i) => postMesh.setMatrixAt(i, m));
-  postMesh.castShadow = true;
-  group.add(postMesh);
-  const railMesh = new THREE.InstancedMesh(railGeo, mat('#b0815a'), rails.length);
-  rails.forEach((m, i) => railMesh.setMatrixAt(i, m));
-  railMesh.castShadow = true;
-  group.add(railMesh);
 
   // Rocks: a cluster by the spring, a few scattered near the rim.
   const rockSpots: [number, number, number][] = [
@@ -331,6 +300,89 @@ export function buildIsland(): Island {
       fallTex.offset.y = t * 0.9;
       spray.scale.setScalar(1 + Math.sin(t * 5) * 0.06);
       void wind;
+    },
+  };
+}
+
+/** Wobble of the island rim (fraction of the radius) at an angle — shared by the garden and the fence. */
+export function rimWobble(angle: number): number {
+  return 1 + 0.035 * Math.sin(angle * 3 + 0.6) + 0.025 * Math.sin(angle * 7 + 1.9);
+}
+
+export interface Fence {
+  group: THREE.Group;
+  /** Radius (metres) the fence was built for. */
+  radius: number;
+  dispose(): void;
+}
+
+/** Angle (radians, island space) of the gate: facing the camera side. */
+export const GATE_ANGLE = 1.25;
+
+/**
+ * Garden fence on the rim of the current island, drawn 1:1 in metres (posts 1.1 m, a post every ~2 m) with a gate
+ * (two taller posts and an open gap) facing the camera. `islandR` is the island radius in metres; `groundAt` gives the
+ * ground height there.
+ */
+export function buildFence(islandR: number, groundAt: (x: number, z: number) => number): Fence {
+  const rand = mulberry32(4242 + Math.round(islandR * 10));
+  const group = new THREE.Group();
+  group.name = 'fence';
+  const r0 = fenceRadius(islandR);
+  const h = FENCE_HEIGHT_M;
+  const postGeo = new THREE.BoxGeometry(0.12, h, 0.12);
+  postGeo.translate(0, h / 2, 0);
+  const railGeo = new THREE.BoxGeometry(1, 0.08, 0.05);
+  const gateGap = Math.min(0.5, 1.6 / r0); // ~1.6 m opening
+  const circumference = Math.PI * 2 * r0;
+  const steps = Math.max(24, Math.round(circumference / 2));
+  const posts: THREE.Matrix4[] = [];
+  const rails: THREE.Matrix4[] = [];
+  let prev: THREE.Vector3 | null = null;
+  let first: THREE.Vector3 | null = null;
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  for (let i = 0; i <= steps; i++) {
+    const a = GATE_ANGLE + gateGap / 2 + ((Math.PI * 2 - gateGap) * i) / steps;
+    const r = r0 * rimWobble(a) - 0.1;
+    const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+    p.y = groundAt(p.x, p.z);
+    const gate = i === 0 || i === steps;
+    q.setFromEuler(e.set(0, -a, (rand() - 0.5) * 0.06));
+    posts.push(new THREE.Matrix4().compose(p.clone().setY(p.y - 0.05), q, new THREE.Vector3(gate ? 1.4 : 1, gate ? 1.25 : 0.92 + rand() * 0.14, gate ? 1.4 : 1)));
+    if (prev) {
+      const mid = prev.clone().add(p).multiplyScalar(0.5);
+      const len = prev.distanceTo(p);
+      const ry = -Math.atan2(p.z - prev.z, p.x - prev.x);
+      for (const y of [h * 0.38, h * 0.78]) rails.push(new THREE.Matrix4().compose(new THREE.Vector3(mid.x, mid.y + y, mid.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(len, 1, 1)));
+    }
+    if (!first) first = p;
+    prev = p;
+  }
+  const postMesh = new THREE.InstancedMesh(postGeo, mat('#9b6b43'), posts.length);
+  posts.forEach((m, i) => postMesh.setMatrixAt(i, m));
+  postMesh.castShadow = true;
+  const railMesh = new THREE.InstancedMesh(railGeo, mat('#b0815a'), rails.length);
+  rails.forEach((m, i) => railMesh.setMatrixAt(i, m));
+  railMesh.castShadow = true;
+  group.add(postMesh, railMesh);
+  // Gate lintel between the two gate posts.
+  if (first && prev) {
+    const mid = first.clone().add(prev).multiplyScalar(0.5);
+    const len = first.distanceTo(prev);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(len + 0.3, 0.1, 0.1), mat('#7d5535'));
+    lintel.position.set(mid.x, Math.max(first.y, prev.y) + h * 1.25, mid.z);
+    lintel.rotation.y = -Math.atan2(prev.z - first.z, prev.x - first.x);
+    lintel.castShadow = true;
+    group.add(lintel);
+  }
+  return {
+    group,
+    radius: islandR,
+    dispose() {
+      postGeo.dispose();
+      railGeo.dispose();
+      group.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry !== postGeo && (o as THREE.Mesh).geometry.dispose());
     },
   };
 }

@@ -556,6 +556,69 @@ body.sheet-open .hud > .sheet-backdrop {
   font-size: 10px;
 }
 
+/* Beyond-target: a 目標 tick on the rail; the fill turns gold past it. */
+.rail-target {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  height: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(160, 110, 20, 0.6);
+  transform: translateY(50%);
+}
+
+.rail-target small {
+  position: absolute;
+  left: 18px;
+  top: -7px;
+  white-space: nowrap;
+  font-size: 9.5px;
+}
+
+.rail-track.beyond .rail-fill {
+  background: linear-gradient(#ffd66b, #9be07a 45%, #4fae4f);
+}
+
+.rail-top.beyond small:first-child {
+  color: #ffe08a;
+  font-weight: 700;
+}
+
+/* Zoom / follow: back to the overview. */
+.view-reset {
+  position: absolute;
+  left: calc(var(--pad) + var(--safe-l, 0px));
+  top: 52%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  max-width: 60vw;
+}
+
+.view-reset[hidden],
+.zoom-hint[hidden] {
+  display: none;
+}
+
+.zoom-hint {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--dock-h) + 96px);
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(20, 40, 50, 0.45);
+  color: #fff;
+  font-size: 11.5px;
+  pointer-events: none !important;
+  white-space: nowrap;
+}
+
 /* Morning note */
 .note-slot:empty {
   display: none;

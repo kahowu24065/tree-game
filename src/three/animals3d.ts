@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
 import { allowedAt, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
 import { clamp } from '../util';
+import { fenceRadius, flightCeiling } from '../scale';
 import { ISLAND_R } from './island3d';
 import type { TreeBuild } from './tree3d';
 import { ellipsoid } from './util3d';
@@ -718,6 +719,23 @@ const BUILDERS: Record<Look['kind'], (look: Look) => THREE.Group> = {
 };
 
 const templates = new Map<string, THREE.Group>();
+const templateSize = new Map<string, THREE.Vector3>();
+/** Size of the unscaled model (x = nose-to-tail along its forward axis, z = across / wingspan). */
+function modelSize(id: string): THREE.Vector3 {
+  let v = templateSize.get(id);
+  if (v) return v;
+  const t = template(id);
+  v = t ? new THREE.Box3().setFromObject(t).getSize(new THREE.Vector3()) : new THREE.Vector3(1, 1, 1);
+  templateSize.set(id, v);
+  return v;
+}
+
+/** Model scale that draws the animal at its real length (or wingspan for butterflies / moths / bats). */
+export function realScale(def: AnimalDef): number {
+  const size = modelSize(def.id);
+  if ((def.look.kind === 'butterfly' || def.motion === 'bat') && def.real.span) return def.real.span / Math.max(1e-3, size.z);
+  return def.real.len / Math.max(1e-3, size.x);
+}
 function template(id: string): THREE.Group | null {
   let t = templates.get(id);
   if (t) return t;
@@ -901,6 +919,7 @@ const MAX_MEMBERS = 48;
 type Act = 'none' | 'graze' | 'sniff' | 'sit' | 'look' | 'lie' | 'climb' | 'groom' | 'peck' | 'strike' | 'preen' | 'rest';
 
 interface Member {
+  lastPerched?: boolean;
   obj: THREE.Object3D;
   rig: Rig;
   pos: THREE.Vector3;
@@ -974,10 +993,12 @@ function faceYaw(dir: THREE.Vector3): number {
   return Math.atan2(-dir.z, dir.x);
 }
 
+/** Island landscape scale (see scale.ts); the garden dome grows with it. */
+let GK = 1;
 function groundY(x: number, z: number): number {
-  const r = Math.hypot(x, z);
-  if (r > ISLAND_R) return -0.02;
-  return 0.02 + 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2);
+  const r = Math.hypot(x, z) / GK;
+  if (r > ISLAND_R) return -0.02 * GK;
+  return GK * (0.02 + 0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2));
 }
 
 const AGILE = new Set(['muntjac', 'leopardcat', 'otter', 'macaque', 'civet', 'smallcivet', 'ferretbadger']);
@@ -996,6 +1017,9 @@ function idlesFor(def: AnimalDef): Act[] {
 
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
+const tmp3 = new THREE.Vector3();
+/** Motions that can be in the air (subject to the flight ceiling). */
+const AIRBORNE = new Set(['perch', 'flock', 'soar', 'hover', 'flutter', 'bat']);
 const UP = new THREE.Vector3(0, 1, 0);
 const basis = new THREE.Matrix4();
 const bx = new THREE.Vector3();
@@ -1035,8 +1059,54 @@ export class Animals3D {
   }
 
   /** Radius of the (growing) island, so walkers can roam a little further on bigger islands. */
-  setIslandRadius(r: number): void {
+  setIslandRadius(r: number, k = 1): void {
     this.islandR = r;
+    GK = k;
+  }
+
+  /** Animal nearest to a tap ray (within `tolAt(distance)` metres of it). */
+  pick(ray: THREE.Ray, tolAt: (d: number) => number): { crew: Crew; member: Member } | null {
+    let best: { crew: Crew; member: Member } | null = null;
+    let bestK = 1;
+    const v = new THREE.Vector3();
+    for (const crew of this.crews) {
+      if (crew.leaving || crew.def.motion === 'glow') continue;
+      for (const member of crew.members) {
+        if (!member.obj.visible) continue;
+        const d = v.subVectors(member.pos, ray.origin).dot(ray.direction);
+        if (d <= 0) continue;
+        const k = ray.distanceToPoint(member.pos) / Math.max(crew.def.real.len * 0.7, tolAt(d));
+        if (k < bestK) {
+          bestK = k;
+          best = { crew, member };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Follow-cam data for a picked animal, or null once it has left. */
+  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number } | null {
+    const h = ref as { crew: Crew; member: Member } | null;
+    if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
+    return { pos: h.member.pos, size: h.crew.def.real.len, yaw: h.member.yaw };
+  }
+
+  flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {
+    const tree = this.tree;
+    if (!tree) return [];
+    const base = tree.group.getWorldPosition(new THREE.Vector3()).y;
+    const out: { id: string; y: number; ceiling: number; perched: boolean }[] = [];
+    for (const c of this.crews) {
+      if (!AIRBORNE.has(c.def.motion)) continue;
+      for (const m of c.members) out.push({ id: c.def.id, y: m.pos.y - base, ceiling: flightCeiling(tree.height), perched: m.lastPerched ?? false });
+    }
+    return out;
+  }
+
+  refName(ref: unknown): string | null {
+    const h = ref as { crew: Crew } | null;
+    return h && this.crews.includes(h.crew) ? h.crew.def.name : null;
   }
 
   /** Update what may appear: every unlocked (seen) animal, the residents, day/night and the tree's stage. */
@@ -1140,7 +1210,7 @@ export class Animals3D {
     const c = this.crews.find((x) => x.def.id === id && !x.leaving) ?? this.crews.find((x) => x.def.id === id);
     const m = c?.members[c.members.length > 1 ? 1 : 0];
     if (!c || !m) return null;
-    return { pos: m.pos, size: m.scale * (c.def.look.kind === 'butterfly' ? 0.8 : 1.1), yaw: m.yaw };
+    return { pos: m.pos, size: c.def.look.kind === 'butterfly' ? (c.def.real.span ?? c.def.real.len) : c.def.real.len, yaw: m.yaw };
   }
 
   caps(): EcoCaps {
@@ -1265,19 +1335,15 @@ export class Animals3D {
     return g;
   }
 
+  /** Real-life size in metres (1 unit = 1 m): the model is scaled to the species' real length / wingspan. */
   private scaleFor(def: AnimalDef): number {
-    const V = this.tree ? Math.max(0.7, this.tree.height) : 1;
-    const sky = 0.26 + 0.12 * V;
-    const size = def.look.size ?? 1;
-    if (GROUND.has(def.motion) && (def.look.kind === 'quad' || def.look.kind === 'monkey')) return clamp(0.4 + V * 0.08, 0.5, 1.6) * size;
-    if (GROUND.has(def.motion)) return clamp(0.4 + V * 0.06, 0.5, 1.3) * size;
-    if (def.look.kind === 'squirrel') return clamp(0.45 + V * 0.05, 0.5, 1.2) * size;
-    if (def.category === 'insect' || def.category === 'butterfly' || def.category === 'reptile' || def.category === 'amphibian') return Math.max(0.32, sky * 0.9) * size;
-    return sky * size;
+    return realScale(def);
   }
 
+  /** How far walkers roam: grows with the island, always inside the fence. */
   private roam(): number {
-    return ISLAND_R * 0.76 + Math.max(0, this.islandR - ISLAND_R) * 0.3;
+    const want = (ISLAND_R * 0.76 + Math.max(0, this.islandR / GK - ISLAND_R) * 0.3) * GK;
+    return Math.min(want, (fenceRadius(this.islandR) - 0.6) / 1.08);
   }
 
   private entryPoint(def: AnimalDef): THREE.Vector3 {
@@ -1298,11 +1364,11 @@ export class Animals3D {
   /** Random walkable point on the island, mostly on the camera side, away from the trunk. */
   private groundTarget(def: AnimalDef): THREE.Vector3 {
     const tree = this.tree!;
-    const inner = Math.max(1.2, tree.trunkRadius * 3 + 0.9);
+    const inner = Math.max(0.6, tree.trunkRadius * 3 + 0.6);
     const outer = this.roam();
     const wade = def.motion === 'wade';
     const ang = wade ? 0.3 + this.rng() * 0.9 : -0.3 + this.rng() * 3.8;
-    const r = wade ? ISLAND_R * 0.76 * (0.75 + this.rng() * 0.2) : inner + this.rng() * (outer - inner);
+    const r = wade ? Math.min(outer, ISLAND_R * 0.76 * GK) * (0.75 + this.rng() * 0.2) : inner + this.rng() * (outer - inner);
     const x = Math.cos(ang) * r;
     const z = Math.sin(ang) * r;
     return new THREE.Vector3(x, groundY(x, z), z);
@@ -1423,8 +1489,13 @@ export class Animals3D {
     const def = c.def;
     c.timer += dt;
     const k = (rate: number) => 1 - Math.exp(-dt * rate);
-    const H = Math.max(1, tree.height);
-    const R = Math.max(1.2, tree.canopyRadius);
+    const H = Math.max(0.05, tree.height);
+    const R = Math.max(0.2, tree.canopyRadius);
+    // Flight ceiling: never above the tree top, never above 80 m (metres above the tree base).
+    const baseY = tree.group.getWorldPosition(tmp3).y;
+    const ceiling = baseY + flightCeiling(tree.height);
+    const len = def.real.len;
+    const tooLow = flightCeiling(tree.height) < len * 3;
     const leaveDone = () => {
       c.gone = true;
     };
@@ -1446,7 +1517,8 @@ export class Animals3D {
       tmp.subVectors(c.leaderTarget, c.leader).setY(0);
       const dist = tmp.length();
       const big = (def.look.size ?? 1) > 1.8;
-      let speed = (def.motion === 'wade' ? 0.35 : def.motion === 'hop' ? 0.7 : big ? 0.45 : 0.75) * clamp(0.6 + H * 0.05, 0.6, 1.4);
+      // Walking speed in m/s, scaled by body length (a toad is slower than a buffalo).
+      let speed = (def.motion === 'wade' ? 0.35 : def.motion === 'hop' ? 0.7 : big ? 0.9 : 0.75) * clamp(len / 0.8, 0.2, 1.6);
       if (c.run || c.leaving) speed *= AGILE.has(def.id) ? 2.6 : 1.6;
       if (dist < 0.15) {
         if (c.leaving) leaveDone();
@@ -1472,8 +1544,10 @@ export class Animals3D {
       switch (def.motion) {
         case 'perch':
         case 'flock': {
-          const air = c.leaving || (def.motion === 'flock' ? c.phase === 'air' : Math.sin(ph * 0.12 + i) > 0.93);
-          if (c.leaving) {
+          const air = !tooLow && (c.leaving || (def.motion === 'flock' ? c.phase === 'air' : Math.sin(ph * 0.12 + i) > 0.93));
+          if (c.leaving && tooLow) {
+            leaveDone();
+          } else if (c.leaving) {
             m.target.set(Math.cos(m.phase) * (R + 14), H + 6, Math.sin(m.phase) * (R + 14));
             if (m.pos.distanceTo(m.target) < 1.5) leaveDone();
           } else if (air) {
@@ -1497,7 +1571,7 @@ export class Animals3D {
           } else {
             const a = t * 0.16 + m.phase;
             const rr = Math.max(5, R + 3.5) + i * 1.2;
-            m.target.set(Math.cos(a) * rr, H + 2.5 + Math.sin(t * 0.3 + i) * 0.8, Math.sin(a) * rr);
+            m.target.set(Math.cos(a) * rr, Math.min(H * 0.9, H - 1.5) + Math.sin(t * 0.3 + i) * 0.8, Math.sin(a) * rr);
           }
           m.pos.lerp(m.target, k(1.4));
           flap = 1;
@@ -1611,6 +1685,14 @@ export class Animals3D {
         case 'glow':
           m.pos.set(0, H * 0.5, 0);
           break;
+      }
+      m.lastPerched = perched;
+      if (AIRBORNE.has(def.motion) && !perched) {
+        const half = len * 0.35;
+        const top = ceiling - half;
+        if (m.pos.y > top) m.pos.y = top;
+        const floor = groundY(m.pos.x, m.pos.z) + half;
+        if (m.pos.y < floor && top >= floor) m.pos.y = floor;
       }
       m.moving = m.prev.distanceTo(m.pos) / Math.max(1e-4, dt);
       // Grow in / shrink out for non-travelling animals.

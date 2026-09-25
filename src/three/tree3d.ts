@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { speciesDef, type SpeciesId, type TreeForm } from '../data/species';
 import type { Reinforcement } from '../types';
 import { clamp, mulberry32 } from '../util';
+import { modelScaleFor } from '../scale';
 import { disposeTree, ellipsoid, jitterGeometry, limb, mat, merge, paint } from './util3d';
 
 /** Map real height (cm) to world units with a soft log curve so seedlings and giants both fit the scene. */
@@ -42,7 +43,12 @@ export interface Perch {
 export interface TreeBuild {
   group: THREE.Group;
   canopy: THREE.Mesh | null;
+  /** Rendered height in metres (= game height G). */
   height: number;
+  /** Height in the model's own (pre-scale) units, for the wind shader. */
+  localHeight: number;
+  /** Model units → metres. */
+  metricScale: number;
   canopyRadius: number;
   crownY: number;
   trunkRadius: number;
@@ -974,17 +980,37 @@ export function buildTree(p: TreeParams): TreeBuild {
     canopyRadius = Math.max(canopyRadius, Math.hypot(s.c.x, s.c.z) + s.r);
     height = Math.max(height, s.c.y + s.r * 0.82);
   }
+  void height;
+  // Metre scale: the shape is modelled at a comfortable size, then scaled uniformly so the highest rendered point is
+  // exactly the game height G (1 unit = 1 m, see scale.ts).
+  group.updateMatrixWorld(true);
+  const localTop = Math.max(0.01, new THREE.Box3().setFromObject(group).max.y);
+  const k = modelScaleFor(localTop, p.heightCm);
+  const outer = new THREE.Group();
+  group.scale.setScalar(k);
+  outer.add(group);
+  const trunkSpots = c.trunkSpots();
+  const scaled = new Set<THREE.Vector3>();
+  const sc = (v: THREE.Vector3) => {
+    if (!scaled.has(v)) {
+      v.multiplyScalar(k);
+      scaled.add(v);
+    }
+  };
+  for (const pr of [...perches, ...trunkSpots, c.nest, c.hollow]) if (pr) sc(pr.pos);
   return {
-    group,
+    group: outer,
     canopy,
-    height,
-    canopyRadius,
-    crownY: c.crownY,
-    trunkRadius: c.trunkRadius,
+    height: localTop * k,
+    localHeight: localTop,
+    metricScale: k,
+    canopyRadius: canopyRadius * k,
+    crownY: c.crownY * k,
+    trunkRadius: c.trunkRadius * k,
     perches,
-    trunkSpots: c.trunkSpots(),
+    trunkSpots,
     nest: c.nest,
     hollow: c.hollow,
-    dispose: () => disposeTree(group),
+    dispose: () => disposeTree(outer),
   };
 }

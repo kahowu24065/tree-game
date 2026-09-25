@@ -111,6 +111,8 @@ export function createGame(today: string, opts: { season?: SeasonId; name?: stri
     morningNote: null,
     dying: null,
     over: null,
+    completed: null,
+    passedTargetOn: null,
     lastSettlement: null,
     legacyBonus,
   };
@@ -315,7 +317,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
       } else {
         died = true;
         const days = daysBetween(state.createdOn, date) + 1;
-        state.over = { kind: 'dead', date, tiers: earnedTiers(season.days, days, false), days };
+        // Badges already booked at season completion are not awarded twice.
+        state.over = { kind: 'dead', date, tiers: state.completed ? [] : earnedTiers(season.days, days, false), days };
         addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time: '' });
       }
     }
@@ -359,13 +362,18 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   );
   noteStage(state, beforeCm, date);
 
+  // The season target is a goal, not a cap: growth carries on by the same formula after it.
+  if (!state.over && !state.passedTargetOn && state.heightCm >= season.targetCm) {
+    state.passedTargetOn = date;
+    addLog(state, date, `${state.treeName}突破咗 ${formatHeight(season.targetCm)} 嘅目標，繼續長高！`, { kind: 'badge', title: '已突破目標', reward: { text: formatHeight(state.heightCm), tone: 'purple' }, time: '' });
+  }
   let completed = false;
-  if (!state.over) {
+  if (!state.over && !state.completed) {
     const days = daysBetween(state.createdOn, date) + 1;
     if (days >= season.days) {
       completed = true;
-      state.over = { kind: 'complete', date, tiers: earnedTiers(season.days, days, true), days };
-      addLog(state, date, `${season.label}完成！${state.treeName}長到 ${formatHeight(state.heightCm)}。`, { kind: 'badge', title: '賽季完成', reward: { text: '徽章', tone: 'purple' }, time: '' });
+      state.completed = { date, tiers: earnedTiers(season.days, days, true), days, heightCm: state.heightCm };
+      addLog(state, date, `${season.label}完成！${state.treeName}長到 ${formatHeight(state.heightCm)}，徽章到手。棵樹會繼續長落去。`, { kind: 'badge', title: '賽季完成', reward: { text: '徽章', tone: 'purple' }, time: '' });
     }
   }
   return { settlement, messages, died, revived, completed };

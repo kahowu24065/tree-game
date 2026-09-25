@@ -103,7 +103,7 @@ export function renderChrome(view: View): void {
     const drains = actionLimit(state, 'drain');
     status.innerHTML = `
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
-      <p class="status-sub">${esc(state.treeName)} · ${esc(speciesDef(state.species).name)}${esc(stage.name)} · 第 ${Math.min(season.days, dayNumber(state, view.today))}/${season.days} 日</p>
+      <p class="status-sub">${esc(state.treeName)} · ${esc(speciesDef(state.species).name)}${esc(stage.name)} · ${dayNumber(state, view.today) > season.days ? `賽季完成・加時第 ${dayNumber(state, view.today) - season.days} 日` : `第 ${dayNumber(state, view.today)}/${season.days} 日`}</p>
       <div class="bars">
         ${statBar('H', '健康', state.health, [50, 100], 'health', state.dying ? '瀕死' : '')}
         ${statBar('W', '水分', state.moisture, W_OPTIMAL, 'water')}
@@ -117,17 +117,7 @@ export function renderChrome(view: View): void {
   }
 
   const rail = document.getElementById('rail');
-  if (rail) {
-    const target = seasonDef(state.season).targetCm;
-    const stages = stagesFor(target);
-    const stage = stageFor(state.heightCm, target);
-    const next = stages[stage.index + 1];
-    const p = stageProgress(state.heightCm, target);
-    rail.innerHTML = `
-      <span class="rail-top ${p > 0.9 ? 'dim' : ''}"><small>${next ? `下一階段` : '終點'}</small><b>${esc(formatHeight(stage.nextCm))}</b>${next ? `<small>${esc(next.name)}</small>` : '<small>目標</small>'}</span>
-      <span class="rail-track"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span><span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>當前</small></span></span>
-      <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
-  }
+  if (rail) rail.innerHTML = railHtml(state);
 
   const dock = document.getElementById('dock');
   if (dock) {
@@ -561,8 +551,11 @@ function habitatBlock(id: SpeciesId): string {
 function seasonTab(view: View): string {
   const { state, meta } = view;
   const season = seasonDef(state.season);
-  const day = Math.min(season.days, dayNumber(state, view.today));
+  const dayN = dayNumber(state, view.today);
+  const day = Math.min(season.days, dayN);
+  const extra = dayN > season.days ? dayN - season.days : 0;
   const pct = Math.min(100, (state.heightCm / season.targetCm) * 100);
+  const beyond = state.heightCm >= season.targetCm;
   const meters = state.heightCm / 100;
   const next = MILESTONES.find((m) => meters < m.meters);
   const badges = ([1, 2, 3] as const)
@@ -578,8 +571,8 @@ function seasonTab(view: View): string {
   return `
     <article class="card">
       <p class="eyebrow">${esc(season.label)}</p>
-      <h2>第 ${day} / ${season.days} 日 · ${esc(formatHeight(state.heightCm))}</h2>
-      <p>目標 ${season.targetCm / 100} 米：每日基本生長 ${(season.targetCm / season.days).toFixed(1)} 厘米 × 健康係數 × 天氣加成。</p>
+      <h2>${extra ? `賽季完成・加時第 ${extra} 日` : `第 ${day} / ${season.days} 日`} · ${esc(formatHeight(state.heightCm))}</h2>
+      <p>${beyond ? `已突破目標（${season.targetCm / 100} 米，達成 ${Math.round((state.heightCm / season.targetCm) * 100)}%）。目標只係里程碑，冇高度上限。` : `目標 ${season.targetCm / 100} 米（只係目標，唔係上限）。`}每日基本生長 ${(season.targetCm / season.days).toFixed(1)} 厘米 × 健康係數 × 天氣加成${extra ? '，賽季完咗都照樣計' : ''}。</p>
       <div class="track fat"><div class="fill food" style="width:${pct.toFixed(1)}%"></div></div>
       <p class="fine">碳吸收量約 ${carbonKg(state.heightCm)} 公斤 CO₂／年。將軍樹 ${SHERMAN_M} 米（而家 ${esc(percentOf(meters, SHERMAN_M))}%），海波龍 ${HYPERION_M} 米。${next ? `下一個里程：${esc(next.title)}（${next.meters} 米）。` : ''}</p>
     </article>
@@ -744,6 +737,22 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
     <button type="button" class="primary" data-action="new-game">開始新一局</button>`;
 }
 
+export function completeModal(state: GameState, meta: MetaState, lines: string[]): string {
+  const done = state.completed!;
+  const season = seasonDef(state.season);
+  const got = lines.length ? `<ul class="badges">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
+  const beyond = state.heightCm > season.targetCm ? `已經突破 ${esc(formatHeight(season.targetCm))} 嘅目標！` : `目標係 ${esc(formatHeight(season.targetCm))}。`;
+  return `
+    <p class="eyebrow">賽季結算</p>
+    <h2>${esc(season.label)}完成！</h2>
+    <p>捱咗 ${done.days} 日，高 ${esc(formatHeight(state.heightCm))}，碳吸收量約 ${carbonKg(state.heightCm)} 公斤／年。${beyond}</p>
+    ${got}
+    <p>目標只係一個里程碑，冇高度上限：繼續照顧，${esc(state.treeName)}會照同一條公式一直長高。</p>
+    <p class="fine">徽章總數：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
+    <button type="button" class="primary" data-action="close-modal">繼續種落去</button>
+    <button type="button" class="texty" data-action="new-game">開始新一局</button>`;
+}
+
 export function stormModal(message: string): string {
   return `
     <p class="eyebrow">夜間結算</p>
@@ -810,4 +819,39 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
 
 export function animalName(id: string): string {
   return animalById(id)?.name ?? id;
+}
+
+/** Round up to a friendly rail top (1, 2, 5 × 10^n cm). */
+function niceCeilCm(cm: number): number {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(1, cm))));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= cm) return m * p;
+  return 10 * p;
+}
+
+/**
+ * Height rail. Stages 0–3 show progress through the current stage. At 巨樹 the rail runs from the stage start to a
+ * scale that extends past the target (no cap), with a 目標 tick; beyond the target it reads 已突破目標.
+ */
+export function railHtml(state: GameState): string {
+  const target = seasonDef(state.season).targetCm;
+  const stages = stagesFor(target);
+  const stage = stageFor(state.heightCm, target);
+  const next = stages[stage.index + 1];
+  if (next) {
+    const p = stageProgress(state.heightCm, target);
+    return `
+      <span class="rail-top ${p > 0.9 ? 'dim' : ''}"><small>下一階段</small><b>${esc(formatHeight(stage.nextCm))}</b><small>${esc(next.name)}</small></span>
+      <span class="rail-track"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span><span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>當前</small></span></span>
+      <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
+  }
+  const beyond = state.heightCm >= target;
+  const top = beyond ? niceCeilCm(state.heightCm * 1.15) : target;
+  const span = Math.max(1, top - stage.minCm);
+  const p = Math.max(0, Math.min(1, (state.heightCm - stage.minCm) / span));
+  const tp = Math.max(0, Math.min(1, (target - stage.minCm) / span));
+  const tick = beyond ? `<span class="rail-target" style="bottom:${(tp * 100).toFixed(1)}%"><small>目標</small></span>` : '';
+  return `
+      <span class="rail-top ${!beyond && p > 0.9 ? 'dim' : ''} ${beyond ? 'beyond' : ''}"><small>${beyond ? '已突破目標' : '目標'}</small><b>${esc(formatHeight(top))}</b><small>${beyond ? '冇上限' : '可以繼續長'}</small></span>
+      <span class="rail-track ${beyond ? 'beyond' : ''}"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span>${tick}<span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>${beyond ? '已突破目標' : '當前'}</small></span></span>
+      <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
 }

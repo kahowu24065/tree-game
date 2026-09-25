@@ -53,6 +53,25 @@ export function bookGameEnd(meta: MetaState, state: GameState): string[] {
   return lines;
 }
 
+/** Book a finished season into meta once (badges, 免死金牌, 星空浮島). The game itself carries on. */
+export function bookSeasonComplete(meta: MetaState, state: GameState): string[] {
+  const done = state.completed;
+  if (!done || done.booked) return [];
+  done.booked = true;
+  const lines: string[] = [];
+  for (const t of done.tiers) {
+    meta.badges[String(t) as '1' | '2' | '3'] += 1;
+    lines.push(`${BADGES[t].name}：${BADGES[t].perk}`);
+    if (t === 3) {
+      meta.reviveTokens += 1;
+      meta.starry = true;
+    }
+  }
+  meta.history.unshift({ name: state.treeName, season: state.season, days: done.days, heightCm: done.heightCm, result: 'complete', date: done.date });
+  meta.history.length = Math.min(meta.history.length, 20);
+  return lines;
+}
+
 export function newGame(meta: MetaState, today: string, season: SeasonId, name: string, species?: SpeciesId): GameState {
   const legacyBonus = meta.pendingLegacy ? LANDMARK_N_BONUS : 0;
   meta.pendingLegacy = false;

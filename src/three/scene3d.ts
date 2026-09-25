@@ -3,7 +3,8 @@ import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
 import { albumFigure, Animals3D, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, type Habitat } from './habitat3d';
-import { buildIsland, type Island } from './island3d';
+import { buildFence, buildIsland, ISLAND_R, type Fence, type Island } from './island3d';
+import { islandScaleFor } from '../scale';
 import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
@@ -106,6 +107,26 @@ export class Scene3D {
   private hudCam = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1);
   private rays: { glow: THREE.Sprite; haze: THREE.Sprite; shafts: THREE.Mesh[] };
   private speciesThumbs = new Map<string, string>();
+  private sky!: THREE.Mesh;
+  /** Island landscape scale (1 = 1:1 metres; grows once the tree outgrows the island). */
+  private islandK = 1;
+  private fence: Fence | null = null;
+  // Player zoom / pan / follow (pinch, wheel, tap an animal).
+  private zoom = 1;
+  private zoomGoal = 1;
+  private panOff = new THREE.Vector3();
+  private panGoal = new THREE.Vector3();
+  private followRef: unknown = null;
+  private followZoom = 1;
+  /** Follow-cam occlusion avoidance: azimuth bias + distance cap, re-evaluated a few times a second. */
+  private followBias = 0;
+  private followBiasGoal = 0;
+  private followCap = Infinity;
+  private followCheckT = 0;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinch: { d: number; mx: number; my: number } | null = null;
+  private tap: { x: number; y: number; t: number; moved: boolean } | null = null;
+  private raycaster = new THREE.Raycaster();
 
   private canvas: HTMLCanvasElement;
 
@@ -135,6 +156,7 @@ export class Scene3D {
     });
     const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 24, 12), this.skyMat);
     sky.renderOrder = -1;
+    this.sky = sky;
     this.scene.add(sky);
     this.scene.fog = new THREE.Fog('#cfe6f2', 40, 220);
 
@@ -352,23 +374,217 @@ export class Scene3D {
     const c = this.canvas;
     c.style.touchAction = 'none';
     c.addEventListener('pointerdown', (e) => {
-      this.dragging = { x: e.clientX, y: e.clientY, az: this.dragAz, el: this.dragEl };
-      c.setPointerCapture(e.pointerId);
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try {
+        c.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic or already-released pointer */
+      }
+      if (this.pointers.size === 1) {
+        this.dragging = { x: e.clientX, y: e.clientY, az: this.dragAz, el: this.dragEl };
+        this.tap = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+      } else if (this.pointers.size === 2) {
+        // Second finger: pinch-zoom / two-finger pan instead of rotating.
+        this.dragging = null;
+        this.tap = null;
+        const [p1, p2] = [...this.pointers.values()];
+        this.pinch = { d: Math.hypot(p1!.x - p2!.x, p1!.y - p2!.y), mx: (p1!.x + p2!.x) / 2, my: (p1!.y + p2!.y) / 2 };
+      }
     });
     c.addEventListener('pointermove', (e) => {
+      if (!this.pointers.has(e.pointerId)) return;
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.tap && Math.hypot(e.clientX - this.tap.x, e.clientY - this.tap.y) > 8) this.tap.moved = true;
+      if (this.pinch && this.pointers.size >= 2) {
+        const [p1, p2] = [...this.pointers.values()];
+        const d = Math.max(10, Math.hypot(p1!.x - p2!.x, p1!.y - p2!.y));
+        const mx = (p1!.x + p2!.x) / 2;
+        const my = (p1!.y + p2!.y) / 2;
+        this.zoomBy(this.pinch.d / d, mx, my);
+        this.panBy(mx - this.pinch.mx, my - this.pinch.my);
+        this.pinch = { d, mx, my };
+        this.lastDrag = performance.now();
+        return;
+      }
       if (!this.dragging) return;
       const dx = (e.clientX - this.dragging.x) / Math.max(200, this.width);
       const dy = (e.clientY - this.dragging.y) / Math.max(200, this.height);
-      this.dragAz = clamp(this.dragging.az - dx * 2.2, -0.6, 0.6);
-      this.dragEl = clamp(this.dragging.el + dy * 0.8, -0.15, 0.15);
+      const free = this.isZoomed();
+      this.dragAz = clamp(this.dragging.az - dx * 2.2, free ? -Math.PI : -0.6, free ? Math.PI : 0.6);
+      this.dragEl = clamp(this.dragging.el + dy * 0.8, free ? -0.5 : -0.15, free ? 0.35 : 0.15);
       this.lastDrag = performance.now();
     });
-    const end = () => {
-      this.dragging = null;
+    const end = (e: PointerEvent) => {
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinch = null;
+      if (this.pointers.size === 1) {
+        const [p] = [...this.pointers.values()];
+        this.dragging = { x: p!.x, y: p!.y, az: this.dragAz, el: this.dragEl };
+      } else if (this.pointers.size === 0) {
+        this.dragging = null;
+        if (e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
+        this.tap = null;
+      }
       this.lastDrag = performance.now();
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
+    c.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+        this.zoomBy(Math.exp(clamp(e.deltaY * unit, -200, 200) * 0.0022), e.clientX, e.clientY);
+        this.lastDrag = performance.now();
+      },
+      { passive: false },
+    );
+  }
+
+  private ndc(x: number, y: number): THREE.Vector2 {
+    const r = this.canvas.getBoundingClientRect();
+    return new THREE.Vector2(((x - r.left) / Math.max(1, r.width)) * 2 - 1, -((y - r.top) / Math.max(1, r.height)) * 2 + 1);
+  }
+
+  /** World point under the screen position (tree, island, habitat), or on the ground plane. */
+  private pointUnder(x: number, y: number): THREE.Vector3 {
+    this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
+    const objs: THREE.Object3D[] = [this.pivot, this.island.group];
+    if (this.habitat) objs.push(this.habitat.group);
+    const hit = this.raycaster.intersectObjects(objs, true).find((h) => (h.object as THREE.Mesh).isMesh && !(h.object as THREE.Sprite).isSprite);
+    if (hit) return hit.point;
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.1);
+    return this.raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? new THREE.Vector3(0, this.camTargetY, 0);
+  }
+
+  /** Distance to the first obstacle (tree, island, habitat) between `from` and a camera at (az, el, dist). */
+  private obstacle(from: THREE.Vector3, az: number, el: number, dist: number, skip: number): number {
+    const dir = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    this.raycaster.set(from, dir);
+    this.raycaster.near = skip;
+    this.raycaster.far = dist;
+    const objs: THREE.Object3D[] = [this.island.group];
+    if (this.tree) objs.push(this.tree.group);
+    if (this.habitat) objs.push(this.habitat.group);
+    const hit = this.raycaster.intersectObjects(objs, true).find((h) => (h.object as THREE.Mesh).isMesh);
+    this.raycaster.near = 0;
+    this.raycaster.far = Infinity;
+    return hit ? hit.distance : Infinity;
+  }
+
+  /** Pick an orbit angle with a clear line of sight to the followed animal; else cap the distance. */
+  private clearView(target: THREE.Vector3, az: number, el: number, dist: number, size: number): { bias: number; cap: number } {
+    const skip = Math.max(0.05, size * 0.5);
+    let best = { bias: 0, cap: 0 };
+    for (const b of [this.followBiasGoal, 0, 0.7, -0.7, 1.4, -1.4, 2.2, -2.2, Math.PI]) {
+      const d = this.obstacle(target, az + b, el, dist, skip);
+      if (d === Infinity) return { bias: b, cap: Infinity };
+      if (d > best.cap) best = { bias: b, cap: d };
+    }
+    return { bias: best.bias, cap: Math.max(skip * 1.2, best.cap * 0.9) };
+  }
+
+  /** Zoom by `factor` (<1 = closer), keeping the point under (x, y) fixed on screen. */
+  zoomBy(factor: number, x?: number, y?: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    if (this.followRef || this.follow) {
+      this.followZoom = clamp(this.followZoom * factor, 0.35, 8);
+      return;
+    }
+    // Closest free zoom: 1.5 m from the aim point (less for a tiny seedling whose overview is already close).
+    const minDist = clamp(this.camDist * 0.5, 0.3, 1.5);
+    const minZoom = clamp(minDist / Math.max(0.3, this.camDist), 0.004, 1);
+    // Zooming out past the overview shows the whole island (useful while the tree is still small).
+    const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
+    const maxZoom = Math.max(1, (islandR * 3.4) / Math.max(0.3, this.camDist));
+    const z0 = this.zoomGoal;
+    const z1 = clamp(z0 * factor, minZoom, maxZoom);
+    if (z1 === z0) return;
+    const auto = new THREE.Vector3(0, this.camTargetY, 0);
+    const T = auto.clone().add(this.panGoal);
+    let T2: THREE.Vector3;
+    if (x === undefined || y === undefined || z1 > 1) T2 = T;
+    else {
+      // Homothety about the point under the cursor, from what is on screen now (the camera may still be easing).
+      const A = this.pointUnder(x, y);
+      const cur = auto.clone().add(this.panOff);
+      T2 = A.clone().add(cur.sub(A).multiplyScalar(z1 / Math.max(1e-4, this.zoom)));
+    }
+    this.panGoal.copy(T2.sub(auto));
+    this.zoomGoal = z1;
+    this.clampPan();
+  }
+
+  /** Two-finger pan in screen pixels. */
+  private panBy(dx: number, dy: number): void {
+    if (!this.isZoomed() || this.followRef || this.follow) return;
+    const dist = this.camDist * this.zoom;
+    const perPx = (2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height);
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    this.panGoal.addScaledVector(right, -dx * perPx).addScaledVector(up, dy * perPx);
+    this.clampPan();
+  }
+
+  private clampPan(): void {
+    const R = (this.habitat?.radius ?? ISLAND_R) * this.islandK * 1.05;
+    const h = Math.hypot(this.panGoal.x, this.panGoal.z);
+    if (h > R) this.panGoal.multiplyScalar(R / h);
+    const top = Math.max(1, (this.tree?.height ?? 1) * 1.1);
+    const y = this.camTargetY + this.panGoal.y;
+    if (y < 0.03) this.panGoal.y = 0.03 - this.camTargetY;
+    if (y > top) this.panGoal.y = top - this.camTargetY;
+  }
+
+  /** Tap: follow the animal under the finger (with a little slack for tiny ones). */
+  private tapAt(x: number, y: number): void {
+    this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
+    const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height);
+    const hit = this.animals.pick(this.raycaster.ray, (d) => d * perPx * 26);
+    if (hit) {
+      this.followRef = hit;
+      this.follow = null;
+      this.followZoom = 1;
+    }
+  }
+
+  isZoomed(): boolean {
+    return this.zoomGoal < 0.97 || this.zoomGoal > 1.03 || this.panGoal.lengthSq() > 0.01;
+  }
+
+  /** Whether the player has left the overview (zoomed or following), and who is being followed. */
+  viewState(): { active: boolean; following: string | null } {
+    const name = this.followRef ? this.animals.refName(this.followRef) : null;
+    return { active: this.isZoomed() || Boolean(this.followRef), following: name };
+  }
+
+  /** Back to the automatic overview. */
+  resetView(): void {
+    this.zoomGoal = 1;
+    this.panGoal.set(0, 0, 0);
+    this.followRef = null;
+    this.followZoom = 1;
+    this.dragAz = 0;
+    this.dragEl = 0;
+  }
+
+  /** Screen position (CSS px) of an animal of `id` — for automated tap checks. */
+  animalScreen(id: string): { x: number; y: number } | null {
+    const f = this.animals.focus(id);
+    if (!f) return null;
+    const v = f.pos.clone().project(this.camera);
+    const r = this.canvas.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+  }
+
+  /** Heights (m above the tree base) of every airborne animal right now, plus the ceiling — for checks. */
+  flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {
+    return this.animals.flyerHeights();
+  }
+
+  /** Current zoom (1 = overview) and camera distance in metres — for tests and the dev panel. */
+  cameraInfo(): { zoom: number; distM: number; islandK: number; treeM: number } {
+    return { zoom: this.zoomGoal, distM: this.camDist * this.zoom, islandK: this.islandK, treeM: this.tree?.height ?? 0 };
   }
 
   resize(): void {
@@ -425,6 +641,29 @@ export class Scene3D {
     }
   }
 
+  /** Rebuild the fence when the island's rim has moved by more than ~1.5 %. */
+  private ensureFence(radiusM: number): void {
+    if (this.fence && Math.abs(this.fence.radius - radiusM) / radiusM < 0.015) return;
+    if (this.fence) {
+      this.scene.remove(this.fence.group);
+      this.fence.dispose();
+    }
+    const K = this.islandK;
+    const hab = this.habitat;
+    const groundAt = (x: number, z: number) => {
+      const r = Math.hypot(x, z) / K;
+      if (r < ISLAND_R) return K * (0.18 * (1 - Math.min(1, r / ISLAND_R) ** 2) - 0.02);
+      return K * (hab ? hab.groundAt(x / K, z / K) : -0.02);
+    };
+    this.fence = buildFence(radiusM, groundAt);
+    this.scene.add(this.fence.group);
+  }
+
+  /** Fence radius in metres (for tests / dev panel). */
+  fenceInfo(): { fenceRadius: number; islandRadius: number } {
+    return { fenceRadius: this.fence ? this.fence.radius - 0.35 : 0, islandRadius: (this.habitat?.radius ?? ISLAND_R) * this.islandK };
+  }
+
   private ensureHabitat(input: SceneInput): void {
     const stage = clamp(Math.round(input.islandStage ?? input.stage), 0, 4);
     const key = `${input.species}|${stage}|${this.quality}`;
@@ -437,7 +676,7 @@ export class Scene3D {
     this.habitat = buildHabitat(input.species, stage, this.quality);
     this.scene.add(this.habitat.group);
     this.island.setExtended(stage >= 1);
-    this.animals.setIslandRadius(this.habitat.radius);
+    this.animals.setIslandRadius(this.habitat.radius * this.islandK, this.islandK);
   }
 
   draw(input: SceneInput, timeMs: number): void {
@@ -514,7 +753,7 @@ export class Scene3D {
     this.gustTarget *= Math.exp(-dt * 0.9);
     this.gust += (this.gustTarget - this.gust) * (1 - Math.exp(-dt * 3));
     const gust = this.gust * level;
-    const tall = 1 / (1 + tree.height * 0.04);
+    const tall = 1 / (1 + tree.localHeight * 0.04);
     const amp = (0.004 + level * 0.065) * (1 + gust * 0.8) * motion * tall;
     const freq = 0.8 + level * 1.5;
     const lean = level * 0.085 * (0.55 + gust * 0.7) * motion * tall;
@@ -523,17 +762,31 @@ export class Scene3D {
     windUniforms.uTime.value = t;
     windUniforms.uWind.value = level * motion;
     windUniforms.uGust.value = gust * motion;
-    windUniforms.uHeight.value = Math.max(0.6, tree.height);
+    windUniforms.uHeight.value = Math.max(0.6, tree.localHeight);
     const wind = level * 110 + gust * 20;
 
-    this.island.dirt.scale.setScalar(clamp(0.3 + tree.height * 0.09, 0.3, 1.5));
+    // Island landscape scale and the fence on its current rim.
+    const stageR = this.habitat?.radius ?? ISLAND_R;
+    const kGoal = islandScaleFor(stageR, tree.height);
+    this.islandK += (kGoal - this.islandK) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 2));
+    if (Math.abs(this.islandK - kGoal) < 0.002) this.islandK = kGoal;
+    const K = this.islandK;
+    this.island.group.scale.setScalar(K);
+    this.habitat?.group.scale.setScalar(K);
+    this.pivot.position.y = 0.18 * K;
+    this.landmark.scale.setScalar(K);
+    this.landmark.position.set(2.8 * K, 0.05 * K, 2.2 * K);
+    this.animals.setIslandRadius(stageR * K, K);
+    this.ensureFence(stageR * K);
+    // Dirt patch around the trunk: a little wider than the (metric) trunk.
+    this.island.dirt.scale.setScalar(clamp(Math.max(0.22, tree.trunkRadius * 3.2) / 1.1 / K, 0.05, 1.5));
     this.island.update(t, wind);
     this.habitat?.update(t, wind);
     this.landmark.visible = Boolean(input.landmark);
     this.sparkles.visible = Boolean(input.starry);
     if (this.sparkles.visible) {
       this.sparkles.rotation.y = t * 0.05;
-      this.sparkles.scale.setScalar((this.habitat?.radius ?? 7) / 7);
+      this.sparkles.scale.setScalar(((this.habitat?.radius ?? 7) * this.islandK) / 7);
     }
     this.glow.visible = Boolean(input.thriving) && !input.reducedMotion;
     if (this.glow.visible) {
@@ -550,7 +803,7 @@ export class Scene3D {
     this.pivot.updateMatrixWorld(true);
     this.animals.update(t, dt, night);
 
-    const islandR = this.habitat?.radius ?? 7;
+    const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
     const islandStage = this.habitat?.stage ?? 0;
     // Clouds drift; overcast brings more and darker clouds.
     const cloudTint = new THREE.Color('#ffffff').lerp(new THREE.Color('#9aa3ad'), over).lerp(new THREE.Color('#59616b'), stormy ? 0.6 : 0).lerp(new THREE.Color('#39435e'), night * 0.8);
@@ -571,8 +824,8 @@ export class Scene3D {
 
     // Camera: keep the whole tree framed at a 45-degree look-down, rising as it grows.
     const H = tree.height * tree.group.scale.y;
-    const W = Math.max(1.0, tree.canopyRadius * tree.group.scale.x);
-    const R = Math.max(2.0, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.2, 0.28, 0.32, 0.36, 0.38][islandStage]!);
+    const W = Math.max(0.05, tree.canopyRadius * tree.group.scale.x);
+    const R = Math.max(0.3, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.03, 0.2, 0.3, 0.36, 0.38][islandStage]!);
     const vHalf = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
     const portrait = this.camera.aspect < 0.8;
@@ -582,22 +835,29 @@ export class Scene3D {
     if (this.camDist === 10 && this.lastTime < 0.2) this.camDist = want;
     this.camDist += (want - this.camDist) * (dt === 0 ? 1 : k);
     this.camTargetY += (wantY - this.camTargetY) * (dt === 0 ? 1 : k);
-    if (!this.dragging && performance.now() - this.lastDrag > 5000) {
+    // Zoom / pan ease toward the player's goal; the overview recentres itself.
+    const ez = dt === 0 ? 1 : 1 - Math.exp(-dt * 9);
+    if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
+    this.zoom += (this.zoomGoal - this.zoom) * ez;
+    this.panOff.lerp(this.panGoal, ez);
+    if (!this.dragging && !this.isZoomed() && !this.followRef && performance.now() - this.lastDrag > 5000) {
       this.dragAz *= 1 - Math.min(1, dt * 0.6);
       this.dragEl *= 1 - Math.min(1, dt * 0.6);
     }
     const az = BASE_AZIMUTH + this.dragAz + Math.sin(t * 0.05) * 0.03 * motion;
     const el = ELEVATION + this.dragEl;
-    const target = new THREE.Vector3(0, this.camTargetY, 0);
-    let dist = this.camDist;
-    // Developer "follow cam": frame one animal up close.
-    const focus = this.follow ? this.animals.focus(this.follow) : null;
+    const target = new THREE.Vector3(0, this.camTargetY, 0).add(this.panOff);
+    let dist = this.camDist * this.zoom;
+    // Follow cam (tap an animal, or the developer panel): frame one animal up close, at its real size.
+    let focus = this.followRef ? this.animals.focusRef(this.followRef) : this.follow ? this.animals.focus(this.follow) : null;
+    if (this.followRef && !focus) this.followRef = null;
+    if (focus && !Number.isFinite(focus.pos.x)) focus = null;
     if (focus) {
       if (!this.followOn) this.followPos.copy(focus.pos);
       this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * 4));
       target.copy(this.followPos);
-      target.y += focus.size * 0.35;
-      dist = Math.max(1.4, focus.size * 4.5);
+      target.y += focus.size * 0.3;
+      dist = Math.max(0.25, focus.size * 4.2) * this.followZoom;
     }
     this.followOn = Boolean(focus);
     // Follow-cam looks from lower down so animals are seen in profile.
@@ -608,17 +868,38 @@ export class Scene3D {
       const want = Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
       const d = Math.atan2(Math.sin(want - this.followAz), Math.cos(want - this.followAz));
       this.followAz += d * (1 - Math.exp(-dt * 1.2));
-      camAz = this.followAz;
-    } else this.followAz = az;
+      // Keep trunk / canopy / rocks out of the way: try a few orbit angles, else move closer.
+      this.followCheckT -= dt;
+      if (this.followCheckT <= 0) {
+        this.followCheckT = 0.35;
+        const pick = this.clearView(target, this.followAz, camEl, dist, focus.size);
+        this.followBiasGoal = pick.bias;
+        this.followCap = pick.cap;
+      }
+      this.followBias += (this.followBiasGoal - this.followBias) * (1 - Math.exp(-dt * 3));
+      camAz = this.followAz + this.followBias;
+      if (dist > this.followCap) dist = this.followCap;
+    } else {
+      this.followAz = az;
+      this.followBias = this.followBiasGoal = 0;
+      this.followCap = Infinity;
+    }
     this.camera.position.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
+    // Never put the camera under the ground when zoomed right in.
+    if (this.isZoomed() || focus) {
+      const gy = (this.habitat?.groundAt(this.camera.position.x, this.camera.position.z) ?? 0) + Math.min(0.12, dist * 0.2);
+      if (this.camera.position.y < gy) this.camera.position.y = gy;
+    }
     this.camera.lookAt(target);
     const shift = portrait ? 0.085 : 0.03;
     this.camera.setViewOffset(this.width, this.height, 0, -this.height * shift, this.width, this.height);
-    this.camera.near = Math.max(0.02, dist * 0.02);
-    this.camera.far = 900;
+    this.camera.near = clamp(dist * 0.02, 0.005, 2);
+    this.camera.far = Math.max(900, dist * 3 + 500);
+    this.sky.position.copy(this.camera.position);
+    this.sea.position.set(this.camera.position.x, -22 * this.islandK, this.camera.position.z);
     this.camera.updateProjectionMatrix();
-    fog.near = this.camDist * 1.15;
-    fog.far = this.camDist * 2.6 + 40;
+    fog.near = Math.max(dist, this.camDist) * 1.15;
+    fog.far = Math.max(dist, this.camDist) * 2.6 + 40;
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
@@ -629,7 +910,7 @@ export class Scene3D {
       const hotDir = right.multiplyScalar(0.62).add(new THREE.Vector3(0, 0.82, 0)).addScaledVector(toCam, -0.12).normalize();
       sunDir.lerp(hotDir, this.heatK * 0.85).normalize();
     }
-    const box = Math.max(9, R * 1.3);
+    const box = clamp(Math.min(R * 1.3, dist * 1.2 + (focus ? 0 : R * 0.2)), 1.2, 400);
     this.sun.position.copy(target).addScaledVector(sunDir, box * 3);
     this.sun.target.position.copy(target);
     const sc = this.sun.shadow.camera;
@@ -705,17 +986,18 @@ export class Scene3D {
     d.position.set(-2, 3, 2.5);
     scene.add(d);
     scene.add(build.group);
-    const ground = new THREE.Mesh(new THREE.CylinderGeometry(build.canopyRadius * 1.1 + 0.3, build.canopyRadius * 1.0 + 0.3, 0.12, 20), new THREE.MeshStandardMaterial({ color: '#8cc26a', flatShading: true }));
-    ground.position.y = -0.06;
+    const gm = build.height * 0.05;
+    const ground = new THREE.Mesh(new THREE.CylinderGeometry(build.canopyRadius * 1.1 + gm, build.canopyRadius * 1.0 + gm, build.height * 0.02, 20), new THREE.MeshStandardMaterial({ color: '#8cc26a', flatShading: true }));
+    ground.position.y = -build.height * 0.01;
     scene.add(ground);
     const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value };
     windUniforms.uWind.value = 0;
     windUniforms.uGust.value = 0;
-    windUniforms.uHeight.value = build.height;
+    windUniforms.uHeight.value = build.localHeight;
     const box = new THREE.Box3().setFromObject(build.group);
     const center = box.getCenter(new THREE.Vector3());
     const dims = box.getSize(new THREE.Vector3());
-    const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 500);
+    const cam = new THREE.PerspectiveCamera(28, 1, Math.max(0.001, build.height * 0.01), Math.max(50, build.height * 20));
     const r = Math.max(dims.y * 0.55, dims.x * 0.6, dims.z * 0.6);
     cam.position.copy(center).add(new THREE.Vector3(0.35, 0.28, 1).normalize().multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(14)) * 1.02));
     cam.lookAt(center);
