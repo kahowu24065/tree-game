@@ -102,6 +102,8 @@ export interface ForecastDay {
   gustKmh: number;
   sunrise: string;
   sunset: string;
+  /** HKO weather icon (50-93) when the Observatory covers this day; wins over `code` for display. */
+  hkoIcon?: number;
 }
 
 export interface CurrentWeather {

@@ -43,6 +43,7 @@ import {
   districtRain,
   fetchForecast,
   hkoForecast,
+  withHkoDays,
   inHongKong,
   nearHongKong,
   classify,
@@ -57,7 +58,7 @@ import {
   type WeatherProvider,
   type WeatherSnapshot,
 } from './weather';
-import { fetchHko, hkoIconLabel, hkoIconToWmo } from './hko';
+import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { reverseGeocode } from './place';
 
 type ActionName = 'water' | 'fertilize' | 'deworm' | 'prune';
@@ -248,6 +249,7 @@ function view(input: SceneInput): View {
       situation: weather.hko && usesHko(weather) ? weather.hko.situation : '',
       hkoDays: weather.hko && usesHko(weather) ? Object.fromEntries(weather.hko.forecast.map((d) => [d.date, d.text])) : {},
       conditionText: sceneOverride ? undefined : weather.conditionText,
+      nowIcon: !sceneOverride && weather.hko && usesHko(weather) ? weather.hko.current?.icon || undefined : undefined,
       station: weather.station,
       rainInHours: weather.rainInHours ?? null,
       error: weather.error,
@@ -387,7 +389,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   if (!base) {
     const cached = loadWeatherCache();
     if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS) {
-      applyWeather({ ...cached, origin: 'cache', error, hko: hko ?? cached.hko });
+      applyWeather({ ...cached, origin: 'cache', error, hko: hko ?? cached.hko, daily: hko && hk ? withHkoDays(cached.daily, hko, today()) : cached.daily });
       return;
     }
     // Last resort: simulated numbers, but still pass along any real HKO warnings.
@@ -423,8 +425,14 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     }
     if (hko.current.humidity !== null) snapshot.current.humidity = hko.current.humidity;
     const mm = districtRain(hko, district);
-    if (mm && mm > 0) snapshot.current.precipMm = Math.max(snapshot.current.precipMm, Math.min(8, mm));
+    if (mm !== null) {
+      // Measured rain in the player's district beats the model's "current precipitation".
+      snapshot.current.precipMm = Math.min(8, mm);
+    } else if (hko.current.icon && !hkoIconRain(hko.current.icon)) {
+      snapshot.current.precipMm = 0;
+    }
   }
+  if (hko && hk) snapshot.daily = withHkoDays(snapshot.daily, hko, today());
   applyWeather(snapshot);
 }
 

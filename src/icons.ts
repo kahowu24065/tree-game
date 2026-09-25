@@ -34,21 +34,58 @@ export const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-/** Colourful weather illustration for the weather card. */
-export function weatherArt(code: number, night: boolean, storm: boolean): string {
-  const sun = night
-    ? '<path d="M30 20a11 11 0 0 1-14-14 11 11 0 1 0 14 14z" fill="#ffe7a3" stroke="#f1c75b" stroke-width="1.5"/>'
-    : '<g><circle cx="19" cy="17" r="8" fill="#ffc94a"/><g stroke="#ffc94a" stroke-width="2.4" stroke-linecap="round"><path d="M19 3.5v3M19 27.5v3M5.5 17h3M29.5 17h3M9.5 7.5l2 2M26.5 24.5l2 2M28.5 7.5l-2 2M9.5 26.5l2-2"/></g></g>';
+/** Colourful weather illustration. When an HKO icon number is given it wins over the WMO code. */
+export function weatherArt(code: number, night: boolean, storm: boolean, hkoIcon?: number): string {
+  const sunArt = (color = '#ffc94a') =>
+    `<g><circle cx="19" cy="17" r="8" fill="${color}"/><g stroke="${color}" stroke-width="2.4" stroke-linecap="round"><path d="M19 3.5v3M19 27.5v3M5.5 17h3M29.5 17h3M9.5 7.5l2 2M26.5 24.5l2 2M28.5 7.5l-2 2M9.5 26.5l2-2"/></g></g>`;
+  const moon = '<path d="M30 20a11 11 0 0 1-14-14 11 11 0 1 0 14 14z" fill="#ffe7a3" stroke="#f1c75b" stroke-width="1.5"/>';
+  const sun = night ? moon : sunArt();
   const cloud = (fill: string, x = 0, y = 0) =>
     `<path transform="translate(${x} ${y})" d="M14 38h22a8 8 0 0 0 .8-16 10 10 0 0 0-19.3 2.2A7 7 0 0 0 14 38z" fill="${fill}" stroke="rgba(90,110,130,.25)" stroke-width="1"/>`;
   const drops = '<g stroke="#4ea3e0" stroke-width="2.4" stroke-linecap="round"><path d="M18 41l-2 5M25 41l-2 5M32 41l-2 5"/></g>';
+  const fewDrops = '<g stroke="#4ea3e0" stroke-width="2.4" stroke-linecap="round"><path d="M21 41l-1.5 4M29 41l-1.5 4"/></g>';
+  const manyDrops = '<g stroke="#2f7fc4" stroke-width="2.6" stroke-linecap="round"><path d="M15 41l-2.5 6M21 41l-2.5 6M27 41l-2.5 6M33 41l-2.5 6"/></g>';
   const bolt = '<path d="M26 36l-5 8h4l-2 7 7-10h-4l3-5z" fill="#ffcf3f" stroke="#e5a600" stroke-width=".8"/>';
-  let body: string;
-  if (storm || code >= 95) body = cloud('#8f9aa8', 0, -2) + bolt + drops;
-  else if (code >= 51) body = cloud('#d8e0e8', 0, -2) + drops;
-  else if (code === 45 || code === 48) body = cloud('#e7edf1', 0, -4) + '<g stroke="#b7c3cc" stroke-width="2.4" stroke-linecap="round"><path d="M10 42h28M14 47h22"/></g>';
-  else if (code === 3) body = cloud('#e5ebf0', -4, -6) + cloud('#f7fafc', 2, 0);
-  else if (code === 0) body = `<g transform="translate(6 6) scale(1.1)">${sun}</g>`;
-  else body = sun + cloud('#ffffff', 4, 2);
+  const fog = '<g stroke="#b7c3cc" stroke-width="2.4" stroke-linecap="round"><path d="M10 42h28M14 47h22"/></g>';
+  const thermo = (fill: string, level: number) =>
+    `<g transform="translate(33 18)"><rect x="-3" y="0" width="6" height="22" rx="3" fill="#fff" stroke="#8a97a6" stroke-width="1.2"/><rect x="-1.4" y="${20 - level}" width="2.8" height="${level}" rx="1.4" fill="${fill}"/><circle cx="0" cy="24" r="5" fill="${fill}" stroke="#8a97a6" stroke-width="1.2"/></g>`;
+  const wind = '<g stroke="#7fa7c9" stroke-width="2.6" stroke-linecap="round" fill="none"><path d="M6 20h24a5 5 0 1 0-5-5M6 29h32a5 5 0 1 1-5 5M6 38h16"/></g>';
+  let body: string | null = null;
+  if (hkoIcon !== undefined && !storm) {
+    const behind = (x: number, y: number, s = 0.8) => `<g transform="translate(${x} ${y}) scale(${s})">${sun}</g>`;
+    switch (hkoIcon) {
+      case 50: body = `<g transform="translate(6 6) scale(1.1)">${sun}</g>`; break; // 陽光充沛
+      case 51: body = sun + cloud('#ffffff', 4, 2); break; // 間有陽光
+      case 52: body = behind(8, 0) + cloud('#eef2f6', -2, 0); break; // 短暫陽光
+      case 53: body = sun + cloud('#ffffff', 4, -2) + fewDrops; break; // 間有陽光幾陣驟雨
+      case 54: body = behind(8, -2) + cloud('#e3e9ef', -2, -3) + drops; break; // 短暫陽光有驟雨
+      case 60: body = cloud('#e5ebf0', -4, -6) + cloud('#f7fafc', 2, 0); break; // 多雲
+      case 61: body = cloud('#aeb8c4', -4, -6) + cloud('#c9d1da', 2, 0); break; // 密雲
+      case 62: body = cloud('#dfe6ec', 0, -2) + fewDrops; break; // 微雨
+      case 63: body = cloud('#c9d2dc', 0, -2) + drops; break; // 雨
+      case 64: body = cloud('#9aa6b4', 0, -3) + manyDrops; break; // 大雨
+      case 65: body = cloud('#8f9aa8', 0, -2) + bolt + drops; break; // 雷暴
+      case 70: case 71: case 72: case 73: case 74: case 75: body = `<g transform="translate(6 6) scale(1.1)">${moon}</g>`; break; // 天色良好
+      case 76: body = `<g transform="translate(8 0) scale(.8)">${moon}</g>` + cloud('#e5ebf0', -2, 0); break; // 大致多雲（晚）
+      case 77: body = moon + cloud('#ffffff', 4, 2); break; // 天色大致良好（晚）
+      case 80: body = wind; break; // 大風
+      case 81: body = `<g transform="translate(-2 0)">${sunArt('#ffb347')}</g><g stroke="#d9a15b" stroke-width="2.2" stroke-linecap="round"><path d="M8 40l6-3 5 4 6-4 5 4 6-3"/></g>`; break; // 乾燥
+      case 82: body = '<path d="M25 8c6 8 11 14 11 20a11 11 0 0 1-22 0c0-6 5-12 11-20z" fill="#bfe0f6" stroke="#4ea3e0" stroke-width="1.6"/><path d="M20 30a5 5 0 0 0 4.5 4.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'; break; // 潮濕
+      case 83: case 84: body = cloud('#e7edf1', 0, -4) + fog; break; // 霧／薄霧
+      case 85: body = `<g opacity=".55">${sunArt('#e0b25a')}</g><g stroke="#c9b48f" stroke-width="2.4" stroke-linecap="round"><path d="M6 34h30M10 40h32M6 46h26"/></g>`; break; // 煙霞
+      case 90: body = `<g transform="translate(-4 2)">${night ? moon : sunArt('#ff9f2e')}</g>` + thermo('#ef5b3c', 17); break; // 熱
+      case 91: body = `<g transform="translate(-4 2)">${sun}</g>` + thermo('#f39a3d', 12); break; // 暖
+      case 92: body = cloud('#eef2f6', -6, 0) + thermo('#5aa9e6', 8); break; // 涼
+      case 93: body = '<g stroke="#6fb3e8" stroke-width="2.2" stroke-linecap="round"><path d="M16 10v24M6 22h20M9 15l14 14M23 15L9 29"/></g>' + thermo('#3a7fc9', 4); break; // 冷
+    }
+  }
+  if (body === null) {
+    if (storm || code >= 95) body = cloud('#8f9aa8', 0, -2) + bolt + drops;
+    else if (code >= 51) body = cloud('#d8e0e8', 0, -2) + drops;
+    else if (code === 45 || code === 48) body = cloud('#e7edf1', 0, -4) + fog;
+    else if (code === 3) body = cloud('#e5ebf0', -4, -6) + cloud('#f7fafc', 2, 0);
+    else if (code === 0) body = `<g transform="translate(6 6) scale(1.1)">${sun}</g>`;
+    else body = sun + cloud('#ffffff', 4, 2);
+  }
   return `<svg viewBox="0 0 50 52" aria-hidden="true">${body}</svg>`;
 }

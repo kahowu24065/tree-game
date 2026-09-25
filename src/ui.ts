@@ -6,7 +6,7 @@ import type { HkoWarning } from './hko';
 import { advice, dayNumber, eventTitle, prepNeeded, prepScore, stormTitle, treeMetrics, upcomingStorm } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, TabId } from './types';
 import { esc, formatHeight, percentOf } from './util';
-import { classify, stormLabel, weatherLabel, type WeatherProvider } from './weather';
+import { classify, dayLabel, stormLabel, weatherLabel, type WeatherProvider } from './weather';
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -36,6 +36,7 @@ export interface WeatherView {
   situation: string;
   hkoDays: Record<string, string>;
   conditionText?: string;
+  nowIcon?: number;
   station?: string;
   rainInHours: number | null;
   error?: string;
@@ -153,7 +154,7 @@ function renderWeatherCard(card: HTMLElement, view: View, storm: ReturnType<type
   } else if (wx.rainInHours !== null && !cond.raining && !simulated) {
     line = wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`;
   } else if (tomorrow && !firstLoad) {
-    line = `預測：明日 ${Math.round(tomorrow.tempMin)}–${Math.round(tomorrow.tempMax)}°C ${esc(weatherLabel(tomorrow.code))}`;
+    line = `預測：明日 ${Math.round(tomorrow.tempMin)}–${Math.round(tomorrow.tempMax)}°C ${esc(dayLabel(tomorrow))}`;
   } else {
     line = '';
   }
@@ -164,7 +165,7 @@ function renderWeatherCard(card: HTMLElement, view: View, storm: ReturnType<type
   const source = sourceLabel(wx);
   const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
   card.innerHTML = `
-    <span class="wx-art">${weatherArt(cond.code, view.night, Boolean(nowStorm))}</span>
+    <span class="wx-art">${weatherArt(cond.code, view.night, Boolean(nowStorm), officialNow && officialNow.kind !== 'gale' ? undefined : wx.nowIcon)}</span>
     <span class="wx-main"><b>${temp}</b><span>${esc(firstLoad ? '攞緊天氣…' : label)}</span></span>
     <span class="wx-place">${icon('pin')}${esc(view.place)}${wx.station && !simulated ? `<small>· ${esc(wx.station)}站</small>` : ''}</span>
     ${chips ? `<span class="wx-warns">${chips}</span>` : ''}
@@ -395,9 +396,9 @@ function forecastTab(view: View): string {
       const klass = severity.typhoon ? 'danger' : severity.stormKind || severity.heat ? 'warn' : '';
       const today = day.date === view.today ? ' today' : '';
       return `<article class="day ${klass}${today}">
-        <span class="day-art">${weatherArt(day.code, false, Boolean(severity.stormKind && severity.typhoon))}</span>
+        <span class="day-art">${weatherArt(day.code, false, Boolean(severity.stormKind && severity.typhoon), day.hkoIcon)}</span>
         <div><strong>${day.date === view.today ? '今日' : `星期${WEEK[weekdayIndex(day.date)] ?? ''}`}</strong><span>${esc(formatShort(day.date))}</span></div>
-        <div><b>${esc(weatherLabel(day.code))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
+        <div><b>${esc(dayLabel(day))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
         <div class="tags">${tags}</div>
         ${view.wx.hkoDays[day.date] ? `<p class="hko-day">天文台：${esc(view.wx.hkoDays[day.date]!)}</p>` : ''}
       </article>`;

@@ -128,20 +128,32 @@ export function drivingWarning(warnings: HkoWarning[]): HkoWarning | null {
 export function hkoIconToWmo(icon: number): number {
   const map: Record<number, number> = {
     50: 0, 51: 1, 52: 2, 53: 80, 54: 80, 60: 3, 61: 3, 62: 61, 63: 63, 64: 65, 65: 95,
-    70: 0, 71: 0, 72: 0, 73: 0, 74: 0, 75: 0, 76: 3, 77: 1, 80: 2, 81: 1, 82: 2, 83: 45, 84: 45, 85: 45,
+    70: 0, 71: 0, 72: 0, 73: 0, 74: 0, 75: 0, 76: 3, 77: 1, 80: 2, 81: 0, 82: 2, 83: 45, 84: 45, 85: 45,
     90: 0, 91: 1, 92: 2, 93: 2,
   };
   return map[icon] ?? 2;
 }
 
+/** Official HKO wording for each weather icon (https://www.hko.gov.hk/tc/textonly/explain/wxicon.htm). */
+const HKO_ICON_LABELS: Record<number, string> = {
+  50: '陽光充沛', 51: '間有陽光', 52: '短暫陽光', 53: '間有陽光 幾陣驟雨', 54: '短暫陽光 有驟雨',
+  60: '多雲', 61: '密雲', 62: '微雨', 63: '雨', 64: '大雨', 65: '雷暴',
+  70: '天色良好', 71: '天色良好', 72: '天色良好', 73: '天色良好', 74: '天色良好', 75: '天色良好', 76: '大致多雲', 77: '天色大致良好',
+  80: '大風', 81: '乾燥', 82: '潮濕', 83: '霧', 84: '薄霧', 85: '煙霞',
+  90: '熱', 91: '暖', 92: '涼', 93: '冷',
+};
+
 export function hkoIconLabel(icon: number): string {
-  const map: Record<number, string> = {
-    50: '陽光充沛', 51: '間有陽光', 52: '短暫陽光', 53: '間有陽光，有驟雨', 54: '短暫陽光，有驟雨', 60: '多雲', 61: '密雲',
-    62: '微雨', 63: '有雨', 64: '大雨', 65: '雷暴', 70: '天色良好', 71: '天色良好', 72: '天色良好', 73: '天色良好', 74: '天色良好',
-    75: '天色良好', 76: '大致多雲', 77: '天色大致良好', 80: '大風', 81: '乾燥', 82: '潮濕', 83: '有霧', 84: '薄霧', 85: '煙霞',
-    90: '炎熱', 91: '溫暖', 92: '涼', 93: '寒冷',
-  };
-  return map[icon] ?? '';
+  return HKO_ICON_LABELS[icon] ?? '';
+}
+
+export function isHkoIcon(icon: unknown): icon is number {
+  return typeof icon === 'number' && icon in HKO_ICON_LABELS;
+}
+
+/** Icons that mean rain is expected (showers, rain, thunderstorms). */
+export function hkoIconRain(icon: number): boolean {
+  return icon === 53 || icon === 54 || (icon >= 62 && icon <= 65);
 }
 
 /** Approximate coordinates of HKO temperature stations, to pick the one nearest the player. */

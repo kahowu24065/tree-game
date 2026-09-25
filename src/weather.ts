@@ -1,5 +1,5 @@
 import { addDays } from './dates';
-import { hkoIconToWmo, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
+import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, SceneOverride, Storm, StormKind } from './types';
 
 export const HK_LAT = 22.3022;
@@ -102,6 +102,27 @@ export function weatherLabel(code: number): string {
   return '多雲';
 }
 
+/** Condition wording for a forecast row: HKO's own words when it covers the day. */
+export function dayLabel(day: Pick<ForecastDay, 'code' | 'hkoIcon'>): string {
+  return day.hkoIcon !== undefined ? hkoIconLabel(day.hkoIcon) || weatherLabel(day.code) : weatherLabel(day.code);
+}
+
+/**
+ * Put HKO's icon on every day it covers (9-day forecast by date, today from the latest
+ * observation icon) so the forecast list agrees with the Observatory and the weather card.
+ * Numbers (temperature, rain, gusts) stay as they are.
+ */
+export function withHkoDays(daily: ForecastDay[], hko: HkoData | null | undefined, today: string): ForecastDay[] {
+  if (!hko) return daily;
+  const byDate = new Map(hko.forecast.map((d) => [d.date, d.icon]));
+  const nowIcon = hko.current?.icon;
+  return daily.map((day) => {
+    const icon = day.date === today && isHkoIcon(nowIcon) ? nowIcon : byDate.get(day.date);
+    if (!isHkoIcon(icon)) return day;
+    return { ...day, hkoIcon: icon, code: hkoIconToWmo(icon) };
+  });
+}
+
 export function windWords(kmh: number): string {
   if (kmh < 12) return '微風';
   if (kmh < 30) return '和風';
@@ -145,7 +166,12 @@ export function condFromForecast(day: ForecastDay, tempC = day.tempMax): DayCond
     windKmh: day.windKmh,
     tempMax: day.tempMax,
   });
-  const raining = day.precipMm >= 0.5 || isRainCode(day.code) || isSnowCode(day.code);
+  // When HKO covers the day, trust its icon for "is it a rainy day" so the scene never
+  // shows rain on a day the Observatory calls fine (the model's mm figures stay as numbers).
+  const raining =
+    day.hkoIcon !== undefined
+      ? hkoIconRain(day.hkoIcon)
+      : day.precipMm >= 0.5 || isRainCode(day.code) || isSnowCode(day.code);
   return {
     code: day.code,
     tempC,
@@ -204,7 +230,8 @@ export function offlineSnapshot(today: string, error: string): WeatherSnapshot {
   };
 }
 
-export function overrideDay(day: ForecastDay, scene: SceneOverride): ForecastDay {
+export function overrideDay(input: ForecastDay, scene: SceneOverride): ForecastDay {
+  const day: ForecastDay = { ...input, hkoIcon: undefined };
   switch (scene) {
     case 'clear':
       return { ...day, code: 0, precipMm: 0, precipProb: 0, windKmh: 8, gustKmh: 14, tempMax: 28, tempMin: 23 };
@@ -223,13 +250,16 @@ export function overrideDay(day: ForecastDay, scene: SceneOverride): ForecastDay
 
 export function mergeStorm(day: ForecastDay, storm: Storm | undefined): ForecastDay {
   if (!storm || storm.resolved) return day;
+  const code = storm.kind === 'typhoon' ? 95 : storm.kind === 'heavy-rain' ? Math.max(day.code, 65) : day.code;
   return {
     ...day,
+    // A storm day draws the storm, not the Observatory's fair-weather icon.
+    hkoIcon: storm.kind === 'gale' ? day.hkoIcon : undefined,
     precipMm: Math.max(day.precipMm, storm.rainMm),
     gustKmh: Math.max(day.gustKmh, storm.gustKmh),
     windKmh: Math.max(day.windKmh, storm.windKmh),
     precipProb: Math.max(day.precipProb, storm.kind === 'gale' ? 50 : 90),
-    code: storm.kind === 'typhoon' ? 95 : storm.kind === 'heavy-rain' ? Math.max(day.code, 65) : day.code,
+    code,
   };
 }
 
@@ -389,6 +419,7 @@ export function hkoForecast(hko: HkoData, today: string): ForecastResult | null 
     days.push({
       date: today,
       code: nowCode,
+      hkoIcon: isHkoIcon(hko.current?.icon) ? hko.current!.icon : undefined,
       tempMax: Math.max(nowTemp, first ? first.tempMax - 1 : nowTemp),
       tempMin: Math.min(nowTemp, first ? first.tempMin : nowTemp - 4),
       precipMm: 0,
@@ -406,6 +437,7 @@ export function hkoForecast(hko: HkoData, today: string): ForecastResult | null 
     days.push({
       date: d.date,
       code: hkoIconToWmo(d.icon),
+      hkoIcon: isHkoIcon(d.icon) ? d.icon : undefined,
       tempMax: d.tempMax,
       tempMin: d.tempMin,
       precipMm: rain.mm,

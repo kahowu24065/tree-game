@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { drivingWarning, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
+import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
 import { closeDay, createGame, syncOfficialWarnings } from '../src/sim';
-import { condFromForecast, districtRain, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
+import { condFromForecast, dayLabel, districtRain, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')) as unknown;
 
@@ -156,5 +156,53 @@ describe('地名', () => {
     expect(parseBigDataCloud({ countryCode: 'JP', city: '東京', localityInfo: { administrative: [] } })).toEqual({ name: '東京' });
     expect(nearHongKong(22.54, 114.05)).toBe(true);
     expect(nearHongKong(35.68, 139.76)).toBe(false);
+  });
+});
+
+describe('預報圖示跟天文台', () => {
+  const om = () => parseOpenMeteo(fixture('open-meteo-hk.json'));
+  const hko = () => {
+    const f = parseFnd(fixture('hko-fnd.json'));
+    const current = parseRhrread(fixture('hko-rhrread.json'), 22.31, 114.22)!.current;
+    return { warnings: [], current, forecast: f.forecast, situation: f.situation, messages: [] };
+  };
+
+  it('天文台圖示名稱跟官方說明', () => {
+    expect([50, 51, 52, 53, 54, 60, 61, 62, 63, 64, 65].map(hkoIconLabel)).toEqual([
+      '陽光充沛', '間有陽光', '短暫陽光', '間有陽光 幾陣驟雨', '短暫陽光 有驟雨', '多雲', '密雲', '微雨', '雨', '大雨', '雷暴',
+    ]);
+    expect([76, 77, 80, 83, 85, 90, 91, 92, 93].map(hkoIconLabel)).toEqual(['大致多雲', '天色大致良好', '大風', '霧', '煙霞', '熱', '暖', '涼', '冷']);
+    expect(hkoIconRain(54)).toBe(true);
+    expect(hkoIconRain(90)).toBe(false);
+  });
+
+  it('逐日用天文台圖示，今日用即時觀測圖示，數字唔變', () => {
+    const base = om();
+    // The recorded Open-Meteo week says drizzle/thunder (51/53/95) on days HKO calls hot and fine (90).
+    expect(base.daily.map((d) => d.code)).toEqual([3, 1, 51, 53, 51, 95, 51]);
+    const days = withHkoDays(base.daily, hko(), '2026-09-25');
+    expect(days.map((d) => d.hkoIcon)).toEqual([51, 90, 90, 90, 90, 90, 54]);
+    expect(days.map(dayLabel)).toEqual(['間有陽光', '熱', '熱', '熱', '熱', '熱', '短暫陽光 有驟雨']);
+    expect(days.map((d) => d.precipMm)).toEqual(base.daily.map((d) => d.precipMm));
+    // Scene: no rain on days HKO calls fine, even if the model has a few mm.
+    expect(days.slice(0, 6).every((d) => !condFromForecast(d).raining)).toBe(true);
+    expect(condFromForecast(days[6]!).raining).toBe(true);
+  });
+
+  it('天文台冇覆蓋嘅日子用返 Open-Meteo', () => {
+    const h = hko();
+    h.forecast = h.forecast.slice(0, 2);
+    const days = withHkoDays(om().daily, h, '2026-09-25');
+    expect(days[3]!.hkoIcon).toBeUndefined();
+    expect(dayLabel(days[3]!)).toBe('微雨');
+    expect(withHkoDays(om().daily, null, '2026-09-25')[1]!.hkoIcon).toBeUndefined();
+  });
+
+  it('有風暴嗰日唔再顯示天晴圖示', () => {
+    const days = withHkoDays(om().daily, hko(), '2026-09-25');
+    const storms = [{ id: 's', date: '2026-09-27', kind: 'typhoon' as const, rainMm: 120, windKmh: 90, gustKmh: 140, announced: '2026-09-25', resolved: false }];
+    const shown = presentForecast(days, storms as never, '2026-09-25', null);
+    expect(shown.find((d) => d.date === '2026-09-27')!.hkoIcon).toBeUndefined();
+    expect(shown.find((d) => d.date === '2026-09-28')!.hkoIcon).toBe(90);
   });
 });
