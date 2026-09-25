@@ -1,3 +1,5 @@
+import { animalById } from './data/animals';
+
 export interface AnimalDrawOpts {
   scale?: number;
   night?: boolean;
@@ -64,8 +66,25 @@ export function drawAnimal(
     case 'firefly':
       drawFirefly(ctx, time, sil);
       break;
-    default:
+    default: {
+      // Generic 2D fallback by category (the 3D scene has proper models for every species).
+      const a = animalById(id);
+      const c = a?.look.c ?? ['#8a623c', '#c4956a', '#5c3b28'];
+      if (!a || a.category === 'bird') drawBird(ctx, paint, stroke, c[0] ?? '#8a623c', c[1] ?? '#c4956a', c[2] ?? '#5c3b28', 1);
+      else if (a.category === 'butterfly') drawButterfly(ctx, time, paint);
+      else if (a.category === 'mammal') drawSquirrel(ctx, time, paint);
+      else if (a.category === 'insect') drawLadybug(ctx, paint);
+      else {
+        paint(c[0] ?? '#5f8a3a');
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 11, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(11, -1, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
+    }
   }
   ctx.restore();
 }

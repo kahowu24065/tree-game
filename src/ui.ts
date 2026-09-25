@@ -1,5 +1,8 @@
 import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_OPTIMAL, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
-import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, STAGES } from './content';
+import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
+import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
+import { SPECIES, STAGE_NAMES, speciesDef, speciesForSeason, stageSampleCm, type SpeciesId } from './data/species';
+import type { SeasonId } from './balance';
 import { daysBetween, formatShort, weekdayIndex } from './dates';
 import { drawAnimal } from './draw-animals';
 import { dayEvent, hkoWarningEvents, type Countdown } from './events';
@@ -94,12 +97,12 @@ export function renderChrome(view: View): void {
 
   const status = document.getElementById('status-card');
   if (status) {
-    const stage = stageFor(state.heightCm);
     const season = seasonDef(state.season);
+    const stage = stageFor(state.heightCm, season.targetCm);
     const drains = actionLimit(state, 'drain');
     status.innerHTML = `
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
-      <p class="status-sub">${esc(state.treeName)} · ${esc(stage.name)} · 第 ${Math.min(season.days, dayNumber(state, view.today))}/${season.days} 日</p>
+      <p class="status-sub">${esc(state.treeName)} · ${esc(speciesDef(state.species).name)}${esc(stage.name)} · 第 ${Math.min(season.days, dayNumber(state, view.today))}/${season.days} 日</p>
       <div class="bars">
         ${statBar('H', '健康', state.health, [50, 100], 'health', state.dying ? '瀕死' : '')}
         ${statBar('W', '水分', state.moisture, W_OPTIMAL, 'water')}
@@ -114,12 +117,13 @@ export function renderChrome(view: View): void {
 
   const rail = document.getElementById('rail');
   if (rail) {
-    const stage = stageFor(state.heightCm);
-    const idx = STAGES.indexOf(stage);
-    const next = STAGES[idx + 1];
-    const p = stageProgress(state.heightCm);
+    const target = seasonDef(state.season).targetCm;
+    const stages = stagesFor(target);
+    const stage = stageFor(state.heightCm, target);
+    const next = stages[stage.index + 1];
+    const p = stageProgress(state.heightCm, target);
     rail.innerHTML = `
-      <span class="rail-top ${p > 0.9 ? 'dim' : ''}"><small>${next ? `下一階段` : '終點'}</small><b>${esc(formatHeight(stage.nextCm))}</b>${next ? `<small>${esc(next.name)}</small>` : '<small>海波龍</small>'}</span>
+      <span class="rail-top ${p > 0.9 ? 'dim' : ''}"><small>${next ? `下一階段` : '終點'}</small><b>${esc(formatHeight(stage.nextCm))}</b>${next ? `<small>${esc(next.name)}</small>` : '<small>目標</small>'}</span>
       <span class="rail-track"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span><span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>當前</small></span></span>
       <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
   }
@@ -486,23 +490,60 @@ function forecastTab(view: View): string {
   `;
 }
 
+let albumMode: 'animals' | 'species' = 'animals';
+export function setAlbumMode(mode: 'animals' | 'species'): void {
+  albumMode = mode;
+}
+
 function albumTab(view: View): string {
+  const toggle = `<div class="seg album-seg"><button type="button" class="${albumMode === 'animals' ? 'on' : ''}" data-album-mode="animals">動物 ${view.state.animals.length}/${ANIMALS.length}</button><button type="button" class="${albumMode === 'species' ? 'on' : ''}" data-album-mode="species">樹種 ${SPECIES.length}</button></div>`;
+  return toggle + (albumMode === 'species' ? speciesAlbum(view) : animalAlbum(view));
+}
+
+function animalAlbum(view: View): string {
   const unlocked = view.state.animals.length;
-  const cards = ANIMALS.map((animal) => {
-    const have = view.state.animals.includes(animal.id);
-    const fresh = have && !view.state.seenAnimals.includes(animal.id);
-    const resident = view.state.residents.includes(animal.id);
-    return `<button type="button" class="creature ${have ? '' : 'locked'}" data-seen="${animal.id}">
-      <span class="thumb" data-animal="${animal.id}" data-locked="${have ? '0' : '1'}"></span>
-      <strong>${esc(animal.name)}${fresh ? '<em>新</em>' : ''}${resident ? '<em class="res">長駐</em>' : ''}</strong>
-      <span>${have ? esc(animal.epithet) : esc(animal.hint)}</span>
-      <small>${have ? esc(animal.about) : '未搬進來'}</small>
+  const groups = CATEGORY_ORDER.map((cat) => {
+    const list = ANIMALS.filter((a) => a.category === cat);
+    const have = list.filter((a) => view.state.animals.includes(a.id)).length;
+    const cards = list.map((animal) => {
+      const got = view.state.animals.includes(animal.id);
+      const fresh = got && !view.state.seenAnimals.includes(animal.id);
+      const resident = view.state.residents.includes(animal.id);
+      return `<button type="button" class="creature ${got ? '' : 'locked'}" data-seen="${animal.id}">
+      <span class="thumb" data-animal="${animal.id}" data-locked="${got ? '0' : '1'}"></span>
+      <strong>${got ? esc(animal.name) : '？？？'}${fresh ? '<em>新</em>' : ''}${resident ? '<em class="res">長駐</em>' : ''}</strong>
+      <span class="chip cat-${cat}">${esc(CATEGORY_LABEL[cat])}${animal.group[1] > 1 ? `・成群 ${animal.group[0]}–${animal.group[1]}` : ''}</span>
+      <span>${got ? esc(animal.epithet) : esc(unlockHint(animal))}</span>
+      <small>${got ? esc(animal.about) : `解鎖：${esc(unlockHint(animal))}`}</small>
     </button>`;
+    }).join('');
+    return `<h3 class="sub">${esc(CATEGORY_LABEL[cat])} <small>${have}/${list.length}</small></h3><div class="album">${cards}</div>`;
   }).join('');
   const res = view.state.residents.length;
   return `<p class="status">圖鑑 ${unlocked} / ${ANIMALS.length} · 長駐 ${res}</p>
-    <p class="advice">健康度連續 3 晚 90 以上，已見過嘅動物會長駐：每隻每晚 +2 養分（最多 +6）；兩隻或以上仲會幫手防蟲。健康跌穿 70 佢哋會搬走。</p>
-    <div class="album">${cards}</div>`;
+    <p class="advice">見過嘅動物會輪流返嚟探棵樹（雀鳥成群飛過、猴子成群落地）。健康度連續 3 晚 90 以上，已見過嘅動物會長駐：每隻每晚 +2 養分（最多 +6）；兩隻或以上仲會幫手防蟲。健康跌穿 70 佢哋會搬走。</p>
+    ${groups}`;
+}
+
+function speciesAlbum(view: View): string {
+  const cards = SPECIES.map((sp) => {
+    const season = seasonDef(sp.season);
+    const mine = sp.id === view.state.species;
+    const stages = sp.stages.map((txt, i) => `<li><b>${STAGE_NAMES[i]}</b>${esc(txt)}</li>`).join('');
+    return `<article class="card species-card ${mine ? 'mine' : ''}">
+      <div class="species-head">
+        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, season.targetCm)}"></span>
+        <div><p class="eyebrow">${esc(season.label)}・目標 ${season.targetCm / 100} 米${mine ? '・你棵樹' : ''}</p>
+        <h2>${esc(sp.name)}</h2>
+        <p class="sci">${esc(sp.english)} · <i>${esc(sp.scientific)}</i></p>
+        <p class="fine">一般 ${esc(sp.typicalM)} 米・最高紀錄 ${sp.maxM} 米</p></div>
+      </div>
+      <p>${esc(sp.blurb)}</p>
+      <p class="fine">${esc(sp.record)}。資料：<a href="${esc(sp.source.url)}" target="_blank" rel="noopener">${esc(sp.source.label)}</a></p>
+      <ol class="stage-list">${stages}</ol>
+    </article>`;
+  }).join('');
+  return `<p class="status">九個樹種，每個賽季三款，真實成樹高度對應賽季目標。</p>${cards}`;
 }
 
 function seasonTab(view: View): string {
@@ -540,29 +581,55 @@ function seasonTab(view: View): string {
 }
 
 type Thumbnailer = (id: string, unlocked: boolean) => string | null;
+type SpeciesThumbnailer = (species: SpeciesId, stage: number, heightCm: number) => string | null;
 let thumbnailer: Thumbnailer | null = null;
+let speciesThumbnailer: SpeciesThumbnailer | null = null;
 
-export function setThumbnailer(fn: Thumbnailer | null): void {
+export function setThumbnailer(fn: Thumbnailer | null, species?: SpeciesThumbnailer | null): void {
   thumbnailer = fn;
+  speciesThumbnailer = species ?? null;
 }
 
+let paintToken = 0;
+/** Fill thumbnails a few at a time so opening the encyclopedia (65 animals) never stalls a phone. */
 export function paintThumbs(): void {
-  document.querySelectorAll<HTMLElement>('.thumb[data-animal]').forEach((el) => {
-    const id = el.dataset.animal;
-    if (!id) return;
-    const unlocked = el.dataset.locked !== '1';
-    const url = thumbnailer?.(id, unlocked);
-    if (url) {
-      el.innerHTML = `<img src="${url}" alt="" width="96" height="96" />`;
-      return;
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = 120;
-    canvas.height = 84;
-    el.replaceChildren(canvas);
-    const ctx = canvas.getContext('2d');
-    if (ctx) drawAnimal(ctx, id, 60, 48, 1200, { scale: 1.35, silhouette: !unlocked, night: id === 'owl' || id === 'firefly' });
+  const token = ++paintToken;
+  const jobs: (() => void)[] = [];
+  document.querySelectorAll<HTMLElement>('.sthumb[data-species-thumb]').forEach((el) => {
+    if (el.firstChild) return;
+    jobs.push(() => {
+      const [id, stage] = (el.dataset.speciesThumb ?? '').split(':');
+      const url = speciesThumbnailer?.(id as SpeciesId, Number(stage), Number(el.dataset.cm));
+      if (url) el.innerHTML = `<img src="${url}" alt="" width="120" height="120" />`;
+      else el.textContent = '🌳';
+    });
   });
+  document.querySelectorAll<HTMLElement>('.thumb[data-animal]').forEach((el) => {
+    if (el.firstChild) return;
+    jobs.push(() => {
+      const id = el.dataset.animal;
+      if (!id) return;
+      const unlocked = el.dataset.locked !== '1';
+      const url = thumbnailer?.(id, unlocked);
+      if (url) {
+        el.innerHTML = `<img src="${url}" alt="" width="96" height="96" />`;
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = 120;
+      canvas.height = 84;
+      el.replaceChildren(canvas);
+      const ctx = canvas.getContext('2d');
+      if (ctx) drawAnimal(ctx, id, 60, 48, 1200, { scale: 1.35, silhouette: !unlocked, night: id === 'owl' || id === 'firefly' });
+    });
+  });
+  const step = () => {
+    if (token !== paintToken) return;
+    const t0 = performance.now();
+    while (jobs.length && performance.now() - t0 < 12) jobs.shift()!();
+    if (jobs.length) window.setTimeout(step, 16);
+  };
+  step();
 }
 
 /* ---------- Toast, modals ---------- */
@@ -583,6 +650,7 @@ export function openModal(inner: string): void {
   if (!modal) return;
   modal.innerHTML = `<div class="modal-card glass" role="dialog" aria-modal="true">${inner}</div>`;
   modal.hidden = false;
+  paintThumbs();
   const field = modal.querySelector('input');
   if (field instanceof HTMLInputElement) {
     field.focus();
@@ -592,6 +660,14 @@ export function openModal(inner: string): void {
   }
 }
 
+/** Re-render the open modal without moving focus (season / species picker). */
+export function updateModal(inner: string): void {
+  const card = document.querySelector('#modal .modal-card');
+  if (!card) return openModal(inner);
+  card.innerHTML = inner;
+  paintThumbs();
+}
+
 export function closeModal(): void {
   const modal = document.getElementById('modal');
   if (!modal) return;
@@ -599,7 +675,12 @@ export function closeModal(): void {
   modal.innerHTML = '';
 }
 
-export function startModal(current: string, meta: MetaState, rename: boolean): string {
+export interface Pick {
+  season: SeasonId;
+  species: SpeciesId;
+}
+
+export function startModal(current: string, meta: MetaState, rename: boolean, pick?: Pick): string {
   if (rename) {
     return `
       <p class="eyebrow">世界之樹</p>
@@ -608,17 +689,33 @@ export function startModal(current: string, meta: MetaState, rename: boolean): s
       <button type="button" class="primary" data-action="save-name">保存</button>
       <button type="button" class="texty" data-action="close-modal">取消</button>`;
   }
+  const sel: Pick = pick ?? { season: 's3', species: speciesForSeason('s3')[0]!.id };
   const legacy = meta.pendingLegacy && meta.landmark ? `<p class="legacy">${esc(meta.landmark.name)}留低嘅養分地標會令新樹開局養分 +40。</p>` : '';
   const seasons = SEASONS.map(
-    (s) => `<button type="button" class="season" data-season="${s.id}"><b>${esc(s.label)}</b><span>${esc(s.sub)}</span><small>${s.days} 日・每日約 ${(s.targetCm / s.days).toFixed(0)} 厘米</small></button>`,
+    (s) => `<button type="button" class="season ${s.id === sel.season ? 'on' : ''}" data-pick-season="${s.id}" aria-pressed="${s.id === sel.season}"><b>${esc(s.label)}</b><span>目標 ${s.targetCm / 100} 米</span><small>${s.days} 日</small></button>`,
   ).join('');
+  const season = SEASONS.find((s) => s.id === sel.season)!;
+  const cards = speciesForSeason(sel.season)
+    .map(
+      (sp) => `<button type="button" class="species ${sp.id === sel.species ? 'on' : ''}" data-species="${sp.id}" aria-pressed="${sp.id === sel.species}">
+        <span class="sthumb" data-species-thumb="${sp.id}:3" data-cm="${stageSampleCm(3, season.targetCm)}"></span>
+        <b>${esc(sp.name)}</b><i>${esc(sp.scientific.split('（')[0]!)}</i>
+        <small>真實 ${esc(sp.typicalM)} 米・紀錄 ${sp.maxM} 米</small>
+      </button>`,
+    )
+    .join('');
+  const chosen = speciesDef(sel.species);
   return `
     <p class="eyebrow">世界之樹・新一局</p>
-    <h2>揀賽季，種一棵樹</h2>
-    <p>每日生存壓力一樣，分別只係時間長短同徽章。天氣跟住現實；水分、養分保持喺最佳範圍，惡劣天氣前加固。</p>
+    <h2>揀賽季，揀樹種</h2>
+    <p>每日生存壓力一樣，分別只係時間長短、目標高度同徽章。天氣跟住現實；水分、養分保持喺最佳範圍，惡劣天氣前加固。</p>
     ${legacy}
+    <div class="seasons pick">${seasons}</div>
+    <p class="fine">${esc(season.sub)}・每日約 ${(season.targetCm / season.days).toFixed(0)} 厘米</p>
+    <div class="species-pick">${cards}</div>
+    <p class="species-blurb"><b>${esc(chosen.name)}</b>：${esc(chosen.blurb)}</p>
     <label>樹的名字<input id="tree-name" maxlength="12" value="${esc(current)}" autocomplete="off" /></label>
-    <div class="seasons">${seasons}</div>`;
+    <button type="button" class="primary" data-action="start-game">種${esc(chosen.name)}・開始${esc(season.label)}</button>`;
 }
 
 export function overModal(state: GameState, meta: MetaState, lines: string[]): string {

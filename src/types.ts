@@ -1,4 +1,5 @@
 import type { PrepId, SeasonId, WeatherEventId } from './balance';
+import type { SpeciesId } from './data/species';
 
 export interface Care {
   date: string;
@@ -93,6 +94,8 @@ export interface GameState {
   started: boolean;
   treeName: string;
   season: SeasonId;
+  /** Tree species (3 per season). */
+  species: SpeciesId;
   createdOn: string;
   lastSeenDate: string;
   virtualToday: string | null;

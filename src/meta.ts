@@ -1,3 +1,4 @@
+import type { SpeciesId } from './data/species';
 /** Progress kept between games: badges, 免死金牌, 星空浮島, 養分地標. */
 import { BADGES, LANDMARK_N_BONUS, type SeasonId } from './balance';
 import { createGame } from './sim';
@@ -52,10 +53,10 @@ export function bookGameEnd(meta: MetaState, state: GameState): string[] {
   return lines;
 }
 
-export function newGame(meta: MetaState, today: string, season: SeasonId, name: string): GameState {
+export function newGame(meta: MetaState, today: string, season: SeasonId, name: string, species?: SpeciesId): GameState {
   const legacyBonus = meta.pendingLegacy ? LANDMARK_N_BONUS : 0;
   meta.pendingLegacy = false;
-  const state = createGame(today, { season, name, legacyBonus });
+  const state = createGame(today, { season, name, legacyBonus, species });
   state.started = true;
   return state;
 }

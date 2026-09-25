@@ -1,4 +1,5 @@
 import { stageFor, stageProgress } from './content';
+import type { SpeciesId } from './data/species';
 import { drawAnimal } from './draw-animals';
 import type { DayCond, Reinforcement, TimeMode } from './types';
 import { clamp, hashString, mulberry32 } from './util';
@@ -6,12 +7,21 @@ import { isSnowCode } from './weather';
 
 export interface SceneInput {
   treeName: string;
+  species: SpeciesId;
+  /** Growth stage 0–4 relative to the season target. */
+  stage: number;
+  targetCm: number;
   heightCm: number;
   health: number;
   moisture: number;
   pests: number;
   scars: number;
   animals: string[];
+  /** Every animal seen so far (the 3D scene rotates a random subset). */
+  unlocked: string[];
+  residents: string[];
+  /** 0 calm … 1 typhoon: drives tree sway. */
+  sway: number;
   cond: DayCond;
   daylight: number;
   minute: number;
@@ -166,7 +176,7 @@ export class Scene {
   }
 
   private ensureModel(input: SceneInput): TreeModel {
-    const stage = stageFor(input.heightCm);
+    const stage = stageFor(input.heightCm, input.targetCm);
     const key = `${this.w}x${this.h}|${input.treeName}|${stage.id}|${Math.round(input.heightCm)}|${input.health > 55 ? 1 : 0}|${input.scars}|${input.pests > 35 ? 1 : 0}`;
     if (this.model?.key === key) return this.model;
     this.model = buildTree(this.w, this.h, input, key);
@@ -297,7 +307,7 @@ export class Scene {
     }
     ctx.fillStyle = rgb(soil as RGB);
     ctx.beginPath();
-    ctx.ellipse(this.w * 0.5, model.groundY + 6, 54 + stageFor(input.heightCm).trunk, 14, 0, 0, Math.PI * 2);
+    ctx.ellipse(this.w * 0.5, model.groundY + 6, 54 + stageFor(input.heightCm, input.targetCm).trunk, 14, 0, 0, Math.PI * 2);
     ctx.fill();
     if (wet) {
       ctx.fillStyle = 'rgba(180, 200, 190, 0.35)';
@@ -315,7 +325,7 @@ export class Scene {
   }
 
   private tree(ctx: CanvasRenderingContext2D, model: TreeModel, input: SceneInput, sway: (y: number) => number): void {
-    if (model.crown && stageFor(input.heightCm).depth >= 3) {
+    if (model.crown && stageFor(input.heightCm, input.targetCm).depth >= 3) {
       ctx.fillStyle = leafColor(input.health, 0.2, 0);
       ctx.beginPath();
       ctx.ellipse(model.crown.x + sway(model.crown.y), model.crown.y, model.crown.rx, model.crown.ry, 0, 0, Math.PI * 2);
@@ -556,9 +566,9 @@ function drawLimb(ctx: CanvasRenderingContext2D, limb: Limb, sway: (y: number) =
 }
 
 function buildTree(w: number, h: number, input: SceneInput, key: string): TreeModel {
-  const stage = stageFor(input.heightCm);
+  const stage = stageFor(input.heightCm, input.targetCm);
   const rng = mulberry32(hashString(`${input.treeName || 'tree'}|${stage.id}`));
-  const progress = stageProgress(input.heightCm);
+  const progress = stageProgress(input.heightCm, input.targetCm);
   const groundY = h * 0.8;
   const reach = stage.reach0 + (stage.reach1 - stage.reach0) * progress;
   const top = groundY - reach * h * 0.92;

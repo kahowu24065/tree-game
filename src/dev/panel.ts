@@ -6,6 +6,17 @@ import { WEATHER_EVENTS, type WeatherEventId } from '../balance';
 import type { DevApi } from '../main';
 import { settlementCard } from '../ui';
 import { esc } from '../util';
+import { SPECIES, STAGE_NAMES, type SpeciesId } from '../data/species';
+import { ANIMALS, CATEGORY_LABEL } from '../data/animals';
+
+const SWAYS: [string, number | null][] = [
+  ['自動（跟天氣）', null],
+  ['平靜', 0.05],
+  ['微風', 0.25],
+  ['強風', 0.55],
+  ['暴雨', 0.7],
+  ['颱風', 1],
+];
 
 const WRENCH =
   '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5a4 4 0 0 0 4.9 4.9l1.1 1.1-2.2 2.2-1.1-1.1-7.6 7.6a2 2 0 0 1-2.8-2.8l7.6-7.6-1.1-1.1 2.2-2.2z" fill="currentColor" fill-opacity=".18"/></svg>';
@@ -60,6 +71,27 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="real-date">回到真日期</button>
         <button type="button" class="danger" data-dev="reset">重置存檔</button>
       </div>
+      <h4 class="dev-h">樹種・生長階段預覽</h4>
+      <div class="dev-row">
+        <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（${x.season}）</option>`).join('')}</select></label>
+        <label>階段 <select data-dev-stage><option value="">（跟高度）</option>${STAGE_NAMES.map((n, i) => `<option value="${i}" ${d.preview.stage === i ? 'selected' : ''}>${i + 1}. ${n}</option>`).join('')}</select></label>
+      </div>
+      <h4 class="dev-h">搖擺・眩光</h4>
+      <div class="dev-row">
+        <label>搖擺 <select data-dev-sway>${SWAYS.map(([n, v], i) => `<option value="${i}" ${d.sway === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <button type="button" data-dev="glare">觸發眩光</button>
+      </div>
+      <p class="dev-note">而家搖擺：${api.sway().toFixed(2)}${d.sway === null ? '（跟天氣／手動天氣）' : '（強制）'}</p>
+      <h4 class="dev-h">動物</h4>
+      <div class="dev-row">
+        <label>召喚 <select data-dev-animal>${ANIMALS.map((a) => `<option value="${a.id}">${esc(CATEGORY_LABEL[a.category])}・${esc(a.name)}</option>`).join('')}</select></label>
+        <button type="button" data-dev="spawn">召喚</button>
+      </div>
+      <div class="dev-actions">
+        <button type="button" data-dev="rotate">輪換動物</button>
+        <button type="button" data-dev="unlock-all">解鎖全部動物（${s.animals.length}/${ANIMALS.length}）</button>
+      </div>
+      <p class="dev-note" data-dev-eco>畫面上：${esc(api.ecoInfo().map((g) => `${g.name}×${g.count}${g.resident ? '（長駐）' : ''}`).join('、') || '冇')}</p>
       <p class="dev-note">今日計算用：${esc(api.todayEvents().map((e) => WEATHER_EVENTS[e].label).join('、'))}${s.virtualToday ? `・虛擬日期 ${esc(s.virtualToday)}` : ''}${s.pest.active ? '・有蟲害' : ''}${s.dying ? '・瀕死' : ''}</p>
       ${s.lastSettlement ? settlementCard(s.lastSettlement) : '<p class="dev-note">未有結算紀錄。撳「跳去下一日」試下。</p>'}
     `;
@@ -89,6 +121,17 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     if (cmd === 'advance') api.advanceDay();
     if (cmd === 'pest') api.triggerPest();
     if (cmd === 'real-date') api.realDate();
+    if (cmd === 'glare') api.triggerGlare();
+    if (cmd === 'spawn') {
+      const id = root.querySelector<HTMLSelectElement>('[data-dev-animal]')?.value;
+      if (id) api.spawnAnimal(id);
+      window.setTimeout(draw, 50);
+    }
+    if (cmd === 'rotate') {
+      api.rotateAnimals();
+      window.setTimeout(draw, 50);
+    }
+    if (cmd === 'unlock-all') api.unlockAll();
     if (cmd === 'reset' && confirm('重置存檔？徽章會保留。')) api.reset();
     draw();
   });
@@ -117,6 +160,18 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       draw();
     }
     if (el instanceof HTMLInputElement && el.dataset.devStat) draw();
+    if (el instanceof HTMLSelectElement && el.hasAttribute('data-dev-species')) {
+      api.setPreview({ ...d.preview, species: (el.value || undefined) as SpeciesId | undefined });
+      draw();
+    }
+    if (el instanceof HTMLSelectElement && el.hasAttribute('data-dev-stage')) {
+      api.setPreview({ ...d.preview, stage: el.value === '' ? undefined : Number(el.value) });
+      draw();
+    }
+    if (el instanceof HTMLSelectElement && el.hasAttribute('data-dev-sway')) {
+      api.setSway(SWAYS[Number(el.value)]?.[1] ?? null);
+      draw();
+    }
   });
 
   draw();

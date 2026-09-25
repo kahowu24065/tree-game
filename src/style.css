@@ -1489,6 +1489,9 @@ body.sheet-open .sheet-backdrop {
 }
 
 .modal-card input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   font: inherit;
   font-size: 16px;
   padding: 10px 12px;
@@ -2030,4 +2033,165 @@ body.dying::after {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ---------- v5: season + species picker, species encyclopedia ---------- */
+
+.seasons.pick {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.seasons.pick .season {
+  padding: 8px 8px;
+  text-align: center;
+  justify-items: center;
+}
+
+.seasons.pick .season b {
+  font-size: 13px;
+}
+
+.seasons.pick .season span,
+.seasons.pick .season small {
+  font-size: 11px;
+}
+
+.season.on {
+  background: var(--green-bg);
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+
+.species-pick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.species {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 6px 4px 8px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(35, 53, 44, 0.12);
+  text-align: center;
+}
+
+.species.on {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--green), 0 4px 14px rgba(63, 154, 75, 0.2);
+}
+
+.species b {
+  font-size: 14px;
+}
+
+.species i {
+  font-size: 10px;
+  color: var(--ink-soft);
+  line-height: 1.2;
+}
+
+.species small {
+  font-size: 10px;
+  color: var(--green);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.sthumb {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 120px;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 35%, #eef7ff, #dcecd3);
+  overflow: hidden;
+  font-size: 30px;
+}
+
+.sthumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.species-blurb {
+  font-size: 13px !important;
+}
+
+.album-seg {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.album-seg button {
+  flex: 1;
+}
+
+h3.sub small {
+  font-weight: 500;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.creature .chip {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--gray-bg);
+  color: var(--ink-soft);
+}
+
+.creature .chip.cat-bird { background: var(--blue-bg); color: var(--blue); }
+.creature .chip.cat-mammal { background: var(--orange-bg); color: var(--brown); }
+.creature .chip.cat-butterfly { background: var(--purple-bg); color: var(--purple); }
+.creature .chip.cat-insect { background: var(--yellow-bg); color: var(--yellow); }
+.creature .chip.cat-reptile { background: var(--green-bg); color: var(--green); }
+.creature .chip.cat-amphibian { background: #dff5f1; color: #1f8a78; }
+
+.species-card.mine {
+  box-shadow: inset 0 0 0 2px var(--green), var(--shadow);
+}
+
+.species-head {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.species-head h2 {
+  margin: 0;
+}
+
+.species-head .sci {
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.stage-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.stage-list b {
+  color: var(--ink);
+  margin-right: 6px;
+}
+
+.dev-h {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
 }

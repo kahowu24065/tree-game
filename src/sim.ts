@@ -30,6 +30,7 @@ import {
   type WeatherEventId,
 } from './balance';
 import { ANIMALS, eventById, eventForDate, stageFor } from './content';
+import { defaultSpecies, speciesDef, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
 import { dayEvent, mildEvent } from './events';
 import {
@@ -77,13 +78,14 @@ export function addLog(state: GameState, date: string, text: string, meta: LogMe
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const sgn = (v: number) => `${v >= 0 ? '+' : ''}${r1(v)}`;
 
-export function createGame(today: string, opts: { season?: SeasonId; name?: string; legacyBonus?: number } = {}): GameState {
+export function createGame(today: string, opts: { season?: SeasonId; name?: string; legacyBonus?: number; species?: SpeciesId } = {}): GameState {
   const legacyBonus = opts.legacyBonus ?? 0;
   const state: GameState = {
     version: 2,
     started: false,
     treeName: opts.name ?? '世界之樹',
     season: opts.season ?? 's3',
+    species: opts.species && speciesDef(opts.species).season === (opts.season ?? 's3') ? opts.species : defaultSpecies(opts.season ?? 's3'),
     createdOn: today,
     lastSeenDate: today,
     virtualToday: null,
@@ -370,8 +372,9 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
 }
 
 function noteStage(state: GameState, beforeCm: number, date: string, time = ''): string | null {
-  const before = stageFor(beforeCm);
-  const after = stageFor(state.heightCm);
+  const target = seasonDef(state.season).targetCm;
+  const before = stageFor(beforeCm, target);
+  const after = stageFor(state.heightCm, target);
   if (before.id === after.id || state.heightCm < beforeCm) return null;
   addLog(state, date, `棵樹長成${after.name}，高 ${formatHeight(state.heightCm)}。`, { kind: 'stage', title: '進入新階段', reward: { text: after.name, tone: 'blue' }, time });
   return `棵樹進入新階段：${after.name}。`;
@@ -436,7 +439,7 @@ export function performAction(state: GameState, action: CareAction, opts: { rain
   addLog(state, state.care.date, message, { kind: action, title, reward });
   const rescue = checkRescue(state);
   if (rescue) message = `${message} ${rescue}`;
-  const animals = refreshUnlocks(state, { hot: false, date: state.care.date });
+  const animals = refreshUnlocks(state, { date: state.care.date });
   if (animals.length) message = `${message} ${animals.map((id) => ANIMALS.find((a) => a.id === id)?.name ?? id).join('、')}嚟咗。`;
   return { ok: true, message };
 }
@@ -472,14 +475,27 @@ export function visualReinforcement(resist: number): Reinforcement {
   return { stakes: resist >= 15, ropes: resist >= 35, prune: resist >= 60 };
 }
 
-export function refreshUnlocks(state: GameState, opts: { hot: boolean; date: string }): string[] {
+const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain', 'thunder', 'typhoon1', 'typhoon8'];
+const SEASON_RANK: Record<SeasonId, number> = { s3: 1, s6: 2, s12: 3 };
+
+/** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and season length. */
+export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[] }): string[] {
   const got: string[] = [];
   const meters = state.heightCm / 100;
+  const evs = new Set<WeatherEventId>([...(opts.events ?? []), ...(state.dayEvents[opts.date]?.events ?? [])]);
+  if (state.lastSettlement && state.lastSettlement.date === addDays(opts.date, -1)) state.lastSettlement.events.forEach((e) => evs.add(e));
+  const hot = evs.has('hot');
+  const rain = RAIN_EVENTS.some((e) => evs.has(e));
+  const month = Number(opts.date.slice(5, 7));
   for (const animal of ANIMALS) {
     if (state.animals.includes(animal.id)) continue;
     if (meters < animal.minM || state.health < animal.minHealth) continue;
     if (animal.needStorms && state.stormSurvivals < animal.needStorms) continue;
-    if (animal.needHeat && !opts.hot) continue;
+    if (animal.weather === 'hot' && !hot) continue;
+    if (animal.weather === 'rain' && !rain) continue;
+    if (animal.weather === 'storm' && state.stormSurvivals < 1) continue;
+    if (animal.months && !animal.months.includes(month)) continue;
+    if (animal.season && SEASON_RANK[state.season] < SEASON_RANK[animal.season]) continue;
     state.animals.push(animal.id);
     got.push(animal.id);
     addLog(state, opts.date, `${animal.name}嚟咗，${animal.about}`, { kind: 'animal', title: '新朋友來訪', reward: { text: '+1 圖鑑', tone: 'purple' } });
@@ -541,7 +557,7 @@ export function catchUp(
   let animals: string[] = [];
   if (!state.over) {
     eventText = ensureToday(state, today);
-    animals = refreshUnlocks(state, { hot: false, date: today });
+    animals = refreshUnlocks(state, { date: today, events: [...(settlements.at(-1)?.events ?? []), ...eventsFor(today)] });
     if (gap === 1) state.morningNote = nightNote(settlements[0]);
     else if (gap > 1) state.morningNote = `你離開咗 ${gap} 日。健康 ${Math.round(healthBefore)} → ${Math.round(state.health)}，高度 ${growthCm >= 0 ? '+' : ''}${growthCm.toFixed(1)} 厘米。`;
     if (messages.length && gap > 0) state.morningNote = `${state.morningNote ?? ''} ${messages.join(' ')}`.trim();
@@ -567,7 +583,7 @@ export function advanceVirtualDay(state: GameState, today: string, events: Weath
   let animals: string[] = [];
   if (!state.over) {
     eventText = ensureToday(state, next);
-    animals = refreshUnlocks(state, { hot: false, date: next });
+    animals = refreshUnlocks(state, { date: next, events: res.settlement.events });
     state.morningNote = `${nightNote(res.settlement)} ${res.messages.join(' ')}`.trim();
   }
   return {

@@ -1,3 +1,4 @@
+import { defaultSpecies, speciesDef } from './data/species';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
 
@@ -13,6 +14,7 @@ export function loadGame(): GameState | null {
     if (!data || data.version !== 2 || typeof data.heightCm !== 'number' || !data.care || !data.pest) return null;
     data.dayEvents ??= {};
     data.residents ??= [];
+    if (!data.species || speciesDef(data.species).season !== data.season) data.species = defaultSpecies(data.season ?? 's3');
     data.log ??= [];
     return data;
   } catch {

@@ -33,7 +33,7 @@ ok('season picker shows 3 seasons', /3 個月/.test(modal) && /6 個月/.test(mo
 await page.screenshot({ path: `${OUT}/season-picker.png` });
 
 await page.locator('#tree-name').fill('小綠');
-await page.locator('[data-season="s3"]').click();
+await page.locator('[data-pick-season="s3"]').click(); await page.locator('[data-action="start-game"]').click();
 await page.waitForFunction(() => /即時天氣|模擬天氣|上次天氣/.test(document.querySelector('#weather-card')?.textContent ?? ''), null, { timeout: 30000 }).catch(() => {});
 await wait(2500);
 const status = await page.locator('#status-card').innerText();

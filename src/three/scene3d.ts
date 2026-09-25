@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
-import { albumFigure, Animals3D } from './animals3d';
+import { albumFigure, Animals3D, type EcoInfo } from './animals3d';
 import { buildIsland, type Island } from './island3d';
-import { buildTree, treeKey, type TreeBuild } from './tree3d';
+import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
+import { animalById } from '../data/animals';
+import type { SpeciesId } from '../data/species';
 import { jitterGeometry, merge, paint } from './util3d';
 
 export type Quality = 'low' | 'high';
@@ -88,6 +90,15 @@ export class Scene3D {
   private thumbs = new Map<string, string>();
   private width = 1;
   private height = 1;
+  private gust = 0;
+  private gustTarget = 0;
+  private nextGust = 0;
+  private glareT = -99;
+  private nextGlare = 0;
+  private hud = new THREE.Scene();
+  private hudCam = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1);
+  private flare: { core: THREE.Sprite; ring: THREE.Sprite; wash: THREE.Sprite; streak: THREE.Sprite; ghosts: THREE.Sprite[] };
+  private speciesThumbs = new Map<string, string>();
 
   private canvas: HTMLCanvasElement;
 
@@ -131,8 +142,7 @@ export class Scene3D {
     this.scene.add(this.island.group);
     this.pivot.position.y = 0.18;
     this.scene.add(this.pivot);
-    this.pivot.add(this.animals.onTree);
-    this.scene.add(this.animals.onGround);
+    this.scene.add(this.animals.root);
 
     // Sea far below plus distant islets and cliffs.
     this.sea = new THREE.Mesh(new THREE.CircleGeometry(420, 48), new THREE.MeshStandardMaterial({ color: '#4fa7c9', roughness: 0.35, metalness: 0.1 }));
@@ -226,8 +236,65 @@ export class Scene3D {
     this.rain.visible = false;
     this.scene.add(this.rain);
 
+    this.flare = this.buildFlare();
     this.bindDrag();
     this.resize();
+  }
+
+  /** Lens-flare sprites drawn in a screen-space pass after the scene (酷熱 glare). */
+  private buildFlare(): { core: THREE.Sprite; ring: THREE.Sprite; wash: THREE.Sprite; streak: THREE.Sprite; ghosts: THREE.Sprite[] } {
+    const tex = (inner: string, outer: string, ring = false) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d')!;
+      const grad = g.createRadialGradient(64, 64, ring ? 40 : 0, 64, 64, 64);
+      if (ring) {
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.5, inner);
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+      } else {
+        grad.addColorStop(0, inner);
+        grad.addColorStop(1, outer);
+      }
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 128, 128);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    const sprite = (map: THREE.Texture, color: string) => {
+      const m = new THREE.SpriteMaterial({ map, color, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
+      const sp = new THREE.Sprite(m);
+      sp.visible = false;
+      this.hud.add(sp);
+      return sp;
+    };
+    const soft = tex('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+    const ringTex = tex('rgba(255,240,210,0.9)', '', true);
+    const core = sprite(soft, '#fff4d6');
+    const ring = sprite(ringTex, '#ffd9a0');
+    const wash = sprite(soft, '#ffe7b8');
+    const ghostColors = ['#ffd27a', '#a8ffda', '#ffb0d8', '#ffe9a8', '#b8d8ff'];
+    const ghosts = ghostColors.map((c) => sprite(soft, c));
+    const streak = sprite(soft, '#fff0cc');
+    return { core, ring, wash, streak, ghosts };
+  }
+
+  /** Developer / random trigger for the harsh-sun glare. */
+  triggerGlare(): void {
+    this.glareT = this.lastTime;
+  }
+
+  animalInfo(): EcoInfo[] {
+    return this.animals.info();
+  }
+
+  spawnAnimal(id: string): void {
+    if (animalById(id)) this.animals.spawn(id, { forced: true });
+  }
+
+  rotateAnimals(): void {
+    this.animals.rotate();
   }
 
   setQuality(q: Quality): void {
@@ -279,10 +346,17 @@ export class Scene3D {
     this.camera.aspect = w / h;
     this.camera.fov = this.camera.aspect < 0.8 ? 46 : 36;
     this.camera.updateProjectionMatrix();
+    this.hudCam.left = 0;
+    this.hudCam.right = w;
+    this.hudCam.top = h;
+    this.hudCam.bottom = 0;
+    this.hudCam.updateProjectionMatrix();
   }
 
   private ensureTree(input: SceneInput, time: number): void {
     const params = {
+      species: input.species,
+      stage: input.stage,
       heightCm: input.heightCm,
       health: input.health,
       pests: input.pests,
@@ -307,9 +381,10 @@ export class Scene3D {
       this.treeKeyStr = key;
       this.animalsKey = '';
     }
-    const akey = `${input.animals.join(',')}|${input.health >= 22}`;
+    const night = input.daylight < 0.35;
+    const akey = `${input.unlocked.join(',')}|${input.residents.join(',')}|${input.health >= 22}|${night}`;
     if (akey !== this.animalsKey && this.tree) {
-      this.animals.sync(input.animals, this.tree, input.health);
+      this.animals.sync({ unlocked: input.unlocked, residents: input.residents, tree: this.tree, health: input.health, night });
       this.animalsKey = akey;
     }
   }
@@ -374,14 +449,27 @@ export class Scene3D {
       this.skyMat.uniforms.top!.value.lerp(new THREE.Color('#dfe6ff'), f * 0.6);
     }
 
-    // Wind sway of the whole tree about its base.
-    const motion = input.reducedMotion ? 0.25 : 1;
-    const wind = input.cond.windKmh + (input.cond.gustKmh > 60 ? 15 : 0) + (storming ? 45 : 0);
-    const amp = Math.min(0.09, 0.006 + wind * 0.0009) * motion;
-    const lean = Math.min(0.06, wind * 0.0004) * motion;
-    this.pivot.rotation.z = -lean + Math.sin(t * 1.4) * amp + Math.sin(t * 3.3) * amp * 0.3;
-    this.pivot.rotation.x = Math.sin(t * 1.1 + 1) * amp * 0.5;
-    if (tree.canopy) tree.canopy.rotation.y = Math.sin(t * 0.9) * amp * 0.4;
+    // Wind sway: amplitude and frequency follow the weather (calm → breeze → gale → typhoon), with gusts.
+    const motion = input.reducedMotion ? 0.3 : 1;
+    const level = clamp(input.sway, 0, 1);
+    if (t > this.nextGust) {
+      this.gustTarget = level > 0.25 ? 0.45 + Math.random() * 0.55 : Math.random() * 0.35;
+      this.nextGust = t + 1.2 + Math.random() * (4.5 - level * 3);
+    }
+    this.gustTarget *= Math.exp(-dt * 0.9);
+    this.gust += (this.gustTarget - this.gust) * (1 - Math.exp(-dt * 3));
+    const gust = this.gust * level;
+    const tall = 1 / (1 + tree.height * 0.04);
+    const amp = (0.004 + level * 0.065) * (1 + gust * 0.8) * motion * tall;
+    const freq = 0.8 + level * 1.5;
+    const lean = level * 0.085 * (0.55 + gust * 0.7) * motion * tall;
+    this.pivot.rotation.z = -lean + Math.sin(t * freq) * amp + Math.sin(t * freq * 2.37 + 0.6) * amp * 0.35;
+    this.pivot.rotation.x = Math.sin(t * freq * 0.8 + 1) * amp * 0.5;
+    windUniforms.uTime.value = t;
+    windUniforms.uWind.value = level * motion;
+    windUniforms.uGust.value = gust * motion;
+    windUniforms.uHeight.value = Math.max(0.6, tree.height);
+    const wind = level * 110 + gust * 20;
 
     this.island.dirt.scale.setScalar(clamp(0.3 + tree.height * 0.09, 0.3, 1.5));
     this.island.update(t, wind);
@@ -400,7 +488,8 @@ export class Scene3D {
       this.glow.scale.set(Math.max(1, h * 0.35), 1, Math.max(1, h * 0.35));
       (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
     }
-    this.animals.update(t, night);
+    this.pivot.updateMatrixWorld(true);
+    this.animals.update(t, dt, night);
 
     // Clouds drift; overcast brings more and darker clouds.
     const cloudTint = new THREE.Color('#ffffff').lerp(new THREE.Color('#9aa3ad'), over).lerp(new THREE.Color('#59616b'), stormy ? 0.6 : 0).lerp(new THREE.Color('#39435e'), night * 0.8);
@@ -466,6 +555,116 @@ export class Scene3D {
 
     this.updateRain(rain, wind, dt, target);
     this.renderer.render(this.scene, this.camera);
+    this.drawGlare(input, t, day, sunDir, target);
+  }
+
+  /** 酷熱: an occasional harsh-sun flare (not constant); skipped for reduced motion unless triggered by hand. */
+  private drawGlare(input: SceneInput, t: number, day: number, sunDir: THREE.Vector3, target: THREE.Vector3): void {
+    const hot = Boolean(input.cond.hot) && day > 0.35;
+    if (hot && !input.reducedMotion && t > this.nextGlare) {
+      if (this.nextGlare > 0) this.glareT = t;
+      this.nextGlare = t + 9 + Math.random() * 14;
+    }
+    if (!hot) this.nextGlare = t + 3 + Math.random() * 4;
+    const age = t - this.glareT;
+    const dur = 3.4;
+    const e = age >= 0 && age < dur ? Math.sin((age / dur) * Math.PI) ** 1.5 : 0;
+    this.renderer.toneMappingExposure = 0.95 + e * 0.28;
+    const f = this.flare;
+    const all = [f.core, f.ring, f.wash, f.streak, ...f.ghosts];
+    if (e <= 0.001) {
+      all.forEach((sp) => (sp.visible = false));
+      return;
+    }
+    const p = target.clone().addScaledVector(sunDir, 400).project(this.camera);
+    // Keep the burst in the open sky between the HUD cards (the real sun is usually just off-screen).
+    const sx = clamp(p.x * 0.5 + 0.5, 0.22, 0.78) * this.width;
+    const sy = clamp(p.y * 0.5 + 0.5, 0.6, 0.72) * this.height;
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+    const base = Math.min(this.width, this.height);
+    const flick = 0.92 + Math.sin(t * 23) * 0.04 + Math.sin(t * 7.1) * 0.04;
+    const set = (sp: THREE.Sprite, x: number, y: number, size: number, op: number) => {
+      sp.visible = true;
+      sp.position.set(x, y, 0);
+      sp.scale.set(size, size, 1);
+      (sp.material as THREE.SpriteMaterial).opacity = op;
+    };
+    set(f.core, sx, sy, base * (0.4 + e * 0.25), 0.7 * e * flick);
+    set(f.ring, sx, sy, base * (0.8 + e * 0.2), 0.35 * e);
+    set(f.wash, cx, cy, Math.max(this.width, this.height) * 2.2, 0.24 * e);
+    set(f.streak, sx, sy, 1, 0.55 * e * flick);
+    f.streak.scale.set(this.width * 1.6 * (0.7 + e * 0.3), base * 0.05, 1);
+    const ghostAt = [0.35, 0.7, 1.15, 1.45, 1.8];
+    const ghostSize = [0.09, 0.05, 0.14, 0.07, 0.2];
+    f.ghosts.forEach((g, i) => {
+      const k = ghostAt[i]!;
+      set(g, sx + (cx - sx) * k, sy + (cy - sy) * k, base * ghostSize[i]!, 0.42 * e);
+    });
+    const auto = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    this.renderer.render(this.hud, this.hudCam);
+    this.renderer.autoClear = auto;
+  }
+
+  /** Preview image of a species at a stage (start screen and encyclopedia). */
+  speciesThumb(species: SpeciesId, stage: number, heightCm: number, size = 192): string {
+    const key = `${species}|${stage}|${size}`;
+    const hit = this.speciesThumbs.get(key);
+    if (hit) return hit;
+    const build = buildTree({ species, stage, heightCm, health: 90, pests: 0, scars: 0, seed: 11 });
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight('#fff8e8', '#8a9a6a', 1.5));
+    const d = new THREE.DirectionalLight('#fff1d6', 2.4);
+    d.position.set(-2, 3, 2.5);
+    scene.add(d);
+    scene.add(build.group);
+    const ground = new THREE.Mesh(new THREE.CylinderGeometry(build.canopyRadius * 1.1 + 0.3, build.canopyRadius * 1.0 + 0.3, 0.12, 20), new THREE.MeshStandardMaterial({ color: '#8cc26a', flatShading: true }));
+    ground.position.y = -0.06;
+    scene.add(ground);
+    const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value };
+    windUniforms.uWind.value = 0;
+    windUniforms.uGust.value = 0;
+    windUniforms.uHeight.value = build.height;
+    const box = new THREE.Box3().setFromObject(build.group);
+    const center = box.getCenter(new THREE.Vector3());
+    const dims = box.getSize(new THREE.Vector3());
+    const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 500);
+    const r = Math.max(dims.y * 0.55, dims.x * 0.6, dims.z * 0.6);
+    cam.position.copy(center).add(new THREE.Vector3(0.35, 0.28, 1).normalize().multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(14)) * 1.02));
+    cam.lookAt(center);
+    const url = this.renderToUrl(scene, cam, size);
+    windUniforms.uWind.value = saved.w;
+    windUniforms.uGust.value = saved.g;
+    windUniforms.uHeight.value = saved.h;
+    build.dispose();
+    ground.geometry.dispose();
+    this.speciesThumbs.set(key, url);
+    return url;
+  }
+
+  private renderToUrl(scene: THREE.Scene, cam: THREE.Camera, size: number): string {
+    const rt = new THREE.WebGLRenderTarget(size, size, { colorSpace: THREE.SRGBColorSpace, samples: 4 });
+    const prevTarget = this.renderer.getRenderTarget();
+    const prevExposure = this.renderer.toneMappingExposure;
+    this.renderer.toneMappingExposure = 1;
+    this.renderer.setRenderTarget(rt);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear();
+    this.renderer.render(scene, cam);
+    const px = new Uint8Array(size * size * 4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, size, size, px);
+    this.renderer.setRenderTarget(prevTarget);
+    this.renderer.setClearColor(0x000000, 1);
+    this.renderer.toneMappingExposure = prevExposure;
+    rt.dispose();
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(size, size);
+    for (let y = 0; y < size; y++) img.data.set(px.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
+    ctx.putImageData(img, 0, 0);
+    return c.toDataURL('image/png');
   }
 
   private updateRain(intensity: number, wind: number, dt: number, target: THREE.Vector3): void {
@@ -512,7 +711,8 @@ export class Scene3D {
     const holder = new THREE.Group();
     holder.add(fig);
     fig.position.set(0, 0, 0);
-    if (id === 'butterfly') fig.rotation.set(1.05, 0.5, 0);
+    const kind = animalById(id)?.look.kind;
+    if (kind === 'butterfly' || kind === 'dragonfly' || kind === 'bee') fig.rotation.set(1.05, 0.5, 0);
     else fig.rotation.set(0, -0.5, 0);
     fig.scale.setScalar(1);
     fig.visible = true;

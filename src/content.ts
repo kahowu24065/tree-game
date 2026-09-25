@@ -1,78 +1,57 @@
 import type { GameState, LogReward } from './types';
 import { clamp, hashString } from './util';
 
+import { STAGE_NAMES, STAGE_SHARES } from './data/species';
+export { ANIMALS, animalById, type AnimalDef } from './data/animals';
+
 export interface StageDef {
   id: string;
   name: string;
+  index: number;
   minCm: number;
   nextCm: number;
   reach0: number;
   reach1: number;
   depth: number;
   trunk: number;
-  growthMul: number;
   roots: boolean;
 }
 
-export const STAGES: StageDef[] = [
-  { id: 'seedling', name: '幼苗', minCm: 0, nextCm: 50, reach0: 0.2, reach1: 0.3, depth: 0, trunk: 4, growthMul: 6, roots: false },
-  { id: 'sapling', name: '小樹', minCm: 50, nextCm: 200, reach0: 0.34, reach1: 0.46, depth: 3, trunk: 9, growthMul: 8, roots: false },
-  { id: 'young', name: '年輕樹', minCm: 200, nextCm: 800, reach0: 0.48, reach1: 0.58, depth: 4, trunk: 14, growthMul: 11, roots: false },
-  { id: 'mature', name: '成樹', minCm: 800, nextCm: 2000, reach0: 0.6, reach1: 0.68, depth: 5, trunk: 22, growthMul: 12, roots: true },
-  { id: 'ancient', name: '古樹', minCm: 2000, nextCm: 5000, reach0: 0.7, reach1: 0.78, depth: 6, trunk: 32, growthMul: 10, roots: true },
-  { id: 'giant', name: '巨樹', minCm: 5000, nextCm: 11620, reach0: 0.8, reach1: 0.9, depth: 6, trunk: 46, growthMul: 8, roots: true },
-];
+const STAGE_LOOK = [
+  { id: 'seedling', reach0: 0.2, reach1: 0.3, depth: 0, trunk: 4, roots: false },
+  { id: 'sapling', reach0: 0.34, reach1: 0.46, depth: 3, trunk: 9, roots: false },
+  { id: 'young', reach0: 0.48, reach1: 0.58, depth: 4, trunk: 14, roots: false },
+  { id: 'mature', reach0: 0.62, reach1: 0.72, depth: 5, trunk: 24, roots: true },
+  { id: 'giant', reach0: 0.8, reach1: 0.9, depth: 6, trunk: 40, roots: true },
+] as const;
 
-export function stageFor(heightCm: number): StageDef {
-  let current = STAGES[0] as StageDef;
-  for (const stage of STAGES) {
-    if (heightCm >= stage.minCm) current = stage;
-  }
+/** Five growth stages (幼苗、小樹、青年樹、成年樹、巨樹), scaled to the season's target height. */
+export function stagesFor(targetCm = 2000): StageDef[] {
+  return STAGE_LOOK.map((look, i) => ({
+    ...look,
+    name: STAGE_NAMES[i]!,
+    index: i,
+    minCm: Math.round(STAGE_SHARES[i]! * targetCm),
+    nextCm: Math.round(i < 4 ? STAGE_SHARES[i + 1]! * targetCm : targetCm),
+  }));
+}
+
+export function stageFor(heightCm: number, targetCm = 2000): StageDef {
+  const stages = stagesFor(targetCm);
+  let current = stages[0]!;
+  for (const stage of stages) if (heightCm >= stage.minCm) current = stage;
   return current;
 }
 
-export function stageIndex(heightCm: number): number {
-  return Math.max(0, STAGES.findIndex((s) => s.id === stageFor(heightCm).id));
+export function stageIndex(heightCm: number, targetCm = 2000): number {
+  return stageFor(heightCm, targetCm).index;
 }
 
-export function stageProgress(heightCm: number): number {
-  const stage = stageFor(heightCm);
+export function stageProgress(heightCm: number, targetCm = 2000): number {
+  const stage = stageFor(heightCm, targetCm);
   const span = stage.nextCm - stage.minCm;
   if (span <= 0) return 1;
   return clamp((heightCm - stage.minCm) / span, 0, 1);
-}
-
-export interface AnimalDef {
-  id: string;
-  name: string;
-  epithet: string;
-  minM: number;
-  minHealth: number;
-  needStorms?: number;
-  needHeat?: boolean;
-  hint: string;
-  about: string;
-}
-
-export const ANIMALS: AnimalDef[] = [
-  { id: 'butterfly', name: '菜粉蝶', epithet: '白翼點綠', minM: 0.15, minHealth: 40, hint: '幼苗健康就會來', about: '園圃常見的白蝴蝶，喜歡停在新葉上。' },
-  { id: 'ladybug', name: '七星瓢蟲', epithet: '葉上紅點', minM: 0.3, minHealth: 45, hint: '高過 30 厘米', about: '紅殼黑點，會幫樹食蚜蟲。' },
-  { id: 'sparrow', name: '麻雀', epithet: '簷前熟客', minM: 0.8, minHealth: 48, hint: '小樹、健康過得去', about: '香港全年都見得到，吱吱喳喳。' },
-  { id: 'squirrel', name: '赤腹松鼠', epithet: '赤腹一閃', minM: 2, minHealth: 55, hint: '兩米高、健康 55', about: '郊野同公園都有，尾巴比身體還靈活。' },
-  { id: 'bulbul', name: '白頭鵯', epithet: '白頭高歌', minM: 3.5, minHealth: 58, hint: '年輕樹', about: '頭頂一撮白，是窗臺同公園的熟客。' },
-  { id: 'magpierobin', name: '鵲鴝', epithet: '巢裡幾顆蛋', minM: 4, minHealth: 62, hint: '四米高、健康 62', about: '黑白分明的小鳥，喺樹杈築巢，巢入面有幾顆淺藍色的蛋。' },
-  { id: 'redbulbul', name: '紅耳鵯', epithet: '紅頰俏鳥', minM: 5, minHealth: 60, hint: '五米高', about: '頰上有紅斑，叫聲清亮。' },
-  { id: 'cicada', name: '蟬', epithet: '盛夏長鳴', minM: 6, minHealth: 55, needHeat: true, hint: '酷熱日子、六米高', about: '要碰上酷熱的日子，牠才肯露面。' },
-  { id: 'kingfisher', name: '普通翠鳥', epithet: '藍電一掠', minM: 7, minHealth: 70, needStorms: 1, hint: '捱過一場風暴', about: '風暴之後天色放晴，藍影會停在枝上。' },
-  { id: 'woodpecker', name: '啄木鳥', epithet: '敲敲樹幹', minM: 8, minHealth: 62, hint: '成樹', about: '樹幹夠粗之後，偶爾會來敲一敲找蟲。' },
-  { id: 'dove', name: '珠頸斑鳩', epithet: '咕咕低鳴', minM: 10, minHealth: 64, hint: '十米高', about: '頸上像一串珍珠，步步安穩。' },
-  { id: 'muntjac', name: '赤麂', epithet: '樹下吠鹿', minM: 12, minHealth: 70, hint: '十二米、健康 70', about: '香港郊野的細小鹿，受驚會好似狗吠咁叫，最鍾意喺樹蔭下休息。' },
-  { id: 'owl', name: '領角鴞', epithet: '夜裡的眼睛', minM: 15, minHealth: 72, hint: '十五米、健康 72', about: '香港常見的小型貓頭鷹，黃昏後最活躍。' },
-  { id: 'firefly', name: '螢火蟲', epithet: '一點溫光', minM: 22, minHealth: 82, hint: '二十二米、健康 82', about: '樹夠大、夠健康，夜裡就有微光。' },
-];
-
-export function animalById(id: string): AnimalDef | undefined {
-  return ANIMALS.find((a) => a.id === id);
 }
 
 export const SHERMAN_M = 83.8;

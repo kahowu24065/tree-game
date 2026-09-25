@@ -15,6 +15,7 @@ import {
   eventsForDate,
   performAction,
   recordEvents,
+  refreshUnlocks,
   reinforce,
   setLogClock,
   triggerPest,
@@ -39,8 +40,14 @@ import {
   startModal,
   stormModal,
   toast,
+  updateModal,
+  setAlbumMode,
+  type Pick,
   type View,
 } from './ui';
+import { ANIMALS } from './data/animals';
+import { defaultSpecies, speciesDef, speciesForSeason, stageIndexFor, stageSampleCm, type SpeciesId } from './data/species';
+import { seasonDef } from './rules';
 import {
   WEATHER_STALE_MS,
   WEATHER_TTL_MS,
@@ -83,6 +90,7 @@ let weatherLoading = weather.provider === 'sim';
 let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
+let pick: Pick = { season: 's3', species: defaultSpecies('s3') };
 let quality: Quality = localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'low';
 
 const canvas = document.getElementById('scene');
@@ -91,7 +99,10 @@ let scene3d: Scene3D | null = null;
 let scene2d: Scene | null = null;
 try {
   scene3d = new Scene3D(canvas, quality);
-  setThumbnailer((id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null);
+  setThumbnailer(
+    (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
+    (species, stage, cm) => scene3d?.speciesThumb(species, stage, cm) ?? null,
+  );
 } catch (error) {
   console.warn('WebGL 用唔到，改用簡化畫面', error);
   scene2d = new Scene(canvas);
@@ -208,6 +219,16 @@ function placeLabel(): { place: string; note: string } {
   return { place: weather.place || '你嘅位置', note: weather.source === 'fallback' ? '預設' : '' };
 }
 
+/** How hard the tree sways (0 calm … 1 typhoon), from the weather in force now; the dev panel can force it. */
+const EVENT_SWAY: Record<WeatherEventId, number> = { clear: 0.08, drizzle: 0.18, hot: 0.04, rainstorm: 0.55, blackrain: 0.65, typhoon1: 0.72, thunder: 0.85, typhoon8: 1 };
+function swayLevel(cond: DayCond): number {
+  if (DEV_PANEL && dev.sway !== null) return dev.sway;
+  const events = manual() ? todayEvents() : liveEvents();
+  const byEvent = Math.max(0.06, ...events.map((e) => EVENT_SWAY[e] ?? 0.1));
+  const byWind = manual() ? 0 : Math.min(1, ((cond.windKmh ?? 0) + 0.5 * (cond.gustKmh ?? 0)) / 120);
+  return Math.min(1, Math.max(byEvent, byWind));
+}
+
 function sceneInput(): SceneInput {
   const cond = todayCond();
   const day = presentedDays().find((d) => d.date === today()) ?? mildDay(today());
@@ -217,9 +238,21 @@ function sceneInput(): SceneInput {
   const timeMode = DEV_PANEL ? dev.time : 'auto';
   // Residents always stay; up to three recent visitors drop by.
   const visitors = state.animals.filter((id) => !state.residents.includes(id)).slice(-3);
+  const target = seasonDef(state.season).targetCm;
+  const preview = DEV_PANEL ? dev.preview : {};
+  const species: SpeciesId = preview.species ?? state.species;
+  const previewSeason = preview.species ? seasonDef(speciesDef(preview.species).season).targetCm : target;
+  const stage = preview.stage ?? stageIndexFor(state.heightCm, previewSeason);
+  const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : Math.min(state.heightCm, previewSeason)) : state.heightCm;
   return {
     treeName: state.treeName,
-    heightCm: state.heightCm,
+    species,
+    stage,
+    targetCm: previewSeason,
+    heightCm,
+    unlocked: [...state.animals],
+    residents: [...state.residents],
+    sway: swayLevel(cond),
     health: state.over?.kind === 'dead' ? 0 : Math.max(state.health, state.dying ? 0 : 8),
     moisture: state.moisture,
     pests: state.pest.active ? 70 : 0,
@@ -345,6 +378,10 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     recordEvents(state, today(), events, hkActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     if (fresh.length && state.started && !manual()) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => WEATHER_EVENTS[e].label).join('、')}生效，今晚結算前仲可以準備。`);
+  }
+  if (state.started && !state.over) {
+    const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
+    if (got.length) toast(`${got.map(animalName).join('、')}嚟咗。`);
   }
   if (today() !== before) {
     const report = catchUp(state, today(), eventsFor, meta, Date.now());
@@ -473,14 +510,18 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   applyWeather(snapshot);
 }
 
-function startGame(season: SeasonId): void {
+function openStart(): void {
+  openModal(startModal('世界之樹', meta, false, pick));
+}
+
+function startGame(season: SeasonId, species?: SpeciesId): void {
   const input = document.getElementById('tree-name');
   const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '世界之樹';
   const wasStarted = state.started && !state.over;
   if (wasStarted) {
     state.treeName = name;
   } else {
-    state = newGame(meta, realToday(), season, name);
+    state = newGame(meta, realToday(), season, name, species);
     tab = 'care';
   }
   persist();
@@ -618,7 +659,7 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(startModal(state.treeName, meta, true));
       return;
     case 'new-game':
-      openModal(startModal('世界之樹', meta, false));
+      openStart();
       return;
     case 'location':
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
@@ -635,6 +676,9 @@ function doAction(action: string, target: HTMLElement): void {
     case 'save-name':
       startGame(state.season);
       return;
+    case 'start-game':
+      startGame(pick.season, pick.species);
+      return;
     case 'close-modal':
       closeModal();
       return;
@@ -645,12 +689,25 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-season]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-pick-season], [data-species], [data-album-mode]');
   if (!target) return;
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;
-  if (target.dataset.season) {
-    startGame(target.dataset.season as SeasonId);
+  if (target.dataset.pickSeason || target.dataset.species) {
+    const nameEl = document.getElementById('tree-name');
+    const name = nameEl instanceof HTMLInputElement ? nameEl.value : '世界之樹';
+    if (target.dataset.pickSeason) {
+      const season = target.dataset.pickSeason as SeasonId;
+      pick = { season, species: speciesForSeason(season)[0]!.id };
+    } else {
+      pick = { ...pick, species: target.dataset.species as SpeciesId };
+    }
+    updateModal(startModal(name, meta, false, pick));
+    return;
+  }
+  if (target.dataset.albumMode) {
+    setAlbumMode(target.dataset.albumMode === 'species' ? 'species' : 'animals');
+    render();
     return;
   }
   if (target.dataset.open) {
@@ -727,6 +784,14 @@ export interface DevApi {
   triggerPest: () => void;
   reset: () => void;
   realDate: () => void;
+  setPreview: (preview: DevSettings['preview']) => void;
+  setSway: (level: number | null) => void;
+  triggerGlare: () => void;
+  spawnAnimal: (id: string) => void;
+  rotateAnimals: () => void;
+  unlockAll: () => void;
+  ecoInfo: () => { id: string; name: string; count: number; resident: boolean }[];
+  sway: () => number;
 }
 
 if (DEV_PANEL) {
@@ -769,12 +834,33 @@ if (DEV_PANEL) {
       setSheet(false);
       persist();
       render();
-      openModal(startModal('世界之樹', meta, false));
+      openStart();
     },
     realDate: () => {
       state.virtualToday = null;
       runCatchup();
     },
+    setPreview: (preview) => {
+      dev = { ...dev, preview };
+      saveDev(dev);
+      render();
+    },
+    setSway: (level) => {
+      dev = { ...dev, sway: level };
+      saveDev(dev);
+      render();
+    },
+    triggerGlare: () => scene3d?.triggerGlare(),
+    spawnAnimal: (id) => scene3d?.spawnAnimal(id),
+    rotateAnimals: () => scene3d?.rotateAnimals(),
+    unlockAll: () => {
+      for (const a of ANIMALS) if (!state.animals.includes(a.id)) state.animals.push(a.id);
+      persist();
+      render();
+      toast(`解鎖咗全部 ${ANIMALS.length} 種動物。`);
+    },
+    ecoInfo: () => (scene3d?.animalInfo() ?? []).map((g) => ({ id: g.id, name: animalName(g.id), count: g.count, resident: g.resident })),
+    sway: () => swayLevel(todayCond()),
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');
@@ -813,7 +899,7 @@ resize();
 
 bindSheetDrag();
 runCatchup();
-if (!state.started) openModal(startModal('世界之樹', meta, false));
+if (!state.started) openStart();
 requestAnimationFrame(frame);
 if (weather.origin === 'live' && !weatherLoading) {
   applyWeather(weather);
