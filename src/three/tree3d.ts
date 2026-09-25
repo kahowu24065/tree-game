@@ -103,6 +103,8 @@ const col = (hex: string) => new THREE.Color(hex);
 interface Spot {
   c: THREE.Vector3;
   r: number;
+  /** Foliage colour at this spot (used for the lush inner fill). */
+  col?: THREE.Color;
 }
 
 class Ctx {
@@ -111,6 +113,8 @@ class Ctx {
   stage: number;
   health: number;
   fullness: number;
+  /** 0 (neglected) … 1 (well cared for): drives how full the crown is. */
+  density: number;
   bark: THREE.BufferGeometry[] = [];
   leaves: THREE.BufferGeometry[] = [];
   spots: Spot[] = [];
@@ -128,7 +132,8 @@ class Ctx {
     this.V = visualHeight(p.heightCm);
     this.stage = clamp(Math.round(p.stage), 0, 4);
     this.health = p.health;
-    this.fullness = 0.72 + 0.28 * clamp(p.health / 90, 0, 1);
+    this.density = clamp((p.health - 10) / 75, 0, 1);
+    this.fullness = 0.62 + 0.38 * this.density;
   }
 
   /** Leaf colour: species base, dulled toward sick yellow-brown when health is low. */
@@ -178,7 +183,15 @@ class Ctx {
     this.bark.push(paint(limb(a, b, r0, r1, sides), col(colour)));
   }
 
-  blob(c: THREE.Vector3, r: number, colour: THREE.Color, squash = 0.82, detail = 1): void {
+  /** Low health thins the crown: some optional foliage pieces are left out. */
+  skip(): boolean {
+    if (this.stage === 0 || this.spots.length < 6) return false;
+    const thin = clamp((0.6 - this.density) * 0.85, 0, 0.45);
+    return thin > 0 && this.rand() < thin;
+  }
+
+  blob(c: THREE.Vector3, r: number, colour: THREE.Color, squash = 0.82, detail = 1, spot = true): void {
+    if (spot && this.skip()) return;
     const g = new THREE.IcosahedronGeometry(r, detail);
     jitterGeometry(g, r * 0.26, c.x * 3.1 + c.z * 1.7 + this.p.seed, true);
     g.scale(1, squash, 1);
@@ -187,7 +200,7 @@ class Ctx {
     const bottom = colour.clone().offsetHSL(0, 0, -0.07);
     paint(g, (y) => bottom.clone().lerp(top, clamp((y - (c.y - r)) / (2 * r), 0, 1)));
     this.leaves.push(g);
-    this.spots.push({ c: c.clone(), r });
+    if (spot) this.spots.push({ c: c.clone(), r, col: colour });
   }
 
   /** Conifer tier: an 8-sided cone, jittered, darker underneath. */
@@ -199,11 +212,12 @@ class Ctx {
     const under = colour.clone().offsetHSL(0, -0.05, -0.08);
     paint(g, (y) => under.clone().lerp(top, clamp((y - base.y) / h, 0, 1)));
     this.leaves.push(g);
-    this.spots.push({ c: new V3(base.x, base.y + h * 0.35, base.z), r: r * 0.8 });
+    this.spots.push({ c: new V3(base.x, base.y + h * 0.35, base.z), r: r * 0.8, col: colour });
   }
 
   /** Flat spray of foliage (feathery conifer shoots, drooping cedar tiers). */
   spray(from: THREE.Vector3, dir: THREE.Vector3, len: number, width: number, colour: THREE.Color, droop = 0): void {
+    if (this.skip()) return;
     const g = ellipsoid(len / 2, width * 0.22, width / 2, 1);
     jitterGeometry(g, width * 0.12, from.y * 5 + len, false);
     g.translate(len / 2, 0, 0);
@@ -217,7 +231,7 @@ class Ctx {
     paint(g, (_y, i) => (i % 3 === 0 ? tip : colour));
     this.leaves.push(g);
     const mid = from.clone().addScaledVector(dir, len * 0.7);
-    this.spots.push({ c: mid, r: width * 0.6 });
+    this.spots.push({ c: mid, r: width * 0.6, col: colour });
   }
 
   /** Small accent (flower, cone, fruit) mixed into the foliage mesh so it sways with it. */
@@ -554,24 +568,27 @@ function narrowCone(c: Ctx): void {
   const tr = 0.03 + V * 0.026 + stage * 0.02;
   c.trunk(V * 0.98, tr, tr * 0.12, bark, { wobble: 0.008, jitter: stage >= 3 ? 0.16 : 0.04, sides: 9 });
   const y0 = V * [0, 0.1, 0.1, 0.16, 0.24][stage]!;
-  const layers = [0, 7, 11, 15, 18][stage]!;
-  const baseR = V * [0, 0.2, 0.19, 0.18, 0.17][stage]! * c.fullness;
+  const layers = [0, 9, 14, 19, 24][stage]!;
+  const baseR = V * [0, 0.21, 0.2, 0.19, 0.18][stage]! * c.fullness;
   for (let l = 0; l < layers; l++) {
     const t = l / (layers - 1);
     const y = y0 + (V * 0.98 - y0) * t;
     const r = Math.max(0.08, baseR * Math.pow(1 - t, 0.85));
     const at = c.trunkAt(y / (V * 0.98));
-    const n = 3 + (l % 2);
+    const n = 5 + (l % 2);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * 6.28 + l * 0.9 + rand() * 0.3;
       const dir = new V3(Math.cos(a), 0.35, Math.sin(a)).normalize();
       // Autumn copper on the giant stage, fresh green otherwise.
       const autumn = stage === 4 && rand() < 0.7;
       const colour = autumn ? c.leaf(rand() < 0.5 ? '#c7652e' : '#d98a3c', 0.06) : c.leaf('#86bc56', 0.07);
-      c.spray(new V3(at.x, y, at.z), dir, r * (0.9 + rand() * 0.3), r * 0.55, colour);
+      c.spray(new V3(at.x, y, at.z), dir, r * (0.9 + rand() * 0.3), r * 0.72, colour);
     }
   }
   const top = c.trunkAt(1);
+  // Feathery conical core so the narrow crown reads solid, not see-through.
+  const coreH = V * 0.98 - y0;
+  c.cone(new V3(top.x * 0.5, y0 + coreH * 0.04, top.z * 0.5), baseR * 0.62, coreH * 0.95, c.leaf(stage === 4 ? '#a8622e' : '#6fa446', 0.05), 9);
   c.blob(new V3(top.x, V * 0.99, top.z), 0.06 + V * 0.02, c.leaf(stage === 4 ? '#c7652e' : '#86bc56'), 1.4, 0);
   if (stage >= 3) c.rootFlare(8, stage === 4 ? 3.4 : 2.4, bark);
   c.crownY = V * 0.55;
@@ -728,7 +745,7 @@ function eucalypt(c: Ctx): void {
     c.bark.push(paint(g, col('#9a7a58')));
   }
   const top = c.trunkAt(1);
-  const limbs = [0, 2, 3, 4, 5][stage]!;
+  const limbs = [0, 3, 4, 6, 7][stage]!;
   for (let i = 0; i < limbs; i++) {
     const a = (i / limbs) * 6.28 + rand() * 0.8;
     const from = new V3(top.x, trunkH * (0.92 + rand() * 0.08), top.z);
@@ -738,10 +755,11 @@ function eucalypt(c: Ctx): void {
     c.limb(from, to, tr * 0.38, tr * 0.14, '#d9d4c5', 5);
     if (!c.nest && i === 0 && stage >= 2) c.nest = { pos: from.clone().addScaledVector(dir, len * 0.3), out: new V3(dir.x, 0, dir.z).normalize() };
     // Open, drooping leaf clumps.
-    const clumps = 2 + stage;
+    const clumps = 3 + Math.round(stage * 1.5);
     for (let k = 0; k < clumps; k++) {
-      const p = to.clone().add(new V3((rand() - 0.5) * len * 0.8, (rand() - 0.3) * len * 0.4, (rand() - 0.5) * len * 0.8));
-      const r = (0.1 + V * 0.045) * c.fullness * (0.7 + rand() * 0.5);
+      if (k > 2 && c.skip()) continue;
+      const p = to.clone().add(new V3((rand() - 0.5) * len * 0.9, (rand() - 0.3) * len * 0.45, (rand() - 0.5) * len * 0.9));
+      const r = (0.13 + V * 0.055) * c.fullness * (0.7 + rand() * 0.5);
       const g = new THREE.IcosahedronGeometry(r, 1);
       jitterGeometry(g, r * 0.35, p.x * 2 + p.z, true);
       g.scale(0.9, 1.25, 0.9);
@@ -749,7 +767,16 @@ function eucalypt(c: Ctx): void {
       const cc = c.leaf(rand() < 0.5 ? '#7d9468' : '#91a883', 0.05);
       paint(g, (y) => cc.clone().offsetHSL(0, 0, (y - p.y) * 0.05));
       c.leaves.push(g);
-      c.spots.push({ c: p, r });
+      c.spots.push({ c: p, r, col: cc });
+    }
+  }
+  // Crown mass over the top of the trunk so the canopy is full when healthy.
+  if (limbs) {
+    const crownR = V * (0.1 + stage * 0.012) * c.fullness;
+    for (let i = 0; i < 3 + stage; i++) {
+      const a = (i / (3 + stage)) * 6.28 + rand();
+      const p = new V3(top.x + Math.cos(a) * crownR * 0.9, trunkH + V * (0.1 + rand() * 0.08), top.z + Math.sin(a) * crownR * 0.9);
+      c.blob(p, crownR * (0.75 + rand() * 0.3), c.leaf(rand() < 0.5 ? '#7d9468' : '#91a883', 0.05), 0.85);
     }
   }
   if (!limbs) c.blob(new V3(top.x, trunkH, top.z), 0.2, c.leaf('#8fb0a0'));
@@ -820,6 +847,27 @@ const FORMS: Record<TreeForm, (c: Ctx) => void> = {
   cone: coneDouglas,
 };
 
+const CONIFER: Partial<Record<TreeForm, true>> = { narrowCone: true, drooping: true, column: true, cone: true };
+
+/** Well-cared-for trees get an inner layer of foliage filling the gaps between clumps. */
+function lushen(c: Ctx, form: TreeForm): void {
+  const lush = clamp((c.density - 0.5) / 0.5, 0, 1);
+  if (lush <= 0.02) return;
+  const leafSpots = c.spots.filter((s) => s.col);
+  if (!leafSpots.length) return;
+  const top = c.trunkAt(1);
+  const n = Math.min(leafSpots.length, CONIFER[form] ? 28 : 40);
+  const step = leafSpots.length / n;
+  for (let i = 0; i < n; i++) {
+    const s = leafSpots[Math.floor(i * step)]!;
+    const inward = CONIFER[form] ? 0.45 : 0.3;
+    const p = s.c.clone().lerp(new V3(top.x, s.c.y, top.z), inward);
+    p.y -= s.r * 0.15;
+    const colour = s.col!.clone().offsetHSL(0, -0.02, -0.05);
+    c.blob(p, s.r * (CONIFER[form] ? 0.6 : 0.72) * (0.6 + 0.4 * lush), colour, CONIFER[form] ? 0.7 : 0.85, 1, false);
+  }
+}
+
 export function treeKey(p: TreeParams): string {
   const v = visualHeight(p.heightCm);
   const r = p.reinforce;
@@ -831,6 +879,7 @@ export function buildTree(p: TreeParams): TreeBuild {
   const form = speciesDef(p.species).form;
   if (c.stage === 0) seedling(c, form);
   else FORMS[form](c);
+  if (c.stage >= 1) lushen(c, form);
   const { V, rand } = c;
 
   // Storm scars: broken stubs.

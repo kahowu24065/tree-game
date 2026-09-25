@@ -34,6 +34,14 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
   root.innerHTML = `<button type="button" class="dev-fab glass" data-dev="toggle" aria-label="開發者面板">${WRENCH}</button><section class="dev-panel glass" hidden></section>`;
   const panel = root.querySelector<HTMLElement>('.dev-panel')!;
   let dragging = false;
+  let following: string | null = null;
+  let lastAnimal = '';
+  const capsText = () => {
+    const c = api.ecoCaps();
+    if (!c) return '動物上限：（場景未準備好）';
+    return `動物上限（${STAGE_NAMES[c.stage]}）：${c.groups} 組・${c.members} 隻・體型最大「${c.maxSize}」；而家訪客 ${c.visitorGroups} 組 ${c.visitorMembers} 隻${c.residentGroups ? `，另長駐 ${c.residentGroups} 組` : ''}`;
+  };
+  const ecoText = () => `畫面上：${api.ecoInfo().map((g) => `${g.name}×${g.count}${g.resident ? '（長駐）' : ''}`).join('、') || '冇'}`;
 
   const draw = () => {
     const d = api.dev();
@@ -75,7 +83,9 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       <div class="dev-row">
         <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（${x.season}）</option>`).join('')}</select></label>
         <label>階段 <select data-dev-stage><option value="">（跟高度）</option>${STAGE_NAMES.map((n, i) => `<option value="${i}" ${d.preview.stage === i ? 'selected' : ''}>${i + 1}. ${n}</option>`).join('')}</select></label>
+        <label>島嶼 <select data-dev-island><option value="">（跟樹）</option>${STAGE_NAMES.map((n, i) => `<option value="${i}" ${d.preview.island === i ? 'selected' : ''}>${i + 1}. ${n}島</option>`).join('')}</select></label>
       </div>
+      <p class="dev-note" data-dev-habitat>${esc(api.habitatInfo())}</p>
       <h4 class="dev-h">搖擺・眩光</h4>
       <div class="dev-row">
         <label>搖擺 <select data-dev-sway>${SWAYS.map(([n, v], i) => `<option value="${i}" ${d.sway === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -84,14 +94,16 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       <p class="dev-note">而家搖擺：${api.sway().toFixed(2)}${d.sway === null ? '（跟天氣／手動天氣）' : '（強制）'}</p>
       <h4 class="dev-h">動物</h4>
       <div class="dev-row">
-        <label>召喚 <select data-dev-animal>${ANIMALS.map((a) => `<option value="${a.id}">${esc(CATEGORY_LABEL[a.category])}・${esc(a.name)}</option>`).join('')}</select></label>
+        <label>召喚 <select data-dev-animal>${ANIMALS.map((a) => `<option value="${a.id}" ${a.id === lastAnimal ? 'selected' : ''}>${esc(CATEGORY_LABEL[a.category])}・${esc(a.name)}</option>`).join('')}</select></label>
         <button type="button" data-dev="spawn">召喚</button>
+        <button type="button" data-dev="follow">${following ? '停止跟拍' : '鏡頭跟拍'}</button>
       </div>
       <div class="dev-actions">
         <button type="button" data-dev="rotate">輪換動物</button>
         <button type="button" data-dev="unlock-all">解鎖全部動物（${s.animals.length}/${ANIMALS.length}）</button>
       </div>
-      <p class="dev-note" data-dev-eco>畫面上：${esc(api.ecoInfo().map((g) => `${g.name}×${g.count}${g.resident ? '（長駐）' : ''}`).join('、') || '冇')}</p>
+      <p class="dev-note" data-dev-caps>${esc(capsText())}</p>
+      <p class="dev-note" data-dev-eco>${esc(ecoText())}</p>
       <p class="dev-note">今日計算用：${esc(api.todayEvents().map((e) => WEATHER_EVENTS[e].label).join('、'))}${s.virtualToday ? `・虛擬日期 ${esc(s.virtualToday)}` : ''}${s.pest.active ? '・有蟲害' : ''}${s.dying ? '・瀕死' : ''}</p>
       ${s.lastSettlement ? settlementCard(s.lastSettlement) : '<p class="dev-note">未有結算紀錄。撳「跳去下一日」試下。</p>'}
     `;
@@ -124,8 +136,17 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     if (cmd === 'glare') api.triggerGlare();
     if (cmd === 'spawn') {
       const id = root.querySelector<HTMLSelectElement>('[data-dev-animal]')?.value;
-      if (id) api.spawnAnimal(id);
+      if (id) {
+        lastAnimal = id;
+        api.spawnAnimal(id);
+      }
       window.setTimeout(draw, 50);
+    }
+    if (cmd === 'follow') {
+      const id = root.querySelector<HTMLSelectElement>('[data-dev-animal]')?.value ?? null;
+      lastAnimal = id ?? lastAnimal;
+      following = following ? null : id;
+      api.followAnimal(following);
     }
     if (cmd === 'rotate') {
       api.rotateAnimals();
@@ -168,11 +189,24 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       api.setPreview({ ...d.preview, stage: el.value === '' ? undefined : Number(el.value) });
       draw();
     }
+    if (el instanceof HTMLSelectElement && el.hasAttribute('data-dev-island')) {
+      api.setPreview({ ...d.preview, island: el.value === '' ? undefined : Number(el.value) });
+      draw();
+    }
     if (el instanceof HTMLSelectElement && el.hasAttribute('data-dev-sway')) {
       api.setSway(SWAYS[Number(el.value)]?.[1] ?? null);
       draw();
     }
   });
+
+  // Live readouts (animals come and go on their own).
+  window.setInterval(() => {
+    if (!root.isConnected || !api.dev().open) return;
+    const caps = root.querySelector('[data-dev-caps]');
+    const eco = root.querySelector('[data-dev-eco]');
+    if (caps) caps.textContent = capsText();
+    if (eco) eco.textContent = ecoText();
+  }, 1500);
 
   draw();
   return draw;

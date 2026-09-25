@@ -1,6 +1,7 @@
 import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_OPTIMAL, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
+import { FEATURE_LABEL, habitatDef } from './data/habitat';
 import { SPECIES, STAGE_NAMES, speciesDef, speciesForSeason, stageSampleCm, type SpeciesId } from './data/species';
 import type { SeasonId } from './balance';
 import { daysBetween, formatShort, weekdayIndex } from './dates';
@@ -541,9 +542,20 @@ function speciesAlbum(view: View): string {
       <p>${esc(sp.blurb)}</p>
       <p class="fine">${esc(sp.record)}。資料：<a href="${esc(sp.source.url)}" target="_blank" rel="noopener">${esc(sp.source.label)}</a></p>
       <ol class="stage-list">${stages}</ol>
+      ${habitatBlock(sp.id)}
     </article>`;
   }).join('');
   return `<p class="status">九個樹種，每個賽季三款，真實成樹高度對應賽季目標。</p>${cards}`;
+}
+
+/** 原生地：the island scenery that grows with each stage for this species. */
+function habitatBlock(id: SpeciesId): string {
+  const h = habitatDef(id);
+  const rows = h.adds
+    .map((feats, i) => (feats.length ? `<li><b>${STAGE_NAMES[i]}</b>${feats.map((f) => esc(FEATURE_LABEL[f])).join('、')}</li>` : ''))
+    .filter(Boolean)
+    .join('');
+  return `<div class="habitat"><p class="eyebrow">原生地・${esc(h.name)}</p><p class="fine">${esc(h.blurb)}</p><ol class="stage-list">${rows}</ol></div>`;
 }
 
 function seasonTab(view: View): string {

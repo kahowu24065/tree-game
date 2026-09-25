@@ -9,6 +9,8 @@ export interface Island {
   water: THREE.Texture;
   dirt: THREE.Mesh;
   update(t: number, wind: number): void;
+  /** Hide the garden's own underside and edge waterfall when the habitat land surrounds it. */
+  setExtended(on: boolean): void;
 }
 
 function islandRadius(angle: number): number {
@@ -318,6 +320,12 @@ export function buildIsland(): Island {
     group,
     water,
     dirt,
+    setExtended(on: boolean) {
+      rimMesh.visible = !on;
+      underMesh.visible = !on;
+      fall.visible = !on;
+      spray.visible = !on;
+    },
     update(t: number, wind: number) {
       water.offset.y = -t * 0.25;
       fallTex.offset.y = t * 0.9;

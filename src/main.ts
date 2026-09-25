@@ -7,6 +7,8 @@ import { bookGameEnd, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { Scene3D, type Quality } from './three/scene3d';
+import type { EcoCaps } from './three/animals3d';
+import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
   catchUp,
@@ -46,7 +48,7 @@ import {
   type View,
 } from './ui';
 import { ANIMALS } from './data/animals';
-import { defaultSpecies, speciesDef, speciesForSeason, stageIndexFor, stageSampleCm, type SpeciesId } from './data/species';
+import { defaultSpecies, speciesDef, speciesForSeason, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { seasonDef } from './rules';
 import {
   WEATHER_STALE_MS,
@@ -243,11 +245,13 @@ function sceneInput(): SceneInput {
   const species: SpeciesId = preview.species ?? state.species;
   const previewSeason = preview.species ? seasonDef(speciesDef(preview.species).season).targetCm : target;
   const stage = preview.stage ?? stageIndexFor(state.heightCm, previewSeason);
+  const islandStage = preview.island;
   const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : Math.min(state.heightCm, previewSeason)) : state.heightCm;
   return {
     treeName: state.treeName,
     species,
     stage,
+    islandStage,
     targetCm: previewSeason,
     heightCm,
     unlocked: [...state.animals],
@@ -791,6 +795,9 @@ export interface DevApi {
   rotateAnimals: () => void;
   unlockAll: () => void;
   ecoInfo: () => { id: string; name: string; count: number; resident: boolean }[];
+  ecoCaps: () => EcoCaps | null;
+  followAnimal: (id: string | null) => void;
+  habitatInfo: () => string;
   sway: () => number;
 }
 
@@ -860,6 +867,15 @@ if (DEV_PANEL) {
       toast(`解鎖咗全部 ${ANIMALS.length} 種動物。`);
     },
     ecoInfo: () => (scene3d?.animalInfo() ?? []).map((g) => ({ id: g.id, name: animalName(g.id), count: g.count, resident: g.resident })),
+    ecoCaps: () => scene3d?.animalCaps() ?? null,
+    followAnimal: (id) => scene3d?.followAnimal(id),
+    habitatInfo: () => {
+      const input = sceneInput();
+      const island = input.islandStage ?? input.stage;
+      const h = habitatDef(input.species);
+      const feats = habitatFeatures(input.species, island).map((f) => FEATURE_LABEL[f]);
+      return `島嶼：${STAGE_NAMES[island]}島（半徑 ${islandRadius(island)}）・${h.name}${feats.length ? `：${feats.join('、')}` : '：淨係庭園'}`;
+    },
     sway: () => swayLevel(todayCond()),
   };
   void import('./dev/panel').then((m) => {

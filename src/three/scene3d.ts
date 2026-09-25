@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
-import { albumFigure, Animals3D, type EcoInfo } from './animals3d';
+import { albumFigure, Animals3D, type EcoInfo, type EcoCaps } from './animals3d';
+import { buildHabitat, type Habitat } from './habitat3d';
 import { buildIsland, type Island } from './island3d';
 import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
@@ -93,11 +94,17 @@ export class Scene3D {
   private gust = 0;
   private gustTarget = 0;
   private nextGust = 0;
-  private glareT = -99;
-  private nextGlare = 0;
+  private swellT = -99;
+  private follow: string | null = null;
+  private followOn = false;
+  private followAz = 0;
+  private followPos = new THREE.Vector3();
+  private heatK = 0;
+  private habitat: Habitat | null = null;
+  private habitatKey = '';
   private hud = new THREE.Scene();
   private hudCam = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1);
-  private flare: { core: THREE.Sprite; ring: THREE.Sprite; wash: THREE.Sprite; streak: THREE.Sprite; ghosts: THREE.Sprite[] };
+  private rays: { glow: THREE.Sprite; haze: THREE.Sprite; shafts: THREE.Mesh[] };
   private speciesThumbs = new Map<string, string>();
 
   private canvas: HTMLCanvasElement;
@@ -236,53 +243,82 @@ export class Scene3D {
     this.rain.visible = false;
     this.scene.add(this.rain);
 
-    this.flare = this.buildFlare();
+    this.rays = this.buildRays();
     this.bindDrag();
     this.resize();
   }
 
-  /** Lens-flare sprites drawn in a screen-space pass after the scene (酷熱 glare). */
-  private buildFlare(): { core: THREE.Sprite; ring: THREE.Sprite; wash: THREE.Sprite; streak: THREE.Sprite; ghosts: THREE.Sprite[] } {
-    const tex = (inner: string, outer: string, ring = false) => {
+  /** 酷熱 light: a soft warm glow in the top-right corner with a few slow light shafts toward the tree. */
+  private buildRays(): { glow: THREE.Sprite; haze: THREE.Sprite; shafts: THREE.Mesh[] } {
+    const radial = () => {
       const c = document.createElement('canvas');
       c.width = c.height = 128;
       const g = c.getContext('2d')!;
-      const grad = g.createRadialGradient(64, 64, ring ? 40 : 0, 64, 64, 64);
-      if (ring) {
-        grad.addColorStop(0, 'rgba(255,255,255,0)');
-        grad.addColorStop(0.5, inner);
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
-      } else {
-        grad.addColorStop(0, inner);
-        grad.addColorStop(1, outer);
-      }
+      const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+      grad.addColorStop(0.25, 'rgba(255,255,255,0.45)');
+      grad.addColorStop(0.6, 'rgba(255,255,255,0.12)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = grad;
       g.fillRect(0, 0, 128, 128);
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.SRGBColorSpace;
       return t;
     };
-    const sprite = (map: THREE.Texture, color: string) => {
-      const m = new THREE.SpriteMaterial({ map, color, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
-      const sp = new THREE.Sprite(m);
+    const shaftTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 32;
+      const g = c.getContext('2d')!;
+      const img = g.createImageData(128, 32);
+      for (let x = 0; x < 128; x++) {
+        for (let y = 0; y < 32; y++) {
+          const along = Math.pow(1 - x / 127, 1.6) * Math.min(1, x / 10);
+          const across = Math.pow(Math.sin((y / 31) * Math.PI), 2.2);
+          const a = along * across;
+          const i = (y * 128 + x) * 4;
+          img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+          img.data[i + 3] = Math.round(a * 255);
+        }
+      }
+      g.putImageData(img, 0, 0);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
+    const soft = radial();
+    const sprite = (color: string) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: soft, color, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
       sp.visible = false;
       this.hud.add(sp);
       return sp;
     };
-    const soft = tex('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
-    const ringTex = tex('rgba(255,240,210,0.9)', '', true);
-    const core = sprite(soft, '#fff4d6');
-    const ring = sprite(ringTex, '#ffd9a0');
-    const wash = sprite(soft, '#ffe7b8');
-    const ghostColors = ['#ffd27a', '#a8ffda', '#ffb0d8', '#ffe9a8', '#b8d8ff'];
-    const ghosts = ghostColors.map((c) => sprite(soft, c));
-    const streak = sprite(soft, '#fff0cc');
-    return { core, ring, wash, streak, ghosts };
+    const glow = sprite('#ffe2a6');
+    const haze = sprite('#fff0d0');
+    const plane = new THREE.PlaneGeometry(1, 1);
+    plane.translate(0.5, 0, 0);
+    const shafts: THREE.Mesh[] = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: shaftTex, color: i % 2 ? '#fff1cc' : '#ffe0a0', transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+      m.visible = false;
+      this.hud.add(m);
+      shafts.push(m);
+    }
+    return { glow, haze, shafts };
   }
 
-  /** Developer / random trigger for the harsh-sun glare. */
+  /** Developer trigger: a gentle swell of the warm light (works even outside 酷熱). */
   triggerGlare(): void {
-    this.glareT = this.lastTime;
+    this.swellT = this.lastTime;
+  }
+
+  /** Developer follow-cam on an animal id (null = normal framing). */
+  followAnimal(id: string | null): void {
+    this.follow = id;
+  }
+
+  animalCaps(): EcoCaps {
+    return this.animals.caps();
   }
 
   animalInfo(): EcoInfo[] {
@@ -382,11 +418,26 @@ export class Scene3D {
       this.animalsKey = '';
     }
     const night = input.daylight < 0.35;
-    const akey = `${input.unlocked.join(',')}|${input.residents.join(',')}|${input.health >= 22}|${night}`;
+    const akey = `${input.unlocked.join(',')}|${input.residents.join(',')}|${input.health >= 22}|${night}|${input.stage}`;
     if (akey !== this.animalsKey && this.tree) {
-      this.animals.sync({ unlocked: input.unlocked, residents: input.residents, tree: this.tree, health: input.health, night });
+      this.animals.sync({ unlocked: input.unlocked, residents: input.residents, tree: this.tree, health: input.health, night, stage: input.stage });
       this.animalsKey = akey;
     }
+  }
+
+  private ensureHabitat(input: SceneInput): void {
+    const stage = clamp(Math.round(input.islandStage ?? input.stage), 0, 4);
+    const key = `${input.species}|${stage}|${this.quality}`;
+    if (key === this.habitatKey) return;
+    this.habitatKey = key;
+    if (this.habitat) {
+      this.scene.remove(this.habitat.group);
+      this.habitat.dispose();
+    }
+    this.habitat = buildHabitat(input.species, stage, this.quality);
+    this.scene.add(this.habitat.group);
+    this.island.setExtended(stage >= 1);
+    this.animals.setIslandRadius(this.habitat.radius);
   }
 
   draw(input: SceneInput, timeMs: number): void {
@@ -394,6 +445,7 @@ export class Scene3D {
     const dt = clamp(t - this.lastTime, 0, 0.1);
     this.lastTime = t;
     this.ensureTree(input, t);
+    this.ensureHabitat(input);
     const tree = this.tree!;
 
     // Growth pop: ease from the old size to the new one.
@@ -425,11 +477,14 @@ export class Scene3D {
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(mid).lerp(new THREE.Color('#ffffff'), 0.2 * day);
 
+    const hotNow = Boolean(input.cond.hot) && day > 0.3;
+    this.heatK += ((hotNow ? 1 : 0) - this.heatK) * (1 - Math.exp(-dt * 0.8));
     const sunWarm = new THREE.Color('#ffe7bf').lerp(new THREE.Color('#ffb066'), goldenish * 0.7);
     if (input.cond.hot) sunWarm.lerp(new THREE.Color('#ffd28a'), 0.3);
     const moon = new THREE.Color('#a9bcf2');
     this.sun.color.copy(moon.clone().lerp(sunWarm, day));
-    this.sun.intensity = (0.7 * night + day * 2.6) * (1 - over * 0.72) * (stormy ? 0.45 : 1);
+    this.sun.intensity = (0.7 * night + day * 2.6) * (1 - over * 0.72) * (stormy ? 0.45 : 1) * (1 + this.heatK * 0.12);
+    this.sun.color.lerp(new THREE.Color('#ffcf87'), this.heatK * 0.45);
     this.hemi.color.copy(new THREE.Color('#7086bd').lerp(new THREE.Color('#fff2da'), day).lerp(new THREE.Color('#c7cdd3'), over * 0.5));
     this.hemi.groundColor.copy(new THREE.Color('#2c3a33').lerp(new THREE.Color('#78905a'), day));
     this.hemi.intensity = (0.75 + day * 0.55) * (stormy ? 0.62 : 1);
@@ -473,9 +528,13 @@ export class Scene3D {
 
     this.island.dirt.scale.setScalar(clamp(0.3 + tree.height * 0.09, 0.3, 1.5));
     this.island.update(t, wind);
+    this.habitat?.update(t, wind);
     this.landmark.visible = Boolean(input.landmark);
     this.sparkles.visible = Boolean(input.starry);
-    if (this.sparkles.visible) this.sparkles.rotation.y = t * 0.05;
+    if (this.sparkles.visible) {
+      this.sparkles.rotation.y = t * 0.05;
+      this.sparkles.scale.setScalar((this.habitat?.radius ?? 7) / 7);
+    }
     this.glow.visible = Boolean(input.thriving) && !input.reducedMotion;
     if (this.glow.visible) {
       const gp = this.glow.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -491,6 +550,8 @@ export class Scene3D {
     this.pivot.updateMatrixWorld(true);
     this.animals.update(t, dt, night);
 
+    const islandR = this.habitat?.radius ?? 7;
+    const islandStage = this.habitat?.stage ?? 0;
     // Clouds drift; overcast brings more and darker clouds.
     const cloudTint = new THREE.Color('#ffffff').lerp(new THREE.Color('#9aa3ad'), over).lerp(new THREE.Color('#59616b'), stormy ? 0.6 : 0).lerp(new THREE.Color('#39435e'), night * 0.8);
     this.cloudMat.color.copy(cloudTint);
@@ -501,7 +562,7 @@ export class Scene3D {
       c.mesh.visible = i < visibleClouds;
       const scale = 1 + over * 0.6 + (this.camDist / 40) * (c.low ? 0 : 0.8);
       c.mesh.scale.setScalar(scale);
-      const r = c.low ? c.r : c.r + this.camDist * 0.35;
+      const r = c.low ? Math.max(c.r, islandR + 3 + c.r * 0.3) : c.r + this.camDist * 0.35;
       c.mesh.position.set(Math.cos(c.a) * r, c.y + (c.low ? 0 : over * 2), Math.sin(c.a) * r);
     });
     (this.stars.material as THREE.PointsMaterial).opacity = night * (1 - over * 0.9);
@@ -511,7 +572,7 @@ export class Scene3D {
     // Camera: keep the whole tree framed at a 45-degree look-down, rising as it grows.
     const H = tree.height * tree.group.scale.y;
     const W = Math.max(1.0, tree.canopyRadius * tree.group.scale.x);
-    const R = Math.max(2.0, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14);
+    const R = Math.max(2.0, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.2, 0.28, 0.32, 0.36, 0.38][islandStage]!);
     const vHalf = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
     const portrait = this.camera.aspect < 0.8;
@@ -528,11 +589,32 @@ export class Scene3D {
     const az = BASE_AZIMUTH + this.dragAz + Math.sin(t * 0.05) * 0.03 * motion;
     const el = ELEVATION + this.dragEl;
     const target = new THREE.Vector3(0, this.camTargetY, 0);
-    this.camera.position.set(Math.sin(az) * Math.cos(el) * this.camDist, this.camTargetY + Math.sin(el) * this.camDist, Math.cos(az) * Math.cos(el) * this.camDist);
+    let dist = this.camDist;
+    // Developer "follow cam": frame one animal up close.
+    const focus = this.follow ? this.animals.focus(this.follow) : null;
+    if (focus) {
+      if (!this.followOn) this.followPos.copy(focus.pos);
+      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * 4));
+      target.copy(this.followPos);
+      target.y += focus.size * 0.35;
+      dist = Math.max(1.4, focus.size * 4.5);
+    }
+    this.followOn = Boolean(focus);
+    // Follow-cam looks from lower down so animals are seen in profile.
+    const camEl = focus ? Math.min(el, 0.38) : el;
+    let camAz = az;
+    if (focus) {
+      // Three-quarter front view of the animal: its forward is (cos yaw, 0, -sin yaw).
+      const want = Math.atan2(Math.cos(focus.yaw), -Math.sin(focus.yaw)) + 0.9;
+      const d = Math.atan2(Math.sin(want - this.followAz), Math.cos(want - this.followAz));
+      this.followAz += d * (1 - Math.exp(-dt * 1.2));
+      camAz = this.followAz;
+    } else this.followAz = az;
+    this.camera.position.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
     this.camera.lookAt(target);
     const shift = portrait ? 0.085 : 0.03;
     this.camera.setViewOffset(this.width, this.height, 0, -this.height * shift, this.width, this.height);
-    this.camera.near = Math.max(0.05, this.camDist * 0.02);
+    this.camera.near = Math.max(0.02, dist * 0.02);
     this.camera.far = 900;
     this.camera.updateProjectionMatrix();
     fog.near = this.camDist * 1.15;
@@ -540,6 +622,13 @@ export class Scene3D {
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
+    if (this.heatK > 0.001) {
+      // 酷熱: light comes from the top-right of the screen, down onto the tree.
+      const right = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
+      const toCam = new THREE.Vector3(Math.sin(az), 0, Math.cos(az));
+      const hotDir = right.multiplyScalar(0.62).add(new THREE.Vector3(0, 0.82, 0)).addScaledVector(toCam, -0.12).normalize();
+      sunDir.lerp(hotDir, this.heatK * 0.85).normalize();
+    }
     const box = Math.max(9, R * 1.3);
     this.sun.position.copy(target).addScaledVector(sunDir, box * 3);
     this.sun.target.position.copy(target);
@@ -555,51 +644,48 @@ export class Scene3D {
 
     this.updateRain(rain, wind, dt, target);
     this.renderer.render(this.scene, this.camera);
-    this.drawGlare(input, t, day, sunDir, target);
+    this.drawRays(input, t);
   }
 
-  /** 酷熱: an occasional harsh-sun flare (not constant); skipped for reduced motion unless triggered by hand. */
-  private drawGlare(input: SceneInput, t: number, day: number, sunDir: THREE.Vector3, target: THREE.Vector3): void {
-    const hot = Boolean(input.cond.hot) && day > 0.35;
-    if (hot && !input.reducedMotion && t > this.nextGlare) {
-      if (this.nextGlare > 0) this.glareT = t;
-      this.nextGlare = t + 9 + Math.random() * 14;
-    }
-    if (!hot) this.nextGlare = t + 3 + Math.random() * 4;
-    const age = t - this.glareT;
-    const dur = 3.4;
-    const e = age >= 0 && age < dur ? Math.sin((age / dur) * Math.PI) ** 1.5 : 0;
-    this.renderer.toneMappingExposure = 0.95 + e * 0.28;
-    const f = this.flare;
-    const all = [f.core, f.ring, f.wash, f.streak, ...f.ghosts];
-    if (e <= 0.001) {
-      all.forEach((sp) => (sp.visible = false));
+  /** 酷熱: soft warm corner glow + slow light shafts, breathing gently; no flashes. */
+  private drawRays(input: SceneInput, t: number): void {
+    const age = t - this.swellT;
+    const swell = age >= 0 && age < 6 ? Math.sin((age / 6) * Math.PI) : 0;
+    const k = Math.max(this.heatK, swell * 0.9);
+    const { glow, haze, shafts } = this.rays;
+    this.renderer.toneMappingExposure = 0.95 + k * 0.03;
+    if (k < 0.01) {
+      glow.visible = haze.visible = false;
+      shafts.forEach((m) => (m.visible = false));
       return;
     }
-    const p = target.clone().addScaledVector(sunDir, 400).project(this.camera);
-    // Keep the burst in the open sky between the HUD cards (the real sun is usually just off-screen).
-    const sx = clamp(p.x * 0.5 + 0.5, 0.22, 0.78) * this.width;
-    const sy = clamp(p.y * 0.5 + 0.5, 0.6, 0.72) * this.height;
-    const cx = this.width / 2;
-    const cy = this.height / 2;
-    const base = Math.min(this.width, this.height);
-    const flick = 0.92 + Math.sin(t * 23) * 0.04 + Math.sin(t * 7.1) * 0.04;
-    const set = (sp: THREE.Sprite, x: number, y: number, size: number, op: number) => {
-      sp.visible = true;
-      sp.position.set(x, y, 0);
-      sp.scale.set(size, size, 1);
-      (sp.material as THREE.SpriteMaterial).opacity = op;
-    };
-    set(f.core, sx, sy, base * (0.4 + e * 0.25), 0.7 * e * flick);
-    set(f.ring, sx, sy, base * (0.8 + e * 0.2), 0.35 * e);
-    set(f.wash, cx, cy, Math.max(this.width, this.height) * 2.2, 0.24 * e);
-    set(f.streak, sx, sy, 1, 0.55 * e * flick);
-    f.streak.scale.set(this.width * 1.6 * (0.7 + e * 0.3), base * 0.05, 1);
-    const ghostAt = [0.35, 0.7, 1.15, 1.45, 1.8];
-    const ghostSize = [0.09, 0.05, 0.14, 0.07, 0.2];
-    f.ghosts.forEach((g, i) => {
-      const k = ghostAt[i]!;
-      set(g, sx + (cx - sx) * k, sy + (cy - sy) * k, base * ghostSize[i]!, 0.42 * e);
+    const still = input.reducedMotion;
+    const breath = still ? 1 : 0.82 + 0.14 * Math.sin(t * 0.55) + 0.05 * Math.sin(t * 1.4 + 1);
+    const w = this.width;
+    const h = this.height;
+    const big = Math.max(w, h);
+    const cx = w * 0.98;
+    const cy = h * 0.99;
+    glow.visible = haze.visible = true;
+    glow.position.set(cx, cy, 0);
+    glow.scale.set(big * 0.75, big * 0.75, 1);
+    (glow.material as THREE.SpriteMaterial).opacity = 0.34 * k * breath;
+    haze.position.set(cx, cy, 0);
+    haze.scale.set(big * 2.2, big * 2.2, 1);
+    (haze.material as THREE.SpriteMaterial).opacity = 0.08 * k;
+    const tx = w * 0.42;
+    const ty = h * 0.4;
+    const base = Math.atan2(ty - cy, tx - cx);
+    const dist = Math.hypot(tx - cx, ty - cy);
+    const spread = [-0.26, -0.15, -0.05, 0.04, 0.14, 0.24];
+    shafts.forEach((m, i) => {
+      m.visible = true;
+      const drift = still ? 0 : Math.sin(t * 0.07 + i * 1.7) * 0.025;
+      m.position.set(cx, cy, 0);
+      m.rotation.z = base + spread[i]! + drift;
+      m.scale.set(dist * (1.05 + (i % 3) * 0.18), big * (0.045 + (i % 3) * 0.025), 1);
+      const pulse = still ? 0.8 : 0.55 + 0.45 * Math.sin(t * 0.35 + i * 1.3);
+      (m.material as THREE.MeshBasicMaterial).opacity = 0.11 * k * pulse * breath;
     });
     const auto = this.renderer.autoClear;
     this.renderer.autoClear = false;

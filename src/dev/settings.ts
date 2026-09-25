@@ -11,7 +11,7 @@ export interface DevSettings {
   time: TimeMode;
   open: boolean;
   /** Preview another species / growth stage in the scene (does not touch the save). */
-  preview: { species?: SpeciesId; stage?: number };
+  preview: { species?: SpeciesId; stage?: number; island?: number };
   /** Forced sway level 0–1 (null = follow the weather). */
   sway: number | null;
 }

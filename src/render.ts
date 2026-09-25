@@ -10,6 +10,8 @@ export interface SceneInput {
   species: SpeciesId;
   /** Growth stage 0–4 relative to the season target. */
   stage: number;
+  /** Island stage override (developer preview); defaults to the tree's stage. */
+  islandStage?: number;
   targetCm: number;
   heightCm: number;
   health: number;
