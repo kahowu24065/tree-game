@@ -31,8 +31,8 @@ export const ICONS = {
   locate: s('<circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/><circle cx="12" cy="12" r="7"/>'),
   drain: s('<path d="M12 3.5c2.8 3.4 5 6 5 8.8a5 5 0 0 1-10 0c0-2.8 2.2-5.4 5-8.8z" fill="currentColor" fill-opacity=".18"/><path d="M4 19.5h16M8 16.5l-1.5 3M16 16.5l1.5 3"/>'),
   wrench: s('<path d="M14.5 5.5a4 4 0 0 0 4.9 4.9l1.1 1.1-2.2 2.2-1.1-1.1-7.6 7.6a2 2 0 0 1-2.8-2.8l7.6-7.6-1.1-1.1 2.2-2.2z" fill="currentColor" fill-opacity=".18"/>'),
-  /** v15.1 保暖: a campfire (flame over crossed logs). */
-  campfire: s('<path d="M12 2.8c2.9 3 4.5 5.4 4.5 7.9a4.5 4.5 0 0 1-9 0c0-1.6.7-2.9 1.9-4 .2 1.5.9 2.4 1.9 2.7-.3-2.3.1-4.5.7-6.6z" fill="currentColor" fill-opacity=".22"/><path d="M12 12.6c.9.9 1.4 1.7 1.4 2.5a1.4 1.4 0 0 1-2.8 0c0-.8.5-1.6 1.4-2.5z" fill="currentColor"/><path d="M3.8 21l16.4-4.2M3.8 16.8L20.2 21"/>'),
+  /** v15.2 保暖 (覆蓋法): a sapling with a mulch mound of leaves and straw over the soil round its roots. */
+  mulch: s('<path d="M12 13V6.5"/><path d="M12 9c0-2.4-1.7-4-4.3-4 0 2.5 1.7 4 4.3 4z" fill="currentColor" fill-opacity=".2"/><path d="M2.5 20.5h19"/><path d="M4 20.5c.8-3.6 4.1-6 8-6s7.2 2.4 8 6z" fill="currentColor" fill-opacity=".22"/><path d="M6.8 17.8l2.6-1.2M10.6 18.6l3.2-.9M15 17.2l2.4 1.4"/><path d="M8.2 19.4c.6-.9 1.6-1.1 2.3-.5-.7.8-1.6 1-2.3.5zM14.6 19.6c.5-.8 1.4-1 2-.5-.6.7-1.4.9-2 .5z" fill="currentColor"/>'),
   more: s('<circle cx="6" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18" cy="12" r="1.3" fill="currentColor"/>'),
 };
 

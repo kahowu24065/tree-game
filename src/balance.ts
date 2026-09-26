@@ -86,7 +86,7 @@ export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
   clear: { id: 'clear', label: '晴天／多雲', category: null, damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
   drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
   hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
-  cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖」（每日一次），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖」（每日一次）：喺樹根周圍鋪一層 5–10 厘米厚嘅樹皮、乾樹葉、稻草或木屑，保持土溫，防止根部凍傷。做咗就唔扣健康，仲有應急獎勵 +3。' },
   rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
   blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
   typhoon1: { id: 'typhoon1', label: '初級颱風', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '一號／三號風球：青年樹之後，抗風力低過 20 會倒塌，提早加固。' },

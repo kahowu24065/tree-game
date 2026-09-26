@@ -331,7 +331,7 @@ export function renderChrome(view: View): void {
       </div>
       ${dockBtn('d-guard', 'data-open="forecast"', 'shield', '加固', !state.windUnlocked ? '青年樹解鎖' : dbl ? '今日雙倍' : prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : '')}
       <button type="button" class="dock-btn d-warm ${warmOk ? 'hot-pulse' : 'done'}${covered ? ' lit' : ''}" data-action="warm-cover" ${warmOk ? '' : 'disabled aria-disabled="true"'}>
-        <span class="dock-ic">${icon('campfire')}</span><span class="dock-label">保暖</span><small>${covered ? '今日做咗' : coldOn ? '寒冷・應急' : '寒冷先用'}</small>
+        <span class="dock-ic">${icon('mulch')}</span><span class="dock-label">保暖</span><small>${covered ? '今日做咗' : coldOn ? '寒冷・應急' : '寒冷先用'}</small>
       </button>`;
   }
 
@@ -568,7 +568,7 @@ export function emergencyButtons(view: View, variant: 'mini' | 'act'): string {
   // v15 保暖 lives on its own dock button, so the small status-card strip leaves it out.
   if (opts.warmCover && variant === 'act') items.push({ id: 'warmCover', action: 'warm-cover', label: '保暖', sub: `免扣 ${WEATHER_EVENTS.cold.damage}・應急獎勵`, done: Boolean(state.care.warmCover), tone: 'cold' });
   if (!items.length) return '';
-  const emIcon = (id: string): IconName => (id === 'heatWater' ? 'drop' : id === 'warmCover' ? 'campfire' : 'drain');
+  const emIcon = (id: string): IconName => (id === 'heatWater' ? 'drop' : id === 'warmCover' ? 'mulch' : 'drain');
   if (variant === 'mini') {
     return items
       .map((i) => `<button type="button" class="emerg ${i.tone} ${i.done ? 'done' : 'hot-pulse'}" data-action="${i.action}" ${i.done ? 'disabled' : ''}>${icon(emIcon(i.id))}<span>${i.label}</span><small>${i.done ? '今日做咗' : '應急'}</small></button>`)
@@ -696,7 +696,7 @@ function meter(label: string, value: number, kind: string, band: readonly [numbe
 function countdownDamage(state: GameState, id: WeatherEventId): string {
   const d = ev(id);
   if (d.category === 'heat') return `警告一出可以做「酷熱澆水」：做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
-  if (d.category === 'cold') return `警告一出可以做「保暖」：做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
+  if (d.category === 'cold') return `警告一出可以做「保暖」：喺樹根周圍鋪一層 5–10 厘米厚嘅樹皮、乾樹葉、稻草或木屑，保持土溫，防止根部凍傷。做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
   if (d.category === 'rain') return `警告一出可以做「${emergencyName('rainDrain')}」：做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
   if (d.category !== 'wind') return '';
   if (!state.windUnlocked) return '棵樹未到青年樹，風災唔會傷到佢，亦唔會倒塌。';
@@ -1174,9 +1174,9 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
     <div class="howto">
       <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 + 熱／雨／風三類天氣分 + 應急獎勵 − 蟲害。</p>
       <p>水分 0–150：50–100 +5；低過 50 乾旱 −10；101–115 輕度爛根 −10；116–135 嚴重爛根 −20；136–149 根部壞死 −30；去到 150 即刻瀕死。養分 60 以上 +5、30–59 為 0、低過 30 −10。</p>
-      <p>底部掣：澆水（下面係疏水）、施肥（下面係除蟲）、加固、保暖；圖鑑喺右上樹木狀態卡入面。</p>
+      <p>底部掣：澆水（下面係疏水）、施肥（下面係除蟲）、加固、保暖；圖鑑喺右上樹木狀態卡入面。每晚樹旁邊都會生起營火。</p>
       <p>${regionalize('澆水每日 3 次、每次 +15，最多澆到 100（泥土飽和就唔使澆，唔會用咗次數）；疏水每日 3 次、每次 −10。酷熱警告一出水分即時 −20；暴雨／黑雨即時 +20（過咗 100 最多再加 10，同一日只計一次）。狀態卡「今晚預計」會話你今晚健康會點變。')}</p>
-      <p>${regionalize('天氣跟住現實（香港用天文台警告）。熱、寒、雨、風四類各自計，同一類只計最嚴重嗰個。酷熱：警告一出可以做「酷熱澆水」（額外一次，+5 水分），唔做 −10。寒冷：可以做「保暖」（每日一次，唔影響水分），唔做 −10。暴雨／黑雨：可以做「暴雨疏水」（額外一次，−10 但唔低過 50），唔做 −10／−15。做咗應急行動 +3；兩樣都做 (3 + 3) × 0.75 = +4.5，三樣 (3 + 3 + 3) × 0.75 = +6.75。')}</p>
+      <p>${regionalize('天氣跟住現實（香港用天文台警告）。熱、寒、雨、風四類各自計，同一類只計最嚴重嗰個。酷熱：警告一出可以做「酷熱澆水」（額外一次，+5 水分），唔做 −10。寒冷：可以做「保暖」（每日一次，唔影響水分：喺樹根周圍鋪一層 5–10 厘米厚嘅樹皮、乾樹葉、稻草或木屑，保持土溫，防止根部凍傷），唔做 −10。暴雨／黑雨：可以做「暴雨疏水」（額外一次，−10 但唔低過 50），唔做 −10／−15。做咗應急行動 +3；兩樣都做 (3 + 3) × 0.75 = +4.5，三樣 (3 + 3 + 3) × 0.75 = +6.75。')}</p>
       <p>${weatherRulesText()}</p>
       <p>${regionalize('風災（初級颱風、狂風雷暴、高級颱風）')}要棵樹長到青年樹先生效：之前抗風力唔變、風災唔傷樹。之後傷害 = 基礎 × (1 − R/100)，抗風力每晚 −2、風災再消耗；R 低過門檻（20／25／40）會倒塌：高度 −20%，最多倒 2 次，第 3 次會死（免死金牌可以擋一次）。倒塌後第二日加固雙倍。</p>
       <p>冇完結日：九款樹任揀，棵樹會一直陪住你。生長：每晚基本生長 =（紀錄高度 − 而家高度）× 1%（準確啲係 1 − e^(−1/100)），最少係紀錄高度嘅 0.02%，冇上限；再 × 健康係數 × 天氣加成。照顧 ×1 大約 1個月 26%、3個月 59%、半年 84%、1年 97% 紀錄高度，之後每年再長約 7%。倒塌 −20% 高度之後會長得快返啲。</p>

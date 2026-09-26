@@ -38,8 +38,8 @@ export interface SceneInput {
   landmark?: boolean;
   /** Tier-3 「星空浮島」 look. */
   starry?: boolean;
-  /** v15.1: 保暖 done today → campfire beside the tree. */
-  campfire?: boolean;
+  /** v15.2: 保暖 done today → mulch layer round the roots (the campfire now shows every night on its own). */
+  mulch?: boolean;
 }
 
 interface Pt {

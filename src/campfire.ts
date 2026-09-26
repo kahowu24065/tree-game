@@ -1,11 +1,30 @@
 /**
- * v15.1 保暖 campfire: pure helpers (no three.js) so they can be unit-tested.
+ * v15.1 / v15.2 pure helpers (no three.js) for the 保暖 mulch layer and the nightly campfire, so they can be unit-tested.
  */
 import type { GameState } from './types';
 
-/** The campfire burns beside the tree for the rest of the game day on which 保暖 was done (gone the next day). */
-export function campfireLit(state: Pick<GameState, 'started' | 'over' | 'care'>, today: string): boolean {
+/** v15.2 保暖: the mulch layer lies round the roots for the rest of the game day on which 保暖 was done (gone the next day). */
+export function mulchLaid(state: Pick<GameState, 'started' | 'over' | 'care'>, today: string): boolean {
   return Boolean(state.started !== false && !state.over && state.care && state.care.date === today && state.care.warmCover);
+}
+
+/**
+ * v15.2 nightly campfire: 0 in daylight, fading in at dusk and out at dawn (scene daylight 0 night … 1 day), 1 at night.
+ * Not tied to 保暖 or the weather.
+ */
+export function campfireNightK(daylight: number): number {
+  const x = Math.max(0, Math.min(1, (0.55 - daylight) / 0.35));
+  return x * x * (3 - 2 * x);
+}
+
+/**
+ * v15.2 mulch ring (island units) round the root zone: from just outside the trunk to a bit inside the soil patch's
+ * rim (at least 2.6 trunk radii so a thick trunk still gets a real ring).
+ */
+export function mulchRadii(trunkU: number, dirtU: number): { inner: number; outer: number } {
+  const inner = trunkU * 1.05;
+  const outer = Math.max(dirtU * 0.9, trunkU * 2.6, inner + 0.12);
+  return { inner, outer };
 }
 
 /**
@@ -31,13 +50,14 @@ export interface CampfireSpot {
 }
 
 /**
- * Pick a spot (island units) beside the trunk: clear of the trunk by a margin, trying the preferred angle first and
+ * Pick a spot (island units) beside the trunk: clear of the trunk (and the mulch ring, `clearU`) by a margin, trying the preferred angle first and
  * then fanning out (and a little farther) until `blocked(x, z, r)` says the ring of radius `fireU` is free.
  */
-export function campfireSpot(opts: { trunkU: number; fireU: number; prefer: number; blocked: (x: number, z: number, r: number) => boolean; margin?: number }): CampfireSpot {
+export function campfireSpot(opts: { trunkU: number; fireU: number; prefer: number; blocked: (x: number, z: number, r: number) => boolean; margin?: number; clearU?: number }): CampfireSpot {
   const { trunkU, fireU, prefer, blocked } = opts;
   const margin = opts.margin ?? 0.14;
-  const d0 = trunkU + fireU + margin;
+  // v15.2: `clearU` keeps the whole fire ring outside another circle round the trunk (the mulch patch).
+  const d0 = Math.max(trunkU, opts.clearU ?? 0) + fireU + margin;
   for (const k of [1, 1.3, 1.65, 2.1, 2.7]) {
     const d = d0 * k;
     for (let i = 0; i < 18; i++) {

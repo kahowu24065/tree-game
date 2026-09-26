@@ -29,13 +29,17 @@ function flameMaterial(base: string, tip: string, opacity: number, h: number, se
 }
 
 /**
- * v15.1 保暖 campfire: stone ring, logs, flickering low-poly flames, a warm point light + glow, rising embers and a
- * little smoke. Built once at unit size (ring radius ≈ 0.4) and scaled to the scene; toggled with `setLit`.
+ * Campfire (v15.1 保暖, v15.2 every night): stone ring, logs, flickering low-poly flames, a warm point light + glow,
+ * rising embers and a little smoke. Built once at unit size (ring radius ≈ 0.4) and scaled to the scene. `update`
+ * takes the night fade k (0 day … 1 night): the fire fades in at dusk and out at dawn. The point light is NOT inside
+ * `group` — the scene keeps it added at all times (intensity 0 by day) so lighting never changes light count and
+ * never recompiles shaders.
  */
 export class Campfire3D {
   group = new THREE.Group();
   private flames: { mesh: THREE.Mesh; phase: number; base: number }[] = [];
-  private light = new THREE.PointLight('#ff9a3c', 0, 0, 2);
+  readonly light = new THREE.PointLight('#ff9340', 0, 0, 2);
+  private solids: THREE.Material[] = [];
   private glow: THREE.Sprite;
   private embers: THREE.Points;
   private emberSeeds: { phase: number; speed: number; a: number; r: number }[] = [];
@@ -49,7 +53,7 @@ export class Campfire3D {
   constructor() {
     const g = this.group;
     // Ash bed + glowing coals.
-    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.33, 14), new THREE.MeshStandardMaterial({ color: '#4a3e36', roughness: 1, flatShading: true }));
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.33, 14), this.solid(new THREE.MeshStandardMaterial({ color: '#4a3e36', roughness: 1, flatShading: true })));
     ash.rotation.x = -Math.PI / 2;
     ash.position.y = 0.012;
     this.coal = new THREE.MeshBasicMaterial({ color: '#ff5a1a', transparent: true, opacity: 0.9 });
@@ -66,7 +70,7 @@ export class Campfire3D {
       s.translate(Math.cos(a) * 0.38, 0.045, Math.sin(a) * 0.38);
       stones.push(s);
     }
-    const ring = new THREE.Mesh(merge(stones), new THREE.MeshStandardMaterial({ color: '#8e8a83', roughness: 1, flatShading: true }));
+    const ring = new THREE.Mesh(merge(stones), this.solid(new THREE.MeshStandardMaterial({ color: '#8e8a83', roughness: 1, flatShading: true })));
     ring.castShadow = true;
     // Logs: a teepee of four plus two lying across.
     const logs: THREE.BufferGeometry[] = [];
@@ -89,7 +93,7 @@ export class Campfire3D {
       c.translate(0, 0.05 + i * 0.04, 0);
       logs.push(c);
     }
-    const logMesh = new THREE.Mesh(merge(logs), new THREE.MeshStandardMaterial({ color: '#6b4526', roughness: 0.95, flatShading: true, emissive: '#3a1204', emissiveIntensity: 0.4 }));
+    const logMesh = new THREE.Mesh(merge(logs), this.solid(new THREE.MeshStandardMaterial({ color: '#6b4526', roughness: 0.95, flatShading: true, emissive: '#3a1204', emissiveIntensity: 0.4 })));
     logMesh.castShadow = true;
     g.add(ash, coal, ring, logMesh);
     // Flames: nested low-poly cones plus two side tongues.
@@ -109,13 +113,11 @@ export class Campfire3D {
     flame(0.08, 0.36, '#ffb040', '#ff4a1a', 0.85, 0.14, 0.05, 4);
     flame(0.07, 0.3, '#ffb040', '#ff4a1a', 0.85, -0.12, -0.08, 5);
     // Glow halo and light.
-    this.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(), color: '#ffab4a', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(), color: '#ff9440', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.glow.position.y = 0.3;
     this.glow.renderOrder = 5;
     g.add(this.glow);
-    this.light.position.set(0, 0.5, 0);
     this.light.castShadow = false;
-    g.add(this.light);
     // Embers.
     const n = 18;
     const geo = new THREE.BufferGeometry();
@@ -134,27 +136,27 @@ export class Campfire3D {
     g.visible = false;
   }
 
-  setLit(on: boolean): void {
-    if (on && !this.lit) this.litK = 0;
-    this.lit = on;
+  /** Night fade last applied (0 day … 1 night). */
+  nightK(): number {
+    return this.litK;
   }
 
-  isLit(): boolean {
-    return this.lit;
-  }
-
-  /** `size` = world metres per unit (ring radius ≈ 0.4 × size); `night` 0 day … 1 night. */
-  update(t: number, dt: number, size: number, night: number, reduced: boolean): void {
+  /** `size` = world metres per unit (ring radius ≈ 0.4 × size); `k` = night fade 0 day … 1 night. */
+  update(t: number, dt: number, size: number, k: number, reduced: boolean): void {
+    this.litK = k;
+    this.lit = k > 0.005;
     this.group.visible = this.lit;
     this.time.value = reduced ? 0 : t;
+    this.light.position.copy(this.group.position).y += 0.5 * size;
     if (!this.lit) {
       this.light.intensity = 0;
       return;
     }
     this.size = size;
     this.group.scale.setScalar(size);
-    this.litK = Math.min(1, this.litK + dt / (reduced ? 0.01 : 0.8));
-    const grow = 1 - Math.pow(1 - this.litK, 3);
+    for (const m of this.solids) m.opacity = Math.min(1, k * 1.5);
+    const night = 1;
+    const grow = k;
     const flick = reduced ? 1 : 0.86 + 0.1 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7 + 1.3) + 0.04 * Math.sin(t * 5.1);
     for (const f of this.flames) {
       const p = f.phase;
@@ -168,11 +170,11 @@ export class Campfire3D {
     }
     this.coal.opacity = 0.7 + 0.25 * flick;
     const gm = this.glow.material as THREE.SpriteMaterial;
-    gm.opacity = (0.26 + 0.24 * night) * flick * grow;
-    this.glow.scale.setScalar((1.4 + 0.6 * night) * (0.95 + 0.05 * flick));
+    gm.opacity = 0.34 * flick * grow;
+    this.glow.scale.setScalar(1.7 * (0.95 + 0.05 * flick));
     // Physically based point light: intensity ∝ size² so the lit area follows the scene scale.
     this.light.distance = size * 6;
-    this.light.intensity = (0.9 + 1.6 * night) * size * size * flick * grow;
+    this.light.intensity = 2 * size * size * flick * grow;
     // Embers rise and fade, recycled.
     const pos = this.embers.geometry.getAttribute('position') as THREE.BufferAttribute;
     (this.embers.material as THREE.PointsMaterial).size = 0.05 * size;
@@ -196,7 +198,14 @@ export class Campfire3D {
       s.position.set(Math.sin(t * 0.5 + i) * 0.1 + u * 0.25, 0.8 + u * 1.6, u * 0.1);
       s.scale.setScalar(0.3 + u * 0.8);
       m.opacity = 0.2 * Math.sin(u * Math.PI) * grow * (1 - night * 0.5);
+      void dt;
     });
+  }
+
+  private solid(m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+    m.transparent = true;
+    this.solids.push(m);
+    return m;
   }
 
   /** Metres per unit last applied (for checks). */

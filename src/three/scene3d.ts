@@ -13,7 +13,8 @@ import type { SpeciesId } from '../data/species';
 import { jitterGeometry, merge, paint } from './util3d';
 import { CareFx, type CareFxKind } from './careFx';
 import { Campfire3D } from './campfire3d';
-import { campfireRadiusUnits, campfireSpot, type CampfireSpot } from '../campfire';
+import { Mulch3D } from './mulch3d';
+import { campfireNightK, campfireRadiusUnits, campfireSpot, mulchRadii, type CampfireSpot } from '../campfire';
 
 export type Quality = 'low' | 'high';
 
@@ -151,10 +152,17 @@ export class Scene3D {
   private raycaster = new THREE.Raycaster();
 
   private canvas: HTMLCanvasElement;
-  /** v15.1 澆水／施肥 effects and the 保暖 campfire. */
+  /** v15.1 澆水／施肥 effects; v15.2 nightly campfire and the 保暖 mulch layer. */
   private careFx = new CareFx();
-  private campfire: Campfire3D | null = null;
+  private campfire = new Campfire3D();
   private fireSpot: (CampfireSpot & { rU: number; key: string }) | null = null;
+  private mulch: Mulch3D | null = null;
+  private mulchKey = '';
+  private mulchWas: boolean | null = null;
+  private mulchR = { inner: 0, outer: 0 };
+  /** Mulch animation clock; runs at `fxSpeed` × real time (checks slow it to screenshot mid-way). */
+  private mulchClock = 0;
+  private fxSpeed = 1;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality = 'low') {
     this.canvas = canvas;
@@ -292,6 +300,8 @@ export class Scene3D {
     this.scene.add(this.rain);
 
     this.scene.add(this.careFx.root);
+    // v15.2: the campfire's point light stays in the scene all the time (intensity 0 by day): no shader recompiles.
+    this.scene.add(this.campfire.group, this.campfire.light);
 
     this.rays = this.buildRays();
     this.bindDrag();
@@ -363,17 +373,32 @@ export class Scene3D {
     this.careFx.play(kind);
   }
 
-  /** v15.1 checks: slow the care effects down (1 = normal) so a headless browser can screenshot them mid-way. */
+  /** v15.1/v15.2 checks: slow the care effects and the mulch laying down (1 = normal) so a headless browser can screenshot them mid-way. */
   setCareFxSpeed(k: number): void {
     this.careFx.timeScale = Math.max(0.01, k);
+    this.fxSpeed = Math.max(0.01, k);
   }
 
-  /** v15.1: campfire state for checks: lit, world position / ring radius (metres) and distance from the trunk. */
-  campfireInfo(): { lit: boolean; x: number; z: number; radiusM: number; trunkM: number; distM: number; fx: number } {
+  /** Campfire / mulch state for checks: night fade, fire spot (metres), mulch ring (metres), live care effects. */
+  campfireInfo(): { lit: boolean; nightK: number; lightIntensity: number; x: number; z: number; radiusM: number; trunkM: number; distM: number; fx: number; mulch: boolean; laying: boolean; mulchInnerM: number; mulchOuterM: number } {
     const K = this.islandK;
     const s = this.fireSpot;
     const trunkM = (this.tree?.trunkRadius ?? 0) * (this.tree?.group.scale.x ?? 1);
-    return { lit: Boolean(this.campfire?.isLit()), x: (s?.x ?? 0) * K, z: (s?.z ?? 0) * K, radiusM: (s?.rU ?? 0) * K, trunkM, distM: (s?.dist ?? 0) * K, fx: this.careFx.count() };
+    return {
+      lit: this.campfire.group.visible,
+      nightK: this.campfire.nightK(),
+      lightIntensity: this.campfire.light.intensity,
+      x: (s?.x ?? 0) * K,
+      z: (s?.z ?? 0) * K,
+      radiusM: (s?.rU ?? 0) * K,
+      trunkM,
+      distM: (s?.dist ?? 0) * K,
+      fx: this.careFx.count(),
+      mulch: Boolean(this.mulch?.isVisible()),
+      laying: Boolean(this.mulch?.laying(this.mulchClock)),
+      mulchInnerM: this.mulchR.inner * K,
+      mulchOuterM: this.mulchR.outer * K,
+    };
   }
 
   triggerGlare(): void {
@@ -958,7 +983,7 @@ export class Scene3D {
    * cliffs, and the footprints of solid props (rocks, bushes, tree ferns, small trees, buildings, the trunk) at the
    * current prop scale. Rebuilt when the habitat changes or props / trunk rescale by more than a few percent.
    */
-  private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean, fire: CampfireSpot & { rU: number; key: string } | null): void {
+  private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean, fire: (CampfireSpot & { rU: number; key: string }) | null): void {
     const trunkU = Math.max(0.05, (tree.trunkRadius * 1.3) / Math.max(1e-3, K));
     const key = `${this.habitatKey}|${landmark ? 1 : 0}|${fire ? fire.key : ''}`;
     if (this.nav && key === this.navKey && Math.abs(propK - this.navPk) / this.navPk < 0.04 && Math.abs(trunkU - this.navTrunk) / this.navTrunk < 0.08) return;
@@ -1305,48 +1330,79 @@ export class Scene3D {
   }
 
   /**
-   * v15.1 保暖 campfire spot (island units): beside the trunk, front-left in the default view (clear of the height rail on phones), clear of the trunk,
-   * water, props and the 養分地標. Re-picked only when the trunk / fire size or the habitat changes.
+   * v15.2 campfire spot (island units): beside the trunk, front-left in the default view (clear of the height rail on
+   * phones), outside the mulch ring, clear of water, props and the 養分地標. Re-picked only when the trunk / fire size
+   * or the habitat changes. The fire itself only shows at night.
    */
-  private ensureCampfire(input: SceneInput, tree: TreeBuild, K: number, propK: number): (CampfireSpot & { rU: number; key: string }) | null {
-    if (!input.campfire) {
-      this.campfire?.setLit(false);
-      return null;
-    }
+  private ensureCampfire(input: SceneInput, tree: TreeBuild, K: number, propK: number): CampfireSpot & { rU: number; key: string } {
+    const kS = islandScaleFor(tree.metricScale);
     const trunkU = (tree.trunkRadius * tree.group.scale.x) / Math.max(1e-3, K);
-    const rU = campfireRadiusUnits(animalFactor(tree.height), islandScaleFor(tree.metricScale), tree.height / Math.max(1e-3, islandScaleFor(tree.metricScale)));
-    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${input.landmark ? 1 : 0}`;
+    const dirtU = 1.1 * clamp(0.3 + tree.localHeight * 0.09, 0.3, 1.5);
+    this.mulchR = mulchRadii(trunkU, dirtU);
+    const rU = campfireRadiusUnits(animalFactor(tree.height), kS, tree.height / Math.max(1e-3, kS));
+    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}`;
     if (!this.fireSpot || this.fireSpot.key !== key) {
       const hab = this.habitat;
       const props = [...this.island.obstacles().map((o) => ({ x: o.x, z: o.z, r: o.r * propK })), ...(hab && hab.stage > 0 ? resolveObstacles(hab.obstacles, propK) : [])];
       if (input.landmark) props.push({ x: 2.8, z: 2.2, r: 0.55 });
       const spot = campfireSpot({
         trunkU: trunkU * 2.2,
+        clearU: this.mulchR.outer * 1.06,
         fireU: rU,
         prefer: 2.2,
         blocked: (x, z, r) => this.wetOrBlocked(x, z, r + 0.05) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.04),
       });
       this.fireSpot = { ...spot, rU, key };
     }
-    if (!this.campfire) {
-      this.campfire = new Campfire3D();
-      this.scene.add(this.campfire.group);
-    }
-    this.campfire.setLit(true);
     return this.fireSpot;
+  }
+
+  /** v15.2 保暖 mulch ring round the roots; plays the laying animation when it appears mid-session. */
+  private updateMulch(input: SceneInput, dt: number): void {
+    this.mulchClock += dt * this.fxSpeed;
+    const t = this.mulchClock;
+    const K = this.islandK;
+    const want = Boolean(input.mulch);
+    const { inner, outer } = this.mulchR;
+    if (want && outer > 0) {
+      const ratio = Math.round((inner / outer) * 50) / 50;
+      const key = `${ratio}|${this.quality}`;
+      if (!this.mulch || key !== this.mulchKey) {
+        const wasOn = Boolean(this.mulch?.isVisible());
+        if (this.mulch) {
+          this.scene.remove(this.mulch.group);
+          this.mulch.dispose();
+        }
+        this.mulch = new Mulch3D(ratio, this.quality);
+        this.mulchKey = key;
+        this.scene.add(this.mulch.group);
+        if (wasOn) this.mulch.setVisible(true);
+      }
+    }
+    if (this.mulch) {
+      const first = this.mulchWas === null;
+      if (want !== this.mulch.isVisible()) {
+        this.mulch.setVisible(want);
+        if (want && !first && !input.reducedMotion) this.mulch.lay(t);
+      }
+      this.mulch.group.position.set(0, 0.185 * K + 0.0015 * K, 0);
+      this.mulch.group.scale.setScalar(outer * K);
+      this.mulch.update(t);
+    }
+    this.mulchWas = want;
   }
 
   private updateCareFx(input: SceneInput, tree: TreeBuild, t: number, dt: number, night: number, camAz: number): void {
     const K = this.islandK;
     const s = tree.group.scale.x;
-    if (this.campfire) {
-      const f = this.fireSpot;
-      if (f && this.campfire.isLit()) {
-        this.campfire.group.position.set(f.x * K, this.groundFast(f.x, f.z) * K + 0.004 * K, f.z * K);
-        this.campfire.group.rotation.y = 0.6;
-      }
-      this.campfire.update(t, dt, ((f?.rU ?? 0.25) * K) / 0.4, clamp(night * 1.2 - 0.1, 0, 1), input.reducedMotion);
+    void night;
+    const f = this.fireSpot;
+    if (f) {
+      this.campfire.group.position.set(f.x * K, this.groundFast(f.x, f.z) * K + 0.004 * K, f.z * K);
+      this.campfire.group.rotation.y = 0.6;
     }
+    this.campfire.update(t, dt, ((f?.rU ?? 0.25) * K) / 0.4, campfireNightK(input.daylight), input.reducedMotion);
+    this.updateMulch(input, dt);
     if (!this.careFx.count()) return;
     const dirtR = 1.1 * this.island.dirt.scale.x * K;
     const trunkR = tree.trunkRadius * s;

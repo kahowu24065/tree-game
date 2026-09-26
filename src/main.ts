@@ -8,7 +8,7 @@ import { esc } from './util';
 import { bookGameEnd, bookMilestones, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
-import { campfireLit } from './campfire';
+import { mulchLaid } from './campfire';
 import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
@@ -304,7 +304,7 @@ function sceneInput(): SceneInput {
     thriving: state.health >= 80 && !state.over,
     landmark: Boolean(meta.landmark) && state.legacyBonus > 0,
     starry: meta.starry,
-    campfire: campfireLit(state, today()),
+    mulch: mulchLaid(state, today()),
   };
 }
 

@@ -1011,7 +1011,7 @@ export function performEmergency(state: GameState, action: EmergencyAction, even
     const got = r1(state.moisture - before);
     message = got > 0 ? `酷熱澆水：水分 +${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因酷熱扣健康，仲有應急獎勵。` : `酷熱澆水：泥土已經飽和，冇加水，不過都算做咗。今晚唔會因酷熱扣健康，仲有應急獎勵。`;
   } else if (action === 'warmCover') {
-    message = '保暖：喺樹旁邊生起營火，幫棵樹暖住過夜。今晚唔會因寒冷扣健康，仲有應急獎勵。';
+    message = '保暖：喺樹根周圍鋪好覆蓋物（樹皮、乾樹葉、稻草、木屑），保持土溫，防止根部凍傷。今晚唔會因寒冷扣健康，仲有應急獎勵。';
   } else {
     const floor = EMERGENCY.rainDrain.floor;
     state.moisture = before > floor ? Math.max(floor, r1(before + EMERGENCY.rainDrain.amount)) : before;
@@ -1179,7 +1179,7 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
   if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
   if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
   if (plan.heat && !plan.heat.handled) return `酷熱警告生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
-  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
+  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（喺樹根周圍鋪覆蓋物，每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
   if (plan.rain && !plan.rain.handled) return `${eventLabel(plan.rain.event)}警告生效：做「${emergencyName('rainDrain')}」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
   if (countdown && WEATHER_EVENTS[countdown.event].category === 'wind') {
     const def = { ...WEATHER_EVENTS[countdown.event], label: eventLabel(countdown.event) };

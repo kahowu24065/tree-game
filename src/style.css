@@ -3207,7 +3207,7 @@ body.cold #scene {
   animation-name: cold-pulse;
 }
 
-/* v15.1: 保暖 done → the campfire is lit, so the button turns warm. */
+/* v15.1/v15.2: 保暖 done (mulch laid) → the button turns warm brown / orange. */
 .dock-btn.d-warm.lit {
   background: linear-gradient(180deg, #fff4e4, #ffd8a8);
   color: #c2621c;

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EMERGENCY_NAMES, WEATHER_EVENTS } from '../src/balance';
-import { campfireLit, campfireRadiusUnits, campfireSpot } from '../src/campfire';
+import { campfireRadiusUnits, campfireSpot, mulchLaid } from '../src/campfire';
 import { ICONS } from '../src/icons';
 import { emergencyName, setLabelRegion } from '../src/labels';
 import { createGame, freshCare, performEmergency, planNight, perksFrom, previewNight } from '../src/sim';
@@ -42,7 +42,7 @@ describe('v15.1 保暖覆蓋 → 保暖', () => {
     const r = performEmergency(s, 'warmCover', ['cold']);
     expect(r.ok).toBe(true);
     expect(r.message.startsWith('保暖：')).toBe(true);
-    expect(r.message).toContain('營火');
+    expect(r.message).toContain('覆蓋物');
     expect(r.message).not.toContain('保暖覆蓋');
     const entry = s.log.find((e) => e.kind === 'emergency')!;
     expect(entry.title).toBe('保暖');
@@ -91,31 +91,31 @@ describe('v15.1 保暖覆蓋 → 保暖', () => {
     expect(back.morningNote).toBe('寒冷：做咗保暖，唔扣健康');
   });
 
-  it('保暖掣圖示換咗營火', () => {
-    expect(ICONS).toHaveProperty('campfire');
+  it('保暖掣圖示（v15.2 起係覆蓋物）', () => {
+    expect(ICONS).toHaveProperty('mulch');
     expect(ICONS).not.toHaveProperty('cover');
   });
 });
 
-describe('v15.1 營火', () => {
-  it('做咗保暖當日先有營火；第二日、未做、完咗局都冇', () => {
+describe('v15.1 營火（v15.2：顯示條件搬咗去覆蓋物，見 v15_2）', () => {
+  it('做咗保暖當日先有覆蓋物；第二日、未做、完咗局都冇', () => {
     const s = game();
-    expect(campfireLit(s, D)).toBe(false);
+    expect(mulchLaid(s, D)).toBe(false);
     performEmergency(s, 'warmCover', ['cold']);
-    expect(campfireLit(s, D)).toBe(true);
+    expect(mulchLaid(s, D)).toBe(true);
     // Reload keeps it (the flag lives in the save).
-    expect(campfireLit(parseSave(JSON.stringify(s))!, D)).toBe(true);
+    expect(mulchLaid(parseSave(JSON.stringify(s))!, D)).toBe(true);
     // Next game day: old care still dated yesterday → no fire; fresh care → no fire.
-    expect(campfireLit(s, NEXT)).toBe(false);
+    expect(mulchLaid(s, NEXT)).toBe(false);
     s.care = freshCare(NEXT);
-    expect(campfireLit(s, NEXT)).toBe(false);
+    expect(mulchLaid(s, NEXT)).toBe(false);
     const over = game();
     performEmergency(over, 'warmCover', ['cold']);
     over.over = { kind: 'dead', date: D, tiers: [], days: 1 } as unknown as GameState['over'];
-    expect(campfireLit(over, D)).toBe(false);
+    expect(mulchLaid(over, D)).toBe(false);
     const idle = game({ started: false });
     idle.care.warmCover = true;
-    expect(campfireLit(idle, D)).toBe(false);
+    expect(mulchLaid(idle, D)).toBe(false);
   });
 
   it('大小：細樹 0.2–0.32 島單位（幼苗再細啲），大樹跟樹高（最多 1.2）', () => {
