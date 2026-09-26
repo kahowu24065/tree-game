@@ -22,12 +22,19 @@ Rate limit: 20 register/unregister calls per IP per 10 min. Tokens FCM reports a
 
 Push: `sendEachForMulticast` in batches of 500, Android high priority, channel `weather-warnings`.
 
-## Deploy (Oracle VM, Ubuntu or Oracle Linux)
-1. Oracle console → VCN → security list: ingress TCP 80 and 443 from 0.0.0.0/0.
-2. Copy this folder to the VM, put the Firebase service-account JSON at `/etc/tree-push/service-account.json`.
-3. `sudo DOMAIN=158-101-140-210.sslip.io bash deploy/install.sh` — installs Node 20 (official tarball), the app
-   under `/opt/tree-push-server` (systemd `tree-push`, user `treepush`, data in `/var/lib/tree-push`), Caddy with an
-   automatic Let's Encrypt cert for the sslip.io name, and opens 80/443 in iptables/firewalld persistently.
-4. `curl https://158-101-140-210.sslip.io/health`
+## Deploy (Oracle VM 158.101.140.210, Ubuntu 22.04 arm64 — live since 2026-09-27)
+The VM already runs nginx (80/443) for another site plus pm2 apps on :3000 and :8080, so the relay sits beside them:
+- own Node `v20.20.2` in `/opt/tree-push/node` (the system Node is left alone), app in `/opt/tree-push/app`
+- systemd `tree-push` (user `treepush`), listens on `127.0.0.1:8091`, data in `/var/lib/tree-push`
+- its own nginx site `/etc/nginx/sites-available/tree-push` (from `deploy/nginx-tree-push.conf`) + certbot cert
+  for `158-101-140-210.sslip.io` (auto-renewed by the existing certbot timer); other sites untouched
+
+Update / reinstall:
+```bash
+rsync -a --delete --exclude node_modules --exclude data ./ ubuntu@158.101.140.210:~/tree-push-server/
+ssh ubuntu@158.101.140.210 'cd ~/tree-push-server && sudo PROXY=nginx DOMAIN=158-101-140-210.sslip.io bash deploy/install.sh'
+```
+Enable real pushes: copy the Firebase service-account JSON to `/etc/tree-push/service-account.json`, re-run the
+installer (fixes owner/mode) — `/health` then shows `"fcm":true`. `PROXY=caddy` is for a fresh VM with nothing on 80/443.
 
 Logs: `journalctl -u tree-push -f`. Tests: `npm test`.

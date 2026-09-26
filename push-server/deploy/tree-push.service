@@ -5,13 +5,14 @@ Wants=network-online.target
 
 [Service]
 User=treepush
-WorkingDirectory=/opt/tree-push-server
+WorkingDirectory=/opt/tree-push/app
 Environment=NODE_ENV=production
-Environment=PORT=8080
+Environment=PORT=8091
 Environment=HOST=127.0.0.1
 Environment=DATA_DIR=/var/lib/tree-push
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/tree-push/service-account.json
-ExecStart=/usr/local/bin/node src/server.js
+# Own Node under /opt/tree-push/node, so any system Node used by other apps is left alone.
+ExecStart=/opt/tree-push/node/bin/node src/server.js
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
