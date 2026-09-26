@@ -7,8 +7,8 @@ android {
         applicationId "io.github.kahowu24065.treegame"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.2.1"
+        versionCode 5
+        versionName "1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,25 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing: keystore.properties (storeFile, storePassword, keyAlias, keyPassword) is NEVER in git.
+    // Looked up at $SEKAI_KEYSTORE_PROPERTIES or android/keystore.properties (gitignored; on the box a symlink to
+    // /workspace/secure/sekai-tree-release/keystore.properties). Without it, release builds are unsigned.
+    def ksPropsFile = file(System.getenv('SEKAI_KEYSTORE_PROPERTIES') ?: rootProject.file('keystore.properties').path)
+    if (ksPropsFile.exists()) {
+        def ksProps = new Properties()
+        ksPropsFile.withInputStream { ksProps.load(it) }
+        signingConfigs {
+            release {
+                storeFile file(ksProps['storeFile'])
+                storePassword ksProps['storePassword']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingConfigs.findByName('release')) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

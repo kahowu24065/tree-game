@@ -18,8 +18,16 @@ export class TokenStore {
   }
   get size() { return this.map.size; }
   tokens() { return [...this.map.keys()]; }
+  records() { return [...this.map.values()]; }
   add(token, platform, appVersion) {
-    this.map.set(token, { token, platform, appVersion, updatedAt: new Date().toISOString() });
+    const old = this.map.get(token);
+    this.map.set(token, { ...old, token, platform, appVersion, updatedAt: new Date().toISOString() });
+    this.save();
+  }
+  /** Per-device game state for action-aware pushes (kept with the token; older records simply have none). */
+  setState(token, state) {
+    const old = this.map.get(token) ?? { token, platform: 'android', appVersion: '', updatedAt: new Date().toISOString() };
+    this.map.set(token, { ...old, state });
     this.save();
   }
   remove(tokens) {
@@ -33,4 +41,32 @@ export class TokenStore {
     fs.writeFileSync(`${this.file}.tmp`, JSON.stringify([...this.map.values()], null, 1));
     fs.renameSync(`${this.file}.tmp`, this.file);
   }
+}
+
+const bool = (v) => v === true;
+
+/** Validate / normalise a POST /state body (null = invalid). */
+export function parseState(body, now = Date.now()) {
+  if (!body || typeof body !== 'object') return null;
+  if (typeof body.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)) return null;
+  const tz = typeof body.tz === 'string' && body.tz.length <= 64 ? body.tz : 'Asia/Hong_Kong';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tz });
+  } catch {
+    return null;
+  }
+  const d = body.done ?? {};
+  const lat = Number(body.region?.lat);
+  const lon = Number(body.region?.lon);
+  const region = Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat: Math.round(lat * 2) / 2, lon: Math.round(lon * 2) / 2 } : null;
+  return {
+    day: body.day,
+    tz,
+    done: { heat: bool(d.heat), drain: bool(d.drain), reinforce: bool(d.reinforce), warm: bool(d.warm) },
+    region,
+    isHK: body.isHK !== false || !region,
+    rUnlocked: body.rUnlocked === true,
+    alive: body.alive !== false,
+    at: now,
+  };
 }

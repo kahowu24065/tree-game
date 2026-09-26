@@ -105,7 +105,7 @@ import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
-import { syncPush } from './native/push';
+import { reportPushState, syncPush } from './native/push';
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
@@ -485,6 +485,21 @@ function scheduleReminders(background: boolean): void {
   if (opts.warmCover && !done('warmCover')) pending.push('保暖');
   const windy = state.windUnlocked && events.some((e) => WEATHER_EVENTS[e].category === 'wind');
   if (windy && !(careToday && Object.values(state.care.preps).some(Boolean))) pending.push('加固');
+  if (notifyEnabled())
+    reportPushState({
+      day: today(),
+      tz: timezone,
+      done: {
+        heat: done('heatWater'),
+        drain: done('rainDrain'),
+        reinforce: careToday && Object.values(state.care.preps).some(Boolean),
+        warm: done('warmCover'),
+      },
+      region: { lat: weather.lat, lon: weather.lon },
+      isHK: regionFor(weather.source, nearHongKong(weather.lat, weather.lon)) === 'hk',
+      rUnlocked: Boolean(state.windUnlocked),
+      alive: state.started && !state.over,
+    });
   const offset = virtualNow() - Date.now();
   applyNotifications(
     planNotifications({
@@ -673,6 +688,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
     showReport(report);
     syncWarningWater();
+    scheduleReminders(false);
     return;
   }
   persist();

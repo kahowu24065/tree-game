@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 世界之樹 app icon foreground: floating island + tree (kept inside the adaptive-icon safe zone) -->
+  <defs>
+    <radialGradient id="crown" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#7fcf6e"/>
+      <stop offset="1" stop-color="#2f7f3c"/>
+    </radialGradient>
+    <linearGradient id="trunk" x1="0" x2="1">
+      <stop offset="0" stop-color="#7a4f28"/>
+      <stop offset="0.5" stop-color="#a8743f"/>
+      <stop offset="1" stop-color="#7a4f28"/>
+    </linearGradient>
+  </defs>
+  <!-- island -->
+  <path d="M322 640 Q512 600 702 640 Q690 700 610 760 Q560 800 512 812 Q464 800 414 760 Q334 700 322 640Z" fill="#9a6a3a"/>
+  <path d="M322 640 Q512 600 702 640 Q690 668 512 676 Q334 668 322 640Z" fill="#5fae4f"/>
+  <!-- trunk -->
+  <path d="M484 650 L492 470 Q470 430 430 410 L444 398 Q486 414 504 446 Q522 404 574 388 L584 402 Q540 424 530 470 L540 650 Z" fill="url(#trunk)"/>
+  <!-- crown -->
+  <circle cx="512" cy="360" r="150" fill="url(#crown)"/>
+  <circle cx="400" cy="420" r="100" fill="url(#crown)"/>
+  <circle cx="626" cy="416" r="104" fill="url(#crown)"/>
+  <circle cx="470" cy="300" r="92" fill="#8bd97a" opacity="0.35"/>
+</svg>

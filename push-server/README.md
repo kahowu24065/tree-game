@@ -5,12 +5,25 @@
 Downgrades and cancellations are silent. The last-seen levels are saved to disk, so a restart never re-notifies,
 and the very first run only records the current state.
 
+## v2: action-aware + non-HK
+- Devices send `POST /state { token, day, tz, done:{heat,drain,reinforce,warm}, region:{lat,lon} (0.5°), isHK, rUnlocked, alive }`
+  (debounced by the app). A push for category X skips devices that already did today's action for X (heat → 酷熱澆水,
+  rain → 疏水, typhoon/wind → 加固, cold → 保暖), dead trees, and wind pushes for trees before 青年樹 (`rUnlocked` false).
+  Devices without state (older app versions) get every push.
+- One follow-up reminder ~2 h after a push while the warning is still in force (max one per firing, same filter).
+- Non-HK devices (`isHK` false): per 0.5° cell with a device seen in the last 14 days, Open-Meteo every 20 min
+  (max 60 cells per cycle, 1.5 s apart) → the game's own rules (`src/intl.js`, checked against the game's TypeScript
+  by `test/push-rules-parity.test.ts` in tree-game) → new / upgraded 酷熱／寒冷／大雨／豪雨／烈風／狂風雷暴／暴風 pushed with
+  regional names. First sight of a cell only records its state.
+- State: `alerts.json` (HK + cells; migrates the v1 `last-levels.json` without re-notifying); device state lives in `tokens.json`.
+
 ## API
 - `POST /register` `{ token, platform, appVersion }` → `{ ok }` (token 20–4096 chars `[A-Za-z0-9_:.-]`)
 - `POST /unregister` `{ token }`
-- `GET /health` → FCM on/off, device count, last poll, current levels
+- `POST /state` (see above)
+- `GET /health` → FCM on/off, devices, devices with state, cells, last polls, HK levels
 
-Rate limit: 20 register/unregister calls per IP per 10 min. Tokens FCM reports as unregistered/invalid are dropped.
+Rate limit: 30 device calls per IP per 10 min. Tokens FCM reports as unregistered/invalid are dropped.
 
 ## Config (env)
 | var | default |

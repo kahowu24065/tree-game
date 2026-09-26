@@ -33,3 +33,8 @@ dist-ssr
 *.mp4
 test-results/
 playwright-report/
+
+# Release signing secrets
+*.jks
+*.keystore
+keystore.properties

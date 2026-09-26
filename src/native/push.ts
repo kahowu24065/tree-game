@@ -9,6 +9,39 @@ const TOKEN_KEY = 'sekai-tree-push-token';
 
 let listening = false;
 
+/** Game state the server needs to skip devices that already did today's 應急行動 (POST /state). */
+export interface PushState {
+  day: string;
+  tz: string;
+  done: { heat: boolean; drain: boolean; reinforce: boolean; warm: boolean };
+  region: { lat: number; lon: number };
+  isHK: boolean;
+  rUnlocked: boolean;
+  alive: boolean;
+}
+
+let latest: PushState | null = null;
+let lastSent = '';
+let timer: ReturnType<typeof setTimeout> | null = null;
+
+function flushState(): void {
+  timer = null;
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token || !latest) return;
+  const json = JSON.stringify(latest);
+  if (json === lastSent) return;
+  lastSent = json;
+  void post('/state', { token, ...latest });
+}
+
+/** Native only: report state changes (debounced 3 s, only when something changed). */
+export function reportPushState(state: PushState): void {
+  if (!isNative()) return;
+  latest = { ...state, region: { lat: Math.round(state.region.lat * 2) / 2, lon: Math.round(state.region.lon * 2) / 2 } };
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(flushState, 3000);
+}
+
 async function post(path: string, body: unknown): Promise<void> {
   try {
     await fetch(`${PUSH_SERVER}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -30,6 +63,8 @@ async function listen(): Promise<void> {
     }
     localStorage.setItem(TOKEN_KEY, value);
     await post('/register', { token: value, platform: 'android', appVersion });
+    lastSent = '';
+    flushState();
   });
   await PushNotifications.addListener('registrationError', () => undefined);
 }
@@ -45,6 +80,7 @@ export async function syncPush(enabled: boolean): Promise<void> {
       const token = localStorage.getItem(TOKEN_KEY);
       if (token) await post('/unregister', { token });
       localStorage.removeItem(TOKEN_KEY);
+      lastSent = '';
       await PushNotifications.unregister();
       return;
     }

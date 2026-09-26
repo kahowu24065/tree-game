@@ -48,3 +48,33 @@ export function messageFor({ category, level }) {
   }[category];
   return { title: `${label}生效！`, body, category, level };
 }
+
+/** The game's 應急行動 for each push category (keys of the app's /state `done`). */
+export const ACTION_FOR = { heat: 'heat', rain: 'drain', typhoon: 'reinforce', cold: 'warm' };
+
+/** Local date (YYYY-MM-DD) in a time zone. */
+export function localDate(tz, now = Date.now()) {
+  try {
+    return new Date(now).toLocaleDateString('en-CA', { timeZone: tz || 'Asia/Hong_Kong' });
+  } catch {
+    return new Date(now).toLocaleDateString('en-CA', { timeZone: 'Asia/Hong_Kong' });
+  }
+}
+
+/**
+ * Should this device get a push for `category`? No state yet (older app) → yes. Dead tree → no. Wind before the tree
+ * reaches 青年樹 (rUnlocked false) → no (風災 can't hurt it yet). Today's action already done → no.
+ */
+export function shouldNotify(state, category, now = Date.now()) {
+  if (!state) return true;
+  if (state.alive === false) return false;
+  if (category === 'typhoon' && state.rUnlocked === false) return false;
+  const done = state.day === localDate(state.tz, now) && state.done?.[ACTION_FOR[category]] === true;
+  return !done;
+}
+
+/** HK follow-up text when the action is still undone ~2 h after the warning. */
+export function reminderFor({ category, level }) {
+  const m = messageFor({ category, level });
+  return { ...m, title: m.title.replace('生效！', '仍然生效'), body: `棵樹仲未做應急行動：${m.body}` };
+}
