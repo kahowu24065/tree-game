@@ -290,3 +290,18 @@ npm run preview
 - `node scripts/v9-shots.mjs`：v9 動物提示（全景標記、撳標記跟拍、到訪通知、動物清單、鳥群軌跡同昆蟲閃光）同 v8 保證，輸出去 `/workspace/tree-game-shots/v9/`。
 - `node scripts/weather-check.mjs`、`node scripts/forecast-check.mjs`：真實天氣同預報卡。
 
+
+## Android APK (Capacitor)
+
+Debug APK for sideloading. The app wraps the same `dist/` build (Vite `base: './'`) in a WebView via Capacitor 7.
+
+Prerequisites: JDK 17 or 21, Android SDK with `platforms;android-35` + build-tools (set `ANDROID_HOME`, or put `sdk.dir=...` in `android/local.properties`).
+
+```bash
+npm run build
+npx cap sync android
+cd android && ./gradlew assembleDebug
+# -> android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Install on a phone: copy the APK over and allow "install unknown apps" for the file manager/browser used to open it (or `adb install app-debug.apk`).
