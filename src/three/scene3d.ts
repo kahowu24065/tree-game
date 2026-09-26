@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
 import { albumFigure, Animals3D, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
-import { buildHabitat, type Habitat } from './habitat3d';
+import { buildHabitat, resolveObstacles, type Habitat } from './habitat3d';
+import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
-import { animalFactor, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
+import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
@@ -115,6 +116,12 @@ export class Scene3D {
   private heatK = 0;
   private habitat: Habitat | null = null;
   private habitatKey = '';
+  /** v11: walk map for ground animals and what it was built for. */
+  private nav: WalkNav | null = null;
+  private navKey = '';
+  private navPk = 0;
+  private navTrunk = 0;
+  private navBaseKey = '';
   private hud = new THREE.Scene();
   private hudCam = new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1);
   private rays: { glow: THREE.Sprite; haze: THREE.Sprite; shafts: THREE.Mesh[] };
@@ -698,6 +705,20 @@ export class Scene3D {
     return { active: this.isZoomed() || Boolean(this.followRef), following: name };
   }
 
+  /** v11 instrumentation: advance the animals only (no rendering), n steps of dt seconds. */
+  private simT = 0;
+  simStep(dt: number, n: number): void {
+    this.simT = Math.max(this.simT, this.lastTime);
+    for (let i = 0; i < n; i++) {
+      this.simT += dt;
+      this.animals.update(this.simT, dt, 0);
+    }
+  }
+
+  walkerDump(): ReturnType<Animals3D['walkerDump']> {
+    return this.animals.walkerDump();
+  }
+
   /** Back to the automatic overview. */
   resetView(): void {
     this.zoomGoal = 1;
@@ -900,6 +921,46 @@ export class Scene3D {
     this.animals.setIslandRadius(this.habitat.radius, this.islandK);
   }
 
+  /**
+   * v11: walkable map for ground animals (island units): land inside the fence, minus water (+ bank), hills and
+   * cliffs, and the footprints of solid props (rocks, bushes, tree ferns, small trees, buildings, the trunk) at the
+   * current prop scale. Rebuilt when the habitat changes or props / trunk rescale by more than a few percent.
+   */
+  private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean): void {
+    const trunkU = Math.max(0.05, (tree.trunkRadius * 1.3) / Math.max(1e-3, K));
+    const key = `${this.habitatKey}|${landmark ? 1 : 0}`;
+    if (this.nav && key === this.navKey && Math.abs(propK - this.navPk) / this.navPk < 0.04 && Math.abs(trunkU - this.navTrunk) / this.navTrunk < 0.08) return;
+    this.navKey = key;
+    this.navPk = propK;
+    this.navTrunk = trunkU;
+    const R = this.habitat?.radius ?? ISLAND_R;
+    const hab = this.habitat;
+    const obstacles: NavObstacle[] = [];
+    for (const o of this.island.obstacles()) obstacles.push({ x: o.x, z: o.z, r: o.r * propK, fixed: true, kind: o.kind });
+    if (hab && hab.stage > 0) for (const o of resolveObstacles(hab.obstacles, propK)) obstacles.push({ ...o, fixed: true });
+    if (landmark) obstacles.push({ x: 2.8, z: 2.2, r: 0.55, fixed: true, kind: 'landmark' });
+    this.nav = new WalkNav({
+      R,
+      limit: (a) => shoreRadius(R, a) - FENCE_INSET_UNITS - 0.15,
+      terrain: (x, z) => {
+        if (hab && hab.isBlocked(x, z)) return BLOCK;
+        if (Math.hypot(x, z) < ISLAND_R + 0.4 && onGardenWater(x, z, 0.06 + 0.2)) return WATER;
+        if (hab && hab.isWater(x, z, 0.2)) return WATER;
+        return DRY;
+      },
+      obstacles,
+      propK: 1,
+      trunkR: trunkU,
+      base: this.nav && this.navBaseKey === `${key}|${R}` ? this.nav.base : undefined,
+    });
+    this.navBaseKey = `${key}|${R}`;
+    this.animals.setNav(this.nav);
+  }
+
+  navInfo(): ReturnType<Animals3D['navInfo']> {
+    return this.animals.navInfo();
+  }
+
   /** v10: prop density bucket for the tree's (goal) size. */
   private propBucketGoal(): number {
     const tree = this.tree;
@@ -1042,6 +1103,7 @@ export class Scene3D {
       (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
     }
     this.pivot.updateMatrixWorld(true);
+    this.ensureNav(tree, K, propK, Boolean(input.landmark));
     this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
     this.animals.update(t, dt, night);
 

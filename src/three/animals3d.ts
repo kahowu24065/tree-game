@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { BLOCK, NAV_CELL, WATER, type WalkNav } from './walkNav';
 import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
 import { allowedAt, flocky, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
 import { MotionHints, newTrail, stepTrail, type TrailState } from './motionHints';
 import { clamp } from '../util';
-import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius } from '../scale';
+import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius, shoreRadius } from '../scale';
 import { ISLAND_R } from './island3d';
 import type { TreeBuild } from './tree3d';
 import { ellipsoid } from './util3d';
@@ -958,6 +959,8 @@ interface Member {
   climb: { spot: number; stage: 'go' | 'up' | 'hold' | 'down'; lift: number; top: number; t: number } | null;
   sq: { where: 'trunk' | 'ground'; lift: number; liftT: number; toGround: boolean; home: THREE.Vector3 } | null;
   rest: THREE.Vector3 | null;
+  /** v11: steering state for ground walkers. */
+  w?: Walker;
 }
 
 interface Crew {
@@ -977,6 +980,9 @@ interface Crew {
   pause: number;
   enter: number;
   run: boolean;
+  /** v11: route of a ground crew (goal + flow field on the walk map). */
+  walk?: CrewWalk;
+  placedNav?: boolean;
 }
 
 export interface EcoInfo {
@@ -1037,6 +1043,81 @@ export interface EcoCaps {
   residentGroups: number;
 }
 
+/** v11: a walker's continuous locomotion state (metres, m/s). */
+interface Walker {
+  vx: number;
+  vz: number;
+  /** 0 → 1 fade in on arrival, 1 → 0 fade out when leaving (scale), never a position pop. */
+  fade: number;
+  fading: boolean;
+  arrived: boolean;
+  slotX: number;
+  slotZ: number;
+  /** Progress watch: best route distance so far and when it last improved. */
+  best: number;
+  bestT: number;
+  /** Seconds spent standing although it wants to walk (for the re-plan). */
+  blocked: number;
+  /** Body radius vs other animals, core radius vs props (metres), top speed (m/s) — refreshed every step. */
+  r: number;
+  core: number;
+  vmax: number;
+  /** Seconds spent cut off from the group's route (a pocket the map closed round it). */
+  lost?: number;
+  relocate?: boolean;
+  /** Where it stood when it last got a body length further, and how long ago (boxed in by props / a herd). */
+  ax?: number;
+  az?: number;
+  at?: number;
+}
+
+interface CrewWalk {
+  nav: WalkNav | null;
+  field: Float64Array | null;
+  gx: number;
+  gz: number;
+  mode: 'walk' | 'pause' | 'exit';
+  pause: number;
+  walkT: number;
+  plans: number;
+  /** The leader could not get on: choose somewhere else soon. */
+  stuck?: boolean;
+}
+
+/** v11: walk map shared by all walkers (island units), set by the scene. */
+let NAV: WalkNav | null = null;
+
+/** Tiny spatial hash for walker separation (metres). */
+class WalkerHash {
+  private cells = new Map<number, Member[]>();
+  size = 1;
+  reset(size: number): void {
+    this.cells.clear();
+    this.size = Math.max(0.05, size);
+  }
+  private key(i: number, j: number): number {
+    return (i + 32768) * 65536 + (j + 32768);
+  }
+  add(m: Member): void {
+    const k = this.key(Math.floor(m.pos.x / this.size), Math.floor(m.pos.z / this.size));
+    let l = this.cells.get(k);
+    if (!l) this.cells.set(k, (l = []));
+    l.push(m);
+  }
+  near(x: number, z: number, out: Member[]): Member[] {
+    out.length = 0;
+    const i0 = Math.floor(x / this.size);
+    const j0 = Math.floor(z / this.size);
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        const l = this.cells.get(this.key(i0 + di, j0 + dj));
+        if (l) for (const m of l) out.push(m);
+      }
+    }
+    return out;
+  }
+}
+
 function faceYaw(dir: THREE.Vector3): number {
   return Math.atan2(-dir.z, dir.x);
 }
@@ -1073,7 +1154,7 @@ const tmp2 = new THREE.Vector3();
 const tmp3 = new THREE.Vector3();
 /** Motions that can be in the air (subject to the flight ceiling). */
 const AIRBORNE = new Set(['perch', 'flock', 'soar', 'hover', 'flutter', 'bat']);
-const UP = new THREE.Vector3(0, 1, 0);
+const headV = new THREE.Vector3();
 const basis = new THREE.Matrix4();
 const bx = new THREE.Vector3();
 const by3 = new THREE.Vector3();
@@ -1218,6 +1299,32 @@ export class Animals3D {
   /** Radius of the (growing) island in island units, and the scene scale K (metres per island unit). */
   setIslandRadius(r: number, k = 1): void {
     this.islandR = r;
+    // v11: walkers stand on the land, so they ride it when it rescales (continuously, with the island) instead of
+    // sliding over it into ponds or past the fence.
+    if (k !== GK && GK > 0) {
+      const f = k / GK;
+      for (const c of this.crews) {
+        if (!GROUND.has(c.def.motion)) continue;
+        for (const m of c.members) {
+          if (m.climb && m.climb.stage !== 'go') continue;
+          m.pos.x *= f;
+          m.pos.z *= f;
+          m.prev.x *= f;
+          m.prev.z *= f;
+          if (m.w) {
+            m.w.slotX *= f;
+            m.w.slotZ *= f;
+            m.w.best *= f;
+          }
+        }
+        if (c.walk) {
+          c.walk.gx *= f;
+          c.walk.gz *= f;
+        }
+        c.leader.x *= f;
+        c.leader.z *= f;
+      }
+    }
     GK = k;
   }
 
@@ -1248,14 +1355,25 @@ export class Animals3D {
     return out;
   }
 
+  /** v11 instrumentation: every ground walker member (metres), keyed by group uid + index. */
+  walkerDump(): { k: string; id: string; x: number; z: number; len: number; climb: boolean; leaving: boolean; wade: boolean; vis: number }[] {
+    const out: { k: string; id: string; x: number; z: number; len: number; climb: boolean; leaving: boolean; wade: boolean; vis: number }[] = [];
+    for (const c of this.crews) {
+      if (!GROUND.has(c.def.motion)) continue;
+      c.members.forEach((m, i) => out.push({ k: `${c.uid}:${i}`, id: c.def.id, x: m.pos.x, z: m.pos.z, len: this.dlen(c.def), climb: Boolean(m.climb && m.climb.stage !== 'go'), leaving: c.leaving, wade: c.def.motion === 'wade', vis: m.w ? m.w.fade : 1 }));
+    }
+    return out;
+  }
+
   /** Where every walker is (metres) and whether that spot is inside the fence and dry — for checks. */
   walkerSpots(): { id: string; x: number; z: number; r: number; limit: number; wet: boolean; why: string }[] {
     const out: { id: string; x: number; z: number; r: number; limit: number; wet: boolean; why: string }[] = [];
-    const limit = (minShoreRadius(this.islandR) - FENCE_INSET_UNITS) * GK;
     for (const c of this.crews) {
       if (!GROUND.has(c.def.motion) || c.leaving || c.def.motion === 'wade') continue;
       for (const m of c.members) {
         if (m.climb) continue;
+        // v11: the fence follows the (wobbly) shoreline, and walkers use all the land inside it.
+        const limit = (shoreRadius(this.islandR, Math.atan2(m.pos.z, m.pos.x)) - FENCE_INSET_UNITS) * GK;
         const wet = WALK_FN ? !WALK_FN(m.pos.x, m.pos.z) : false;
         out.push({
           id: c.def.id,
@@ -1535,6 +1653,11 @@ export class Animals3D {
     if (def.motion === 'glow') this.fly.points.visible = true;
     this.crews.push(crew);
     this.assignSeats(crew);
+    if (GROUND.has(def.motion)) {
+      this.placeEntry(crew);
+      crew.placedNav = Boolean(NAV);
+      this.planRoute(crew, false);
+    }
     this.arrivals.push({ uid: crew.uid, id: def.id, name: def.name, count: crew.members.length, motion: def.motion, category: def.category });
     if (this.arrivals.length > 12) this.arrivals.shift();
   }
@@ -1735,7 +1858,13 @@ export class Animals3D {
         if (options.length) this.spawn(this.pickOption(options), { room });
       }
     }
+    this.buildHash();
     for (const c of this.crews) this.step(c, t, dt);
+    if (dt > 0) {
+      const walkers = this.buildHash();
+      this.resolvePairs(walkers, dt);
+      this.noteVisits(walkers, dt);
+    }
     for (const c of this.crews.filter((x) => x.gone)) {
       for (const m of c.members) this.root.remove(m.obj);
       if (c.def.motion === 'glow') this.fly.points.visible = false;
@@ -1801,44 +1930,8 @@ export class Animals3D {
         c.timer = 0;
       }
     }
-    // Ground leader wanders, sometimes breaking into a run.
-    if (GROUND.has(def.motion)) {
-      if (c.leaving) c.leaderTarget.copy(this.entryPoint(def));
-      this.pathFrom = c.leader;
-      // Standing in water (the island rescaled under it) or heading for a spot that turned wet: walk out now.
-      if (def.motion !== 'wade' && !c.leaving && WALK_FN && !WALK_FN(c.leaderTarget.x, c.leaderTarget.z)) {
-        c.leaderTarget.copy(this.groundTarget(def));
-        c.pause = 0;
-      }
-      tmp.subVectors(c.leaderTarget, c.leader).setY(0);
-      const dist = tmp.length();
-      const big = (def.look.size ?? 1) > 1.8;
-      // Walking speed in m/s, scaled by body length (a toad is slower than a buffalo).
-      let speed = (def.motion === 'wade' ? 0.35 : def.motion === 'hop' ? 0.7 : big ? 0.9 : 0.75) * clamp(len / 0.8, 0.2, 1.6);
-      if (c.run || c.leaving) speed *= AGILE.has(def.id) ? 2.6 : 1.6;
-      if (dist < 0.15 * Math.max(0.3, SK)) {
-        if (c.leaving) leaveDone();
-        c.pause -= dt;
-        if (c.pause <= 0) {
-          c.leaderTarget.copy(this.groundTarget(def));
-          c.pause = 3 + this.rng() * 7;
-          c.run = AGILE.has(def.id) && this.rng() < 0.3;
-        }
-      } else if (c.pause > 0 && !c.leaving) {
-        c.pause -= dt;
-      } else {
-        const nx = c.leader.x + (tmp.x / dist) * Math.min(dist, speed * dt);
-        const nz = c.leader.z + (tmp.z / dist) * Math.min(dist, speed * dt);
-        // Never step onto water (waders excepted): stop and pick another spot.
-        if (def.motion !== 'wade' && !c.leaving && WALK_FN && !WALK_FN(nx, nz) && WALK_FN(c.leader.x, c.leader.z)) {
-          c.leaderTarget.copy(this.groundTarget(def));
-        } else {
-          c.leader.x = nx;
-          c.leader.z = nz;
-        }
-        c.leader.y = groundY(c.leader.x, c.leader.z);
-      }
-    }
+    // v11: ground crews follow routes on the walk map (see routeCrew / walkMember).
+    if (GROUND.has(def.motion)) this.routeCrew(c, dt);
 
     c.members.forEach((m, i) => {
       m.prev.copy(m.pos);
@@ -1949,24 +2042,15 @@ export class Animals3D {
         case 'walk':
         case 'hop':
         case 'wade': {
-          if (m.climb && def.look.kind === 'monkey') {
+          if (m.climb && m.climb.stage !== 'go' && def.look.kind === 'monkey') {
             this.stepClimb(c, m, dt);
             break;
           }
-          tmp.copy(m.offset).applyAxisAngle(UP, c.members[0]!.yaw);
-          m.target.copy(c.leader).add(i === 0 ? tmp.set(0, 0, 0) : tmp.multiplyScalar(m.scale));
-          // Followers keep off water too: pull the formation slot in toward the leader until it is dry.
-          if (i > 0 && def.motion !== 'wade' && WALK_FN && !WALK_FN(m.target.x, m.target.z)) {
-            for (const f of [0.6, 0.3, 0]) {
-              m.target.copy(c.leader).addScaledVector(tmp, f);
-              if (WALK_FN(m.target.x, m.target.z)) break;
-            }
-          }
-          m.target.y = groundY(m.target.x, m.target.z);
-          m.pos.lerp(m.target, k(i === 0 ? 30 : 2.5));
+          this.walkMember(c, m, dt);
+          if (m.climb) this.stepClimb(c, m, dt);
           if (def.motion === 'hop') {
-            const moving = m.prev.distanceTo(m.pos) / Math.max(1e-4, dt);
-            m.pos.y = groundY(m.pos.x, m.pos.z) + Math.abs(Math.sin(ph * 5)) * 0.15 * m.scale * Math.min(1, moving / 0.3);
+            const sp = m.w ? Math.hypot(m.w.vx, m.w.vz) : 0;
+            m.pos.y = groundY(m.pos.x, m.pos.z) + Math.abs(Math.sin(ph * 5)) * 0.15 * m.scale * Math.min(1, sp / 0.3);
           }
           break;
         }
@@ -2029,6 +2113,8 @@ export class Animals3D {
         s *= Math.max(0.001, e);
         if (c.leaving && c.timer > 0.8) leaveDone();
       }
+      // v11: walkers fade in where they appear and out where they leave (scale only — never a jump in position).
+      if (m.w) s *= Math.max(0.001, smooth(0, 1, m.w.fade));
       m.obj.scale.setScalar(s);
       m.obj.position.copy(m.pos);
       this.pose(c, m, i, dt, ph, flap, perched);
@@ -2036,29 +2122,769 @@ export class Animals3D {
     c.enter = Math.min(1, c.enter + dt * 0.6);
   }
 
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // v11 ground locomotion: routes on the walk map (flow field + line of sight), steering (seek / arrive, separation,
+  // prop avoidance), smoothed velocity, and hard but gentle constraints (props, water, fence, other animals).
+  // ---------------------------------------------------------------------------------------------------------------
+
+  private hash = new WalkerHash();
+  /** Per walk map and body size: everything reachable from the most open spot (the main walkable area, no pockets). */
+  private mainCache = new WeakMap<WalkNav, Map<string, Float64Array>>();
+  private mainReach(rad: number, wade: boolean): Float64Array | null {
+    const nav = NAV;
+    if (!nav) return null;
+    let m = this.mainCache.get(nav);
+    if (!m) this.mainCache.set(nav, (m = new Map()));
+    const key = `${rad.toFixed(4)}|${wade}`;
+    let f = m.get(key);
+    if (!f) {
+      let best = -1;
+      let bestC = -1;
+      const cl = wade ? nav.clearWade : nav.clearDry;
+      for (let k = 0; k < cl.length; k++) {
+        if (cl[k]! > bestC) {
+          bestC = cl[k]!;
+          best = k;
+        }
+      }
+      f = nav.field(best, rad, wade);
+      m.set(key, f);
+    }
+    return f;
+  }
+  /** Where walkers have been (island-unit cells → visit count), for picking fresh goals. */
+  private visits = new Map<number, number>();
+  private visitT = 0;
+  private visitsAt(x: number, z: number): number {
+    return this.visits.get(Math.floor(x / 2) * 4096 + Math.floor(z / 2)) ?? 0;
+  }
+  private noteVisits(list: Member[], dt: number): void {
+    this.visitT += dt;
+    if (this.visitT < 0.5) return;
+    this.visitT = 0;
+    for (const m of list) {
+      const k = Math.floor(m.pos.x / GK / 2) * 4096 + Math.floor(m.pos.z / GK / 2);
+      this.visits.set(k, (this.visits.get(k) ?? 0) + 1);
+    }
+    if (this.visits.size > 5000) this.visits.clear();
+  }
+  private nbuf: Member[] = [];
+  private obuf: number[] = [];
+
+  /** Walk map for ground animals (island units), built by the scene from land, water, fence and props. */
+  setNav(nav: WalkNav | null): void {
+    NAV = nav;
+  }
+
+  /** Top walking speed (m/s): body-length scaled, faster when running or leaving. */
+  private walkSpeed(c: Crew): number {
+    const def = c.def;
+    const len = this.dlen(def);
+    const big = (def.look.size ?? 1) > 1.8;
+    let speed = (def.motion === 'wade' ? 0.35 : def.motion === 'hop' ? 0.7 : big ? 0.9 : 0.75) * clamp(len / 0.8, 0.2, 1.6);
+    if (c.run || c.leaving) speed *= AGILE.has(def.id) ? 2.6 : 1.6;
+    return speed;
+  }
+
+  private walker(c: Crew, m: Member): Walker {
+    const len = this.dlen(c.def);
+    const w = (m.w ??= { vx: 0, vz: 0, fade: 1, fading: false, arrived: true, slotX: m.pos.x, slotZ: m.pos.z, best: Infinity, bestT: 0, blocked: 0, r: 0, core: 0, vmax: 0 });
+    // Body footprint: ~0.45 body length vs other animals (nose-to-tail spacing), ~0.3 vs rocks and bushes.
+    w.r = 0.45 * len * (m.jit ?? 1);
+    w.core = 0.3 * len * (m.jit ?? 1);
+    w.vmax = this.walkSpeed(c);
+    return w;
+  }
+
+  /** Planning clearance (island units) for a species. */
+  private planRad(def: AnimalDef): number {
+    return NAV ? NAV.planRad((0.3 * this.dlen(def)) / GK) : 0;
+  }
+
+  private clearAt(x: number, z: number, wade: boolean): number {
+    const nav = NAV;
+    if (!nav) return 1e9;
+    const c = nav.cellOf(x / GK, z / GK);
+    if (c < 0) return -1;
+    return wade ? nav.clearWade[c]! : nav.clearDry[c]!;
+  }
+
+  /** Cell centre r within `band` island units of the fence line. */
+  private nearFence(c: number, band: number): boolean {
+    const nav = NAV!;
+    const p = nav.centre(c);
+    return Math.hypot(p.x, p.z) > nav.limit(Math.atan2(p.z, p.x)) - band;
+  }
+
+  /** Would a body with core radius `core` (metres) at (x, z) be inside a prop? Returns the deepest penetration. */
+  private propDepth(x: number, z: number, core: number): number {
+    const nav = NAV;
+    if (!nav) return 0;
+    const K = GK;
+    let worst = 0;
+    for (const k of nav.near(x / K, z / K, core / K + 0.05, this.obuf)) {
+      const o = nav.obstacles[k]!;
+      const d = Math.hypot(x - o.x * K, z - o.z * K);
+      worst = Math.max(worst, o.r * K + core - d);
+    }
+    return worst;
+  }
+
+  /** New route for a ground crew: a goal anywhere reachable on the walkable land (or an exit by the fence). */
+  private planRoute(c: Crew, exit: boolean): void {
+    const nav = NAV;
+    const def = c.def;
+    const wade = def.motion === 'wade';
+    const K = GK;
+    const w = (c.walk ??= { nav: null, field: null, gx: 0, gz: 0, mode: 'walk', pause: 0, walkT: 0, plans: 0 });
+    w.nav = nav;
+    w.walkT = 0;
+    w.plans++;
+    w.mode = exit ? 'exit' : 'walk';
+    const len = this.dlen(def);
+    if (!nav) {
+      w.field = null;
+      const g = this.groundTarget(def);
+      w.gx = g.x;
+      w.gz = g.z;
+    } else {
+      const rad = this.planRad(def);
+      const lead = c.members.find((m) => !m.climb) ?? c.members[0]!;
+      let from = nav.nearestOk(nav.cellOf(lead.pos.x / K, lead.pos.z / K), rad, wade);
+      const main = this.mainReach(rad, wade)!;
+      // Leader in a pocket (map changed round it): plan over the main land; it walks out via the nearest free cell.
+      if (from < 0 || !Number.isFinite(main[from]!)) {
+        const k = nav.nearestOk(nav.cellOf(lead.pos.x / K, lead.pos.z / K), rad, wade, 60);
+        from = k >= 0 && Number.isFinite(main[k]!) ? k : nav.sample(main, this.rng);
+      }
+      const reach = from >= 0 ? nav.field(from, rad, wade) : null;
+      let goal = -1;
+      if (reach && exit) {
+        // Closest reachable spot by the fence (they walk out of sight there).
+        let bestD = Infinity;
+        for (let k = 0; k < 40; k++) {
+          const g = nav.sample(reach, this.rng, (cc) => this.nearFence(cc, 1.2));
+          if (g >= 0 && reach[g]! < bestD) {
+            bestD = reach[g]!;
+            goal = g;
+          }
+        }
+      } else if (reach) {
+        // Uniform over everything reachable (waders mostly pick the water's edge), at least a few steps away.
+        // Of a few uniform candidates, go where walkers have been least (so the whole land gets used over time).
+        const edge = wade && this.rng() < 0.75;
+        let bestScore = Infinity;
+        for (let k = 0, found = 0; k < 24 && found < 6; k++) {
+          const g = nav.sample(reach, this.rng, edge ? (cc) => nav.flags[cc] === WATER || nav.clearDry[cc]! < 0.6 : undefined);
+          if (g < 0 || (reach[g]! < Math.max(1.2, (len * 3) / K) && k < 18)) continue;
+          found++;
+          const p = nav.centre(g);
+          // Keep away from where other groups are heading or standing (no two herds on one spot).
+          let crowd = 0;
+          for (const o of this.crews) {
+            if (o === c || !o.walk || !GROUND.has(o.def.motion)) continue;
+            const d = Math.hypot(o.walk.gx / K - p.x, o.walk.gz / K - p.z);
+            const d2 = Math.hypot(o.leader.x / K - p.x, o.leader.z / K - p.z);
+            const room = (this.dlen(o.def) * Math.sqrt(o.members.length) * 2.5 + len * 2) / K + 1;
+            if (d < room) crowd += 6 * (1 - d / room);
+            if (d2 < room) crowd += 3 * (1 - d2 / room);
+          }
+          const score = this.visitsAt(p.x, p.z) + crowd * 4 + this.rng() * 2 + reach[g]! * 0.02;
+          if (score < bestScore) {
+            bestScore = score;
+            goal = g;
+          }
+        }
+      }
+      if (goal < 0) goal = from;
+      if (goal < 0) {
+        w.field = null;
+        w.gx = lead.pos.x;
+        w.gz = lead.pos.z;
+      } else {
+        w.field = nav.field(goal, rad, wade);
+        const gp = nav.centre(goal);
+        w.gx = gp.x * K;
+        w.gz = gp.z * K;
+      }
+    }
+    c.leaderTarget.set(w.gx, groundY(w.gx, w.gz), w.gz);
+    // Personal spots round the goal, a body length or so apart (a loose group), each on a reachable cell.
+    // Sunflower layout: nearest neighbours ~1.5 body lengths apart — outside each other's personal space.
+    const spacing = len * 1.7;
+    const a0 = this.rng() * Math.PI * 2;
+    c.members.forEach((m, i) => {
+      const mw = this.walker(c, m);
+      mw.arrived = false;
+      mw.best = Infinity;
+      mw.bestT = 0;
+      mw.blocked = 0;
+      let sx = w.gx;
+      let sz = w.gz;
+      if (i > 0) {
+        const a = a0 + i * 2.39996;
+        const rr = spacing * Math.sqrt(i) * (0.9 + this.rng() * 0.35);
+        sx += Math.cos(a) * rr;
+        sz += Math.sin(a) * rr;
+        if (nav && w.field) {
+          const ok = nav.nearestOk(nav.cellOf(sx / K, sz / K), this.planRad(def), wade, 10);
+          if (ok >= 0 && Number.isFinite(w.field[ok]!)) {
+            if (nav.cellOf(sx / K, sz / K) !== ok) {
+              const p = nav.centre(ok);
+              sx = p.x * K;
+              sz = p.z * K;
+            }
+          } else {
+            sx = w.gx;
+            sz = w.gz;
+          }
+        }
+      }
+      mw.slotX = sx;
+      mw.slotZ = sz;
+    });
+  }
+
+  /** The walk map was rebuilt (island grew, props rescaled): keep the goal, recompute its field. */
+  private refreshRoute(c: Crew): void {
+    const w = c.walk!;
+    const nav = NAV;
+    w.nav = nav;
+    if (!nav) return;
+    const wade = c.def.motion === 'wade';
+    const rad = this.planRad(c.def);
+    const g = nav.nearestOk(nav.cellOf(w.gx / GK, w.gz / GK), rad, wade, 6);
+    if (g < 0) {
+      this.planRoute(c, w.mode === 'exit');
+      return;
+    }
+    w.field = nav.field(g, rad, wade);
+  }
+
+  /** Crew-level route state: walk → pause (intentional idle) → next goal; leaving: walk to the fence, fade out. */
+  private routeCrew(c: Crew, dt: number): void {
+    // Arrived before the walk map existed (first frame after loading): place them properly while still invisible.
+    if (!c.placedNav && NAV) {
+      c.placedNav = true;
+      if (c.members.every((m) => (m.w?.fade ?? 0) < 0.3)) {
+        this.placeEntry(c);
+        this.planRoute(c, c.leaving);
+      }
+    }
+    if (!c.walk) this.planRoute(c, c.leaving);
+    const w = c.walk!;
+    if (w.nav !== NAV) this.refreshRoute(c);
+    if (c.leaving && w.mode !== 'exit') this.planRoute(c, true);
+    w.walkT += dt;
+    const ms = c.members;
+    if (w.mode === 'walk') {
+      const lead = ms.find((m) => !m.climb);
+      const all = ms.every((m) => m.climb || m.w?.arrived);
+      if (lead?.w?.arrived) w.pause = Math.min(w.pause, 0) - dt;
+      else w.pause = 0;
+      // Everyone there (or the leader waited ~6 s for stragglers, or a very long walk): stop for a while.
+      if (all || w.pause < -3 || w.walkT > 90 || w.stuck) {
+        w.mode = 'pause';
+        w.pause = w.stuck ? 1 + this.rng() : 2.5 + this.rng() * 4;
+        w.stuck = false;
+        c.run = false;
+      }
+    } else if (w.mode === 'pause') {
+      w.pause -= dt;
+      if (w.pause <= 0) {
+        c.run = AGILE.has(c.def.id) && this.rng() < 0.3;
+        this.planRoute(c, false);
+      }
+    } else {
+      // Leaving: fade out at the fence; anyone who cannot get there in time fades where it is.
+      if (w.walkT > 40) for (const m of ms) if (m.w) m.w.fading = true;
+      if (ms.every((m) => (m.w ? m.w.fading && m.w.fade <= 0 : true))) c.gone = true;
+    }
+    c.pause = w.mode === 'pause' ? w.pause : 0;
+    const lead = ms[0];
+    if (lead) c.leader.copy(lead.pos);
+  }
+
+  /** Put a newly arrived ground crew on free cells near the fence, none overlapping, fading in. */
+  private placeEntry(c: Crew): void {
+    const nav = NAV;
+    const def = c.def;
+    const wade = def.motion === 'wade';
+    const K = GK;
+    const len = this.dlen(def);
+    if (!nav) {
+      // No walk map yet (first frame): at least never on top of each other.
+      const e = c.members[0]!.pos.clone();
+      c.members.forEach((m, i) => {
+        this.walker(c, m).fade = 0;
+        const a = i * 2.39996;
+        const rr = len * 1.1 * Math.sqrt(i);
+        m.pos.set(e.x + Math.cos(a) * rr, 0, e.z + Math.sin(a) * rr);
+        m.pos.y = groundY(m.pos.x, m.pos.z);
+        m.prev.copy(m.pos);
+      });
+      return;
+    }
+    const rad = this.planRad(def);
+    const main = this.mainReach(rad, wade)!;
+    let entry = -1;
+    for (let tries = 0; tries < 1200 && entry < 0; tries++) {
+      const k = Math.floor(this.rng() * nav.flags.length);
+      if (Number.isFinite(main[k]!) && (this.nearFence(k, 1.5) || tries > 900)) entry = k;
+    }
+    if (entry < 0) entry = nav.nearestOk(nav.cellOf(nav.R * 0.5, 0), rad, wade, 200);
+    const e = entry >= 0 ? nav.centre(entry) : { x: 0, z: 0 };
+    const placed: { x: number; z: number; r: number }[] = [];
+    for (const cr of this.crews) for (const m of cr.members) if (m.w && m !== undefined && GROUND.has(cr.def.motion)) placed.push({ x: m.pos.x, z: m.pos.z, r: m.w.r });
+    c.members.forEach((m, i) => {
+      const w = this.walker(c, m);
+      w.fade = 0;
+      let px = e.x * K;
+      let pz = e.z * K;
+      for (let j = 0; j < 60; j++) {
+        const a = (i + j) * 2.39996;
+        const rr = j === 0 && i === 0 ? 0 : len * 1.0 * Math.sqrt(i + j);
+        const cell = nav.nearestOk(nav.cellOf((e.x * K + Math.cos(a) * rr) / K, (e.z * K + Math.sin(a) * rr) / K), rad, wade, 6);
+        if (cell < 0 || !Number.isFinite(main[cell]!)) continue;
+        const p = nav.centre(cell);
+        const x = p.x * K;
+        const z = p.z * K;
+        if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + w.r) || this.propDepth(x, z, w.core) > 0) continue;
+        px = x;
+        pz = z;
+        break;
+      }
+      m.pos.set(px, groundY(px, pz), pz);
+      m.prev.copy(m.pos);
+      placed.push({ x: px, z: pz, r: w.r });
+    });
+    c.leader.copy(c.members[0]!.pos);
+  }
+
+  private buildHash(): Member[] {
+    const list: Member[] = [];
+    let maxR = 0.05;
+    for (const c of this.crews) {
+      if (!GROUND.has(c.def.motion)) continue;
+      for (const m of c.members) {
+        if (!m.w || (m.climb && m.climb.stage !== 'go') || m.w.fade <= 0.02) continue;
+        list.push(m);
+        maxR = Math.max(maxR, m.w.r);
+      }
+    }
+    this.hash.reset(maxR * 2.6);
+    for (const m of list) this.hash.add(m);
+    return list;
+  }
+
+  /** One walker's step: pick where to head, steer there smoothly, then apply the constraints. */
+  private walkMember(c: Crew, m: Member, dt: number): void {
+    const def = c.def;
+    const nav = NAV;
+    const K = GK;
+    const wade = def.motion === 'wade';
+    const w = this.walker(c, m);
+    const len = this.dlen(def);
+    const vmax = w.vmax;
+    const cw = c.walk;
+    w.fade = w.fading ? Math.max(0, w.fade - dt * 1.25) : Math.min(1, w.fade + dt * 1.25);
+    // Cut off from the route for a while (a pocket closed round it): fade out, reappear by the leader, fade in.
+    if (w.relocate && w.fade <= 0 && nav) {
+      const lead = c.members.find((o) => o !== m && !o.climb) ?? m;
+      const rad0 = this.planRad(def);
+      const main = this.mainReach(rad0, wade)!;
+      // Prefer open ground (room to walk off), near the group; else anywhere open on the main land.
+      const open = (cell: number, extra: number) => (wade ? nav.clearWade : nav.clearDry)[cell]! >= rad0 + extra;
+      let done = false;
+      for (let pass = 0; pass < 3 && !done; pass++) {
+        const extra = pass === 2 ? 0 : (len / K) * (pass === 0 ? 1.5 : 0.8);
+        for (let j = 1; j < 60 && !done; j++) {
+          const a = j * 2.39996;
+          const rr = len * 1.2 * Math.sqrt(j) * (pass === 1 ? 2 : 1);
+          const cell = nav.nearestOk(nav.cellOf((lead.pos.x + Math.cos(a) * rr) / K, (lead.pos.z + Math.sin(a) * rr) / K), rad0, wade, 4);
+          if (cell < 0 || !Number.isFinite(main[cell]!) || !open(cell, extra)) continue;
+          const p = nav.centre(cell);
+          if (this.propDepth(p.x * K, p.z * K, w.core) > 0) continue;
+          if (this.hash.near(p.x * K, p.z * K, this.nbuf).some((o) => o !== m && o.w && Math.hypot(o.pos.x - p.x * K, o.pos.z - p.z * K) < o.w.r + w.r)) continue;
+          m.pos.set(p.x * K, groundY(p.x * K, p.z * K), p.z * K);
+          m.prev.copy(m.pos);
+          done = true;
+        }
+      }
+      w.ax = m.pos.x;
+      w.az = m.pos.z;
+      w.at = 0;
+      w.vx = w.vz = 0;
+      w.relocate = false;
+      w.fading = false;
+      w.lost = 0;
+      w.arrived = false;
+      w.best = Infinity;
+      w.bestT = 0;
+    }
+    const px = m.pos.x;
+    const pz = m.pos.z;
+    let tx = NaN;
+    let tz = NaN;
+    let final = false;
+    const rad = this.planRad(def);
+    if (m.climb) {
+      // Macaque heading for the trunk: straight to the foot of its climbing spot.
+      this.trunkWorld(m.climb.spot, -(this.tree!.trunkSpots[m.climb.spot]?.pos.y ?? 0) + 0.02, m.target, 0.01);
+      tx = m.target.x;
+      tz = m.target.z;
+      final = true;
+    } else if (cw && w.arrived && !w.fading && cw.mode === 'walk' && c.members.indexOf(m) > 0) {
+      // Stopped early (held up) while the group walks on: after a few seconds, catch up with the leader.
+      w.bestT += dt;
+      const lead = c.members[0]!;
+      if (w.bestT > 3 && Math.hypot(lead.pos.x - px, lead.pos.z - pz) > len * 4) {
+        const a = this.rng() * Math.PI * 2;
+        w.slotX = lead.pos.x + Math.cos(a) * len * 1.6;
+        w.slotZ = lead.pos.z + Math.sin(a) * len * 1.6;
+        w.arrived = false;
+        w.best = Infinity;
+        w.bestT = 0;
+      }
+    } else if (cw && !w.arrived && !w.fading) {
+      const dS = Math.hypot(w.slotX - px, w.slotZ - pz);
+      if (dS < Math.max(len * 0.5, 0.01)) {
+        w.arrived = true;
+        w.bestT = 0;
+        if (cw.mode === 'exit') w.fading = true;
+      } else {
+        let prog = dS;
+        if (!nav || !cw.field || (dS < len * 8 && nav.los(px / K, pz / K, w.slotX / K, w.slotZ / K, rad, wade))) {
+          tx = w.slotX;
+          tz = w.slotZ;
+          final = true;
+        } else {
+          const wp = nav.waypoint(cw.field, px / K, pz / K, rad, wade);
+          if (wp) {
+            tx = wp.x * K;
+            tz = wp.z * K;
+            prog = wp.d * K + Math.hypot(tx - px, tz - pz);
+          }
+        }
+        // No progress for a while (crowded slot, odd corner): stop here — an intentional idle until the next plan.
+        if (prog < w.best - len * 0.1) {
+          w.best = prog;
+          w.bestT = 0;
+        } else w.bestT += dt;
+        // Close to its spot but jostling with neighbours: that's close enough.
+        if (w.bestT > 4 && dS >= len * 2.5 && c.members.indexOf(m) > 0 && (w.blocked += 1) < 2) {
+          // A follower held up in a crowd: fall in beside the leader instead (keeps walking with the group).
+          const lead = c.members[0]!;
+          const a = this.rng() * Math.PI * 2;
+          w.slotX = lead.pos.x + Math.cos(a) * len * 1.6;
+          w.slotZ = lead.pos.z + Math.sin(a) * len * 1.6;
+          w.best = Infinity;
+          w.bestT = 0;
+        } else if (w.bestT > 4 || (w.bestT > 1.5 && dS < len * 2.5)) {
+          if (w.bestT > 4 && c.members.indexOf(m) === 0 && cw.mode === 'walk') cw.stuck = true;
+          w.bestT = -2;
+          w.arrived = true;
+          if (cw.mode === 'exit') w.fading = true;
+        }
+      }
+    }
+    // Standing somewhere it may not (map rebuilt under it, just climbed down): walk out to the nearest free cell.
+    const clr0 = this.clearAt(px, pz, wade);
+    if (nav && cw && cw.field && cw.mode !== 'exit' && !m.climb && !w.fading) {
+      const cell = nav.cellOf(px / K, pz / K);
+      const near = nav.nearestOk(cell, rad, wade, 8);
+      w.lost = near >= 0 && Number.isFinite(cw.field[near]!) ? 0 : (w.lost ?? 0) + dt;
+      if (w.lost > 6) {
+        w.relocate = true;
+        w.fading = true;
+      }
+      // Boxed in (thicket of props, wedged in a herd): no body length of headway in 20 s while the group wants to go
+      // somewhere, although it is far from its spot → same fade-out / reappear in the open.
+      if (w.ax === undefined || Math.hypot(px - w.ax, pz - (w.az ?? 0)) > len) {
+        w.ax = px;
+        w.az = pz;
+        w.at = 0;
+      } else if (cw.mode === 'walk' && Math.hypot(w.slotX - px, w.slotZ - pz) > len * 4) {
+        w.at = (w.at ?? 0) + dt;
+        if (w.at > 20) {
+          w.relocate = true;
+          w.fading = true;
+          w.at = 0;
+        }
+      }
+    }
+    const inTrunk = nav ? Math.hypot(px, pz) < (nav.trunkR + 0.6) * K + len : false;
+    if (nav && clr0 < NAV_CELL && !m.climb) {
+      const k = nav.nearestOk(nav.cellOf(px / K, pz / K), rad, wade, 30);
+      if (k >= 0) {
+        const p = nav.centre(k);
+        tx = p.x * K;
+        tz = p.z * K;
+        final = false;
+      }
+    }
+    // Desired velocity: seek the waypoint, arrive gently at the personal spot.
+    let dvx = 0;
+    let dvz = 0;
+    if (!Number.isNaN(tx)) {
+      const dx = tx - px;
+      const dz = tz - pz;
+      const d = Math.hypot(dx, dz);
+      if (d > 1e-6) {
+        let sp = vmax;
+        if (final) sp *= clamp(d / Math.max(len * 1.5, 1e-3), m.climb ? 0.12 : 0.2, 1);
+        dvx = (dx / d) * sp;
+        dvz = (dz / d) * sp;
+      }
+    }
+    // Separation from every walker nearby (spatial hash): loose groups, no bodies inside each other.
+    let sx = 0;
+    let sz = 0;
+    for (const o of this.hash.near(px, pz, this.nbuf)) {
+      if (o === m || !o.w) continue;
+      const rr = (w.r + o.w.r) * 1.2;
+      const dx = px - o.pos.x;
+      const dz = pz - o.pos.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= rr * rr) continue;
+      if (d2 < 1e-12) {
+        sx += this.rng() - 0.5;
+        sz += this.rng() - 0.5;
+        continue;
+      }
+      const d = Math.sqrt(d2);
+      const k = (1 - d / rr) ** 1.5;
+      sx += (dx / d) * k;
+      sz += (dz / d) * k;
+      // Make way: standing about while another walks straight at it → step aside, off its path.
+      const ov = Math.hypot(o.w.vx, o.w.vz);
+      if (ov > 0.3 * o.w.vmax && Math.hypot(w.vx, w.vz) < 0.3 * vmax && (o.w.vx * dx + o.w.vz * dz) > 0) {
+        const lat = (-o.w.vz * dx + o.w.vx * dz) / ov;
+        const side = lat >= 0 ? 1 : -1;
+        const yk = (1 - d / (rr * 1.3)) * 1.2;
+        if (yk > 0) {
+          sx += (-o.w.vz / ov) * side * yk;
+          sz += (o.w.vx / ov) * side * yk;
+        }
+      }
+    }
+    dvx += sx * vmax * 1.6;
+    dvz += sz * vmax * 1.6;
+    // Pass other animals ahead on one side (instead of pushing head-on into them).
+    {
+      const dsp = Math.hypot(dvx, dvz);
+      if (dsp > 1e-6) {
+        const fx = dvx / dsp;
+        const fz = dvz / dsp;
+        const look = len * 3;
+        let side = 0;
+        for (const o of this.nbuf) {
+          if (o === m || !o.w) continue;
+          const ox = o.pos.x - px;
+          const oz = o.pos.z - pz;
+          const along = ox * fx + oz * fz;
+          if (along <= 0 || along > look) continue;
+          const lat = -ox * fz + oz * fx;
+          const need = (w.r + o.w.r) * 1.1;
+          if (Math.abs(lat) >= need) continue;
+          const k = (1 - along / look) * (1 - Math.abs(lat) / need);
+          side += (lat > 0.02 * len ? -1 : 1) * k;
+        }
+        dvx += -fz * side * vmax * 1.2;
+        dvz += fx * side * vmax * 1.2;
+      }
+    }
+    // Rocks, bushes, tree ferns, buildings ahead: steer round them early (the route already goes round them).
+    if (nav) {
+      const dsp = Math.hypot(dvx, dvz);
+      const look = Math.max(len * 2.5, vmax * 1.2);
+      const fx = dsp > 1e-6 ? dvx / dsp : 0;
+      const fz = dsp > 1e-6 ? dvz / dsp : 0;
+      for (const k of nav.near(px / K, pz / K, (look + w.core) / K + 0.3, this.obuf)) {
+        const o = nav.obstacles[k]!;
+        const ox = o.x * K - px;
+        const oz = o.z * K - pz;
+        const orr = o.r * K + w.core * 1.25;
+        const d = Math.hypot(ox, oz);
+        if (d < orr && d > 1e-6) {
+          const push = (1 - d / orr) * vmax * 1.5;
+          dvx -= (ox / d) * push;
+          dvz -= (oz / d) * push;
+        }
+        if (dsp < 1e-6) continue;
+        const along = ox * fx + oz * fz;
+        const lat = ox * -fz + oz * fx;
+        if (along > 0 && along < look && Math.abs(lat) < orr) {
+          const side = lat >= 0 ? -1 : 1;
+          const push = (1 - along / look) * (1 - Math.abs(lat) / orr) * vmax * 1.2;
+          dvx += -fz * side * push;
+          dvz += fx * side * push;
+        }
+      }
+    }
+    // Smoothed velocity (limited acceleration → gradual starts, stops and turns).
+    const acc = vmax * 3 * dt;
+    let ax = dvx - w.vx;
+    let az = dvz - w.vz;
+    const al = Math.hypot(ax, az);
+    if (al > acc) {
+      ax *= acc / al;
+      az *= acc / al;
+    }
+    w.vx += ax;
+    w.vz += az;
+    // Bodies touching: drop the part of the velocity that heads into the other one (slide past, don't push through).
+    for (const o of this.nbuf) {
+      if (o === m || !o.w) continue;
+      const ox = o.pos.x - px;
+      const oz = o.pos.z - pz;
+      const d = Math.hypot(ox, oz);
+      if (d > (w.r + o.w.r) * 1.08 || d < 1e-9) continue;
+      const vn = (w.vx * ox + w.vz * oz) / d;
+      if (vn > 0) {
+        w.vx -= (vn * ox) / d;
+        w.vz -= (vn * oz) / d;
+      }
+    }
+    const vs = Math.hypot(w.vx, w.vz);
+    if (vs > vmax * 1.25) {
+      w.vx *= (vmax * 1.25) / vs;
+      w.vz *= (vmax * 1.25) / vs;
+    }
+    let nx = px + w.vx * dt;
+    let nz = pz + w.vz * dt;
+    // Hard constraint 1: never inside a prop. A body that was clear is kept on the surface (slides round it); one
+    // that started inside (map rebuilt) is eased out a little per frame.
+    if (nav) {
+      for (const k of nav.near(nx / K, nz / K, w.core / K + 0.05, this.obuf)) {
+        const o = nav.obstacles[k]!;
+        const ox = o.x * K;
+        const oz = o.z * K;
+        const rc = o.r * K + w.core;
+        let dx = nx - ox;
+        let dz = nz - oz;
+        let d = Math.hypot(dx, dz);
+        if (d >= rc) continue;
+        if (d < 1e-6) {
+          dx = px - ox || 1e-3;
+          dz = pz - oz;
+          d = Math.hypot(dx, dz);
+        }
+        const was = rc - Math.hypot(px - ox, pz - oz);
+        const pen = rc - d;
+        // Was clear: stop on the surface (slide round). Started inside: undo any inward step and ease out a bit more.
+        const vIn = Math.max(0, -(w.vx * dx + w.vz * dz) / d);
+        const push = was <= 1e-4 * len ? pen : Math.min(pen, (vIn + vmax * 0.6) * dt + 1e-5);
+        nx += (dx / d) * push;
+        nz += (dz / d) * push;
+        const vn = (w.vx * dx + w.vz * dz) / d;
+        if (vn < 0) {
+          w.vx -= (vn * dx) / d;
+          w.vz -= (vn * dz) / d;
+        }
+      }
+    }
+    // Hard constraint 2: water / hills / fence (waders may wade). Slide along the edge, or stay put.
+    if (nav && !(m.climb && inTrunk)) {
+      // Standing in the margin by an edge (map rebuilt, pushed by a neighbour): any move that stays off bad cells is
+      // fine. Standing inside a footprint (just climbed down the trunk): any move except onto water.
+      const ok = (x: number, z: number) => {
+        const cl = this.clearAt(x, z, wade);
+        if (cl >= NAV_CELL) return true;
+        if (clr0 >= NAV_CELL) return false;
+        if (clr0 > 0) return cl > 0;
+        const c = nav.cellOf(x / K, z / K);
+        return c >= 0 && (wade || nav.flags[c] !== WATER);
+      };
+      if (!ok(nx, nz)) {
+        if (ok(nx, pz)) {
+          nz = pz;
+          w.vz *= 0.3;
+        } else if (ok(px, nz)) {
+          nx = px;
+          w.vx *= 0.3;
+        } else {
+          nx = px;
+          nz = pz;
+          w.vx *= 0.3;
+          w.vz *= 0.3;
+        }
+      }
+    }
+    m.pos.set(nx, groundY(nx, nz), nz);
+  }
+
+  /** Push apart any two walkers whose bodies overlap (gently, a little per frame; never into props or water). */
+  private resolvePairs(list: Member[], dt: number): void {
+    const wadeOf = new Map<Member, boolean>();
+    for (const c of this.crews) if (c.def.motion === 'wade') for (const m of c.members) wadeOf.set(m, true);
+    for (let it = 0; it < 2; it++) {
+      for (const m of list) {
+        const w = m.w!;
+        for (const o of this.hash.near(m.pos.x, m.pos.z, this.nbuf)) {
+          if (o === m || !o.w || o.pos.x < m.pos.x || (o.pos.x === m.pos.x && o.pos.z <= m.pos.z)) continue;
+          const rr = w.r + o.w.r;
+          const dx = o.pos.x - m.pos.x;
+          const dz = o.pos.z - m.pos.z;
+          const d = Math.hypot(dx, dz);
+          if (d >= rr) continue;
+          const nxv = d > 1e-9 ? dx / d : 1;
+          const nzv = d > 1e-9 ? dz / d : 0;
+          const over = rr - d;
+          const moveOne = (a: Member, sgn: number, amount: number): number => {
+            const cap = Math.min(amount, a.w!.vmax * dt * 1.2 + 1e-5);
+            const x = a.pos.x + nxv * cap * sgn;
+            const z = a.pos.z + nzv * cap * sgn;
+            const wade = wadeOf.get(a) ?? false;
+            if (this.clearAt(x, z, wade) < Math.min(NAV_CELL, this.clearAt(a.pos.x, a.pos.z, wade))) return 0;
+            if (this.propDepth(x, z, a.w!.core) > Math.max(0, this.propDepth(a.pos.x, a.pos.z, a.w!.core)) + 1e-6) return 0;
+            a.pos.x = x;
+            a.pos.z = z;
+            a.pos.y = groundY(x, z);
+            return cap;
+          };
+          // The one standing still gives way more than the one walking.
+          const sm = Math.hypot(w.vx, w.vz) + 0.05 * w.vmax;
+          const so = Math.hypot(o.w.vx, o.w.vz) + 0.05 * o.w.vmax;
+          const got = moveOne(m, -1, (over * so) / (sm + so));
+          moveOne(o, 1, over - got);
+        }
+      }
+    }
+  }
+
+  /** Walk map + prop footprints (metres) for checks and heatmaps. */
+  navInfo(): { n: number; cell: number; half: number; K: number; R: number; propK: number; walk: string; obstacles: { x: number; z: number; r: number; kind: string }[] } | null {
+    const nav = NAV;
+    if (!nav) return null;
+    let walk = '';
+    for (let k = 0; k < nav.flags.length; k++) walk += nav.clearDry[k]! >= NAV_CELL ? '1' : nav.flags[k] === WATER ? 'w' : nav.flags[k] === BLOCK ? '0' : '0';
+    return { n: nav.n, cell: nav.cell, half: nav.half, K: GK, R: nav.R, propK: nav.propK, walk, obstacles: nav.obstacles.map((o) => ({ x: o.x * GK, z: o.z * GK, r: o.r * GK, kind: o.kind ?? '' })) };
+  }
+
   /** Macaque climbing the trunk: walk to the base, climb up, look around, climb down. */
   private stepClimb(c: Crew, m: Member, dt: number): void {
     const cl = m.climb!;
     const tree = this.tree!;
     const s = tree.trunkSpots[cl.spot];
-    if (!s || c.leaving) {
+    if (!s || (c.leaving && cl.stage === 'go')) {
       m.climb = null;
       return;
     }
+    // Leaving while up the trunk: climb down first (no drop to the ground).
+    if (c.leaving && (cl.stage === 'up' || cl.stage === 'hold')) cl.stage = 'down';
     const groundLift = -s.pos.y + 0.02;
     if (cl.stage === 'go') {
-      this.trunkWorld(cl.spot, groundLift, m.target, m.scale * 0.35);
-      m.target.y = groundY(m.target.x, m.target.z);
-      tmp.subVectors(m.target, m.pos).setY(0);
-      const d = tmp.length();
-      const v = 0.9 * m.scale;
-      if (d > 0.05) m.pos.addScaledVector(tmp.normalize(), Math.min(d, v * dt));
-      m.pos.y = groundY(m.pos.x, m.pos.z);
+      // v11: walkMember steers to the foot of the trunk; start climbing only once right there (no snap), give up if
+      // it takes too long.
+      this.trunkWorld(cl.spot, groundLift, m.target, 0.01);
+      const d = Math.hypot(m.target.x - m.pos.x, m.target.z - m.pos.z);
       cl.t += dt;
-      if (d <= 0.06 || cl.t > 12) {
+      if (d <= Math.max(0.004, this.dlen(c.def) * 0.03)) {
         cl.stage = 'up';
         cl.lift = groundLift;
-      }
+      } else if (cl.t > 14) m.climb = null;
       return;
     }
     const v = 0.55 * m.scale;
@@ -2074,8 +2900,8 @@ export class Animals3D {
     } else {
       cl.lift = Math.max(groundLift, cl.lift - v * dt);
       if (cl.lift <= groundLift) {
-        this.trunkWorld(cl.spot, groundLift, m.pos, m.scale * 0.35);
-        m.pos.y = groundY(m.pos.x, m.pos.z);
+        // Back on the ground at the foot of the trunk; walkMember eases it out of the trunk's footprint.
+        this.trunkWorld(cl.spot, groundLift, m.pos, 0.01);
         m.climb = null;
         m.act = 'none';
         m.actT = 4 + this.rng() * 4;
@@ -2109,7 +2935,7 @@ export class Animals3D {
         sq.where = 'ground';
         this.trunkWorld(m.perch, groundLift, sq.home, m.scale * 0.3);
         sq.home.y = groundY(sq.home.x, sq.home.z);
-        m.pos.copy(sq.home);
+        // v11: no snap — it hops off from where it is on the trunk foot.
         const out = this.trunkOut(m.perch);
         const a = Math.atan2(out.z, out.x) + (this.rng() - 0.5) * 1.6;
         const r = 0.8 + this.rng() * 1.5;
@@ -2334,9 +3160,10 @@ export class Animals3D {
   private poseGround(c: Crew, m: Member, i: number, dt: number, ph: number, vel: THREE.Vector3, toward: (d: THREE.Vector3, rate?: number) => number | undefined): void {
     const def = c.def;
     const r = m.rig;
-    const localSpeed = m.moving / Math.max(0.05, m.scale);
+    const localSpeed = (m.w ? Math.min(m.moving, Math.hypot(m.w.vx, m.w.vz) * 1.1) : m.moving) / Math.max(0.05, m.scale);
     const walking = localSpeed > 0.08;
-    if (walking) toward(vel.clone().setY(0), 5);
+    // v11: face the steering velocity (not the per-frame displacement, which includes small separation nudges).
+    if (walking) toward(m.w && Math.hypot(m.w.vx, m.w.vz) > 1e-4 ? headV.set(m.w.vx, 0, m.w.vz) : vel.clone().setY(0), 5);
     else if (i > 0) toward(tmp2.subVectors(c.members[0]!.pos, m.pos).setY(0), 1.5);
     m.obj.quaternion.identity();
     m.obj.rotation.set(0, m.yaw, 0);

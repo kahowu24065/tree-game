@@ -17,6 +17,15 @@ export interface Island {
   setExtended(on: boolean): void;
   /** v10: current prop scale (bridge) and density bucket (rebuilds rocks / grass / flowers / bushes when it changes). */
   setProps(propK: number, bucket: number): void;
+  /** v11: solid garden props (rocks, bushes) for walkers: centre (island units) + radius at prop scale 1. */
+  obstacles(): GardenObstacle[];
+}
+
+export interface GardenObstacle {
+  x: number;
+  z: number;
+  r: number;
+  kind: string;
 }
 
 function islandRadius(angle: number): number {
@@ -284,6 +293,9 @@ export function buildIsland(): Island {
       bridge.scale.set(Math.max(propK, 0.8), propK, propK);
       if (bucket !== propBucketNow) buildProps(bucket);
     },
+    obstacles() {
+      return (props?.userData.obstacles as GardenObstacle[] | undefined) ?? [];
+    },
     setExtended(on: boolean) {
       rimMesh.visible = !on;
       underMesh.visible = !on;
@@ -334,7 +346,10 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     i++;
   }
   const rockGeos: THREE.BufferGeometry[] = [];
+  const obstacles: GardenObstacle[] = [];
+  out.userData.obstacles = obstacles;
   rockSpots.forEach(([x, z, s], i) => {
+    obstacles.push({ x, z, r: s * 1.0, kind: 'rock' });
     const g = new THREE.DodecahedronGeometry(s, 0);
     jitterGeometry(g, s * 0.35, i * 3.1, false);
     g.scale(1, 0.7, 1);
@@ -423,6 +438,7 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     const z = Math.sin(a) * r;
     if (wet(x, z, 0.5)) continue;
     const s = 0.35 + rand() * 0.35;
+    obstacles.push({ x, z, r: s * 1.0, kind: 'bush' });
     const g = new THREE.IcosahedronGeometry(s, pk < 0.7 ? 0 : 1);
     jitterGeometry(g, s * 0.3, i, true);
     g.scale(1, 0.75, 1);

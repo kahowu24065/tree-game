@@ -16,8 +16,26 @@ import { anchorGeometry, asProp, propDensity } from './propScale';
  * still water, two instanced meshes (grass, flowers) and a handful of fog sprites.
  */
 
+/** v11: solid footprint (island units); see Builder.obs. */
+export interface HabitatObstacle {
+  ax: number;
+  az: number;
+  dx: number;
+  dz: number;
+  r: number;
+  scaled: boolean;
+  kind: string;
+}
+
+/** Obstacles at a live prop scale → plain discs (island units). */
+export function resolveObstacles(list: HabitatObstacle[], propK: number): { x: number; z: number; r: number; kind: string }[] {
+  return list.map((o) => (o.scaled ? { x: o.ax + o.dx * propK, z: o.az + o.dz * propK, r: o.r * propK, kind: o.kind } : { x: o.ax, z: o.az, r: o.r, kind: o.kind }));
+}
+
 export interface Habitat {
   group: THREE.Group;
+  /** v11: footprints of solid scenery (rocks, bushes, tree ferns, small trees, buildings…). */
+  obstacles: HabitatObstacle[];
   radius: number;
   /** Ground height of the habitat land (island units). */
   groundAt(x: number, z: number): number;
@@ -110,6 +128,16 @@ class Builder {
   pools: { x: number; z: number; rx: number; rz: number; rot: number }[] = [];
   /** Big solids that the fence and walkers must avoid. */
   blocks: Spot[] = [];
+  /**
+   * v11: solid footprints walkers must go around (island units). Props scale about their anchor with the live prop
+   * factor: world = anchor + offset × propK, radius × propK; buildings etc. are fixed.
+   */
+  obs: HabitatObstacle[] = [];
+  ob(x: number, z: number, r: number, kind: string): void {
+    const a = this.anchor;
+    if (a) this.obs.push({ ax: a.x, az: a.z, dx: x - a.x, dz: z - a.z, r, scaled: true, kind });
+    else this.obs.push({ ax: x, az: z, dx: 0, dz: 0, r, scaled: false, kind });
+  }
   tufts: { x: number; z: number; s: number; c: THREE.Color }[] = [];
   flowers: { x: number; z: number; s: number; c: THREE.Color }[] = [];
   fog: { x: number; y: number; z: number; s: number }[] = [];
@@ -187,6 +215,7 @@ class Builder {
 
   rock(x: number, z: number, s: number, tint = '#9b958c', snow = false): void {
     if (!this.anchor) return this.prop(x, z, () => this.rock(x, z, s, tint, snow));
+    this.ob(x, z, s * 1.0, 'rock');
     const g = new THREE.DodecahedronGeometry(s, 0);
     jitterGeometry(g, s * 0.35, x * 3.1 + z, false);
     g.scale(1, 0.72, 1);
@@ -200,6 +229,7 @@ class Builder {
   bush(x: number, z: number, s: number, hex: string): void {
     if (!this.anchor) return this.prop(x, z, () => this.bush(x, z, s, hex));
     // Small (animal-scale) bushes don't need the extra facets.
+    this.ob(x, z, s * 1.0, 'bush');
     const g = new THREE.IcosahedronGeometry(s, this.pk < 0.7 ? 0 : 1);
     jitterGeometry(g, s * 0.3, x + z * 2, true);
     g.scale(1, 0.75, 1);
@@ -397,6 +427,7 @@ class Builder {
   treeFern(x: number, z: number, h: number): void {
     if (!this.anchor) return this.prop(x, z, () => this.treeFern(x, z, h));
     const y = this.groundY(x, z);
+    this.ob(x + 0.02, z, 0.16, 'treefern');
     this.push(limb(new THREE.Vector3(x, y, z), new THREE.Vector3(x + 0.05, y + h, z), 0.09, 0.07, 5), col('#5a4232'));
     for (let i = 0; i < 9; i++) {
       const g = ellipsoid(h * 0.42, 0.03, h * 0.09, 0);
@@ -413,6 +444,9 @@ class Builder {
     if (!this.anchor) return this.prop(x, z, () => this.miniTree(x, z, h));
     const y = this.groundY(x, z);
     const b = new THREE.Vector3(x, y, z);
+    // Footprint: the trunk, or the low skirt of conifer-like forms.
+    const foot: Partial<Record<TreeForm, number>> = { banyan: 0.26, narrowCone: 0.2, drooping: 0.26, cone: 0.26, column: 0.13 };
+    this.ob(x, z, Math.max(0.1, h * (foot[this.form] ?? 0.08)), 'minitree');
     const leaf = (hex: string) => col(hex).offsetHSL((this.rand() - 0.5) * 0.02, 0, (this.rand() - 0.5) * 0.07);
     const blob = (cx: number, cy: number, cz: number, r: number, c: THREE.Color, sq = 0.85) => {
       const g = new THREE.IcosahedronGeometry(r, this.pk < 0.7 ? 0 : 1);
@@ -478,6 +512,7 @@ class Builder {
 
   stoneWall(cx: number, cz: number, len: number, rot: number): void {
     const n = Math.round(len / 0.34);
+    for (let t = -len / 2 + 0.18; t <= len / 2 - 0.1; t += 0.3) this.ob(cx + Math.cos(rot) * t, cz - Math.sin(rot) * t, 0.22, 'wall');
     for (let i = 0; i < n; i++) {
       for (let row = 0; row < 2; row++) {
         const t = (i + (row ? 0.5 : 0)) * 0.34 - len / 2;
@@ -494,6 +529,7 @@ class Builder {
 
   house(x: number, z: number, rot: number, s = 1): void {
     const y = this.groundY(x, z);
+    for (const k of [-0.35, 0, 0.35]) this.ob(x + Math.cos(rot) * k * s, z - Math.sin(rot) * k * s, 0.62 * s, 'house');
     const body = new THREE.BoxGeometry(1.4 * s, 0.8 * s, 1.0 * s);
     body.rotateY(rot);
     body.translate(x, y + 0.4 * s, z);
@@ -513,6 +549,7 @@ class Builder {
 
   shrine(x: number, z: number): void {
     const y = this.groundY(x, z);
+    this.ob(x, z, 0.36, 'shrine');
     const b = new THREE.BoxGeometry(0.45, 0.45, 0.35);
     b.translate(x, y + 0.22, z);
     this.push(b, col('#c43a2a'));
@@ -527,6 +564,7 @@ class Builder {
 
   lantern(x: number, z: number): void {
     const y = this.groundY(x, z);
+    this.ob(x, z, 0.26, 'lantern');
     const parts: [THREE.BufferGeometry, number][] = [
       [new THREE.CylinderGeometry(0.18, 0.22, 0.12, 6), 0.06],
       [new THREE.CylinderGeometry(0.07, 0.08, 0.45, 6), 0.34],
@@ -547,6 +585,7 @@ class Builder {
     for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       const p = new THREE.CylinderGeometry(0.06 * s, 0.07 * s, 1.1 * s, 6);
       p.translate(x + dx! * 0.6 * s, y + 0.55 * s, z + dz! * 0.6 * s);
+      this.ob(x + dx! * 0.6 * s, z + dz! * 0.6 * s, 0.12 * s, 'post');
       this.push(p, col('#b8322a'));
     }
     const roof = new THREE.ConeGeometry(1.15 * s, 0.55 * s, 4, 1);
@@ -563,6 +602,17 @@ class Builder {
   }
 
   platform(x: number, z: number, w: number, d: number, h: number, rot: number): void {
+    // Walkers stay off raised paving: cover the box with discs.
+    const nx = Math.max(1, Math.round(w / 1.0));
+    const nz = Math.max(1, Math.round(d / 1.0));
+    const rr = Math.hypot(w / nx, d / nz) / 2 + 0.05;
+    for (let i = 0; i < nx; i++) {
+      for (let j = 0; j < nz; j++) {
+        const lx = (i + 0.5) * (w / nx) - w / 2;
+        const lz = (j + 0.5) * (d / nz) - d / 2;
+        this.ob(x + lx * Math.cos(rot) + lz * Math.sin(rot), z - lx * Math.sin(rot) + lz * Math.cos(rot), rr, 'platform');
+      }
+    }
     const g = new THREE.BoxGeometry(w, h, d);
     g.rotateY(rot);
     g.translate(x, this.groundY(x, z) + h / 2 - 0.05, z);
@@ -884,6 +934,7 @@ export function buildHabitat(species: SpeciesId, stage: number, quality: 'low' |
     stage: s4,
     groundAt: (x: number, z: number) => b.groundY(x, z),
     isWater: (x: number, z: number, pad = 0) => b.isWater(x, z, pad),
+    obstacles: b.obs,
     isBlocked: (x: number, z: number) => b.blocks.some((k) => Math.hypot(k.x - x, k.z - z) < k.r),
     ground: groundMeshes,
     update(t: number) {
@@ -1119,6 +1170,7 @@ function buildFeature(b: Builder, f: Feature, band: number): void {
         g.rotateY(-a);
         g.translate(x, b.groundY(x, z) + h / 2 - 0.03, z);
         b.push(g, col('#b8b0a0').offsetHSL(0, 0, (i % 2) * 0.03));
+        for (const k of [-0.4, 0, 0.4]) b.ob(x - Math.sin(a) * k, z + Math.cos(a) * k, 0.24, 'steps');
         b.keep.push({ x, z, r: 0.7 });
       }
       break;

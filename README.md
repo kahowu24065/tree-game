@@ -103,6 +103,15 @@
 
 關閉：`VITE_DEV_PANEL=0 npm run build`（或者喺 `.env.production` 寫 `VITE_DEV_PANEL=0`）。關閉時面板程式碼唔會打包入成品。
 
+## v11：地上動物行得自然、用晒成個島、唔會重疊或者穿過石頭樹叢
+
+- **原因**：v10 嘅漫遊範圍只係內圈（約圍欄一半）、目標只揀鏡頭嗰邊；下一步濕咗就即刻停低重揀目標，搵唔到直線乾路就每格重揀（原地抖）；跟隨者追住按領頭方向轉嘅隊形位，領頭一轉身就衝過其他動物，水邊縮隊形又會跳位；爬樹開始／完結、松鼠返屋企都會瞬移；動物之間同道具完全冇碰撞。
+- **行走地圖**（`src/three/walkNav.ts`）：0.25 單位一格，分乾地／水／阻擋（圍欄外、山丘、樹幹、石頭、樹叢、樹蕨、細樹、石牆、屋、神社、燈籠、亭柱、平台、石級；草同花照行得過）。道具腳印喺 `habitat3d` 同花園度記錄，半徑跟道具系數縮放。兩個淨空距離場（行路／涉水）令大隻動物身體唔會貼住障礙或者水邊；Dijkstra 流場帶路繞過水同障礙，行向睇得到嘅最遠路點，所以唔會卡住。
+- **漫遊目標**：喺圍欄內所有行得到嘅乾地均勻抽樣，再按「少去過」嘅地方同避開其他群體加權；涉水鳥偏向水邊；離開時行去最近嘅圍欄邊淡出。
+- **移動**：seek + arrive 轉向、加速度限制、步態跟速度；永遠唔會瞬移（出生、搬位都用淡入淡出）；停低只係有意嘅休息（2.5–6.5 秒）。
+- **碰撞**：空間雜湊做動物之間分隔（半徑按身長×動物系數），企定嘅會讓路；道具用精確圓形硬限制，行路前面預先閃避，唔會穿過。
+- **量度**（`scripts/v11-tracks.mjs` 記錄每 0.05 秒位置，`scripts/v11-analyze.mjs` 計瞬移、停滯、重疊、穿道具、覆蓋率同熱圖；`scripts/v11-shots.mjs` 截圖同現場檢查）：瞬移 0、重疊同穿道具約 0，覆蓋率大約係 v10 嘅兩至三倍。輸出去 `/workspace/tree-game-shots/v11/`。
+
 ## v10：跟拍單一隻鳥、跟拍時轉鏡、「新」即時消失、細道具跟動物同比例、更多水
 
 - **追拍單一隻**：跟拍一群飛緊嘅鳥／昆蟲時，隨機揀其中一隻，鏡頭貼住佢後面偏側飛（追拍鏡），每格跟住佢移動所以唔會甩出畫面，轉向時鏡頭順滑咁兜過去；會避開樹幹同樹冠（試幾個角度，唔得就拉近）。如果嗰隻鑽咗入樹冠睇唔到，約 1.4 秒後自動轉跟同群另一隻（飛緊嘅優先）；隻身一隻就鏡頭升高由上面望落去。
@@ -178,6 +187,7 @@ npm run preview
 - `node scripts/v5-shots.mjs`：樹種揀選、九個樹種、生長階段、颱風搖擺影片（mp4）、酷熱眩光、動物群組同圖鑑，輸出去 `/workspace/tree-game-shots/v5/`。
 - `node scripts/v6-shots.mjs`：島嶼五個階段（水杉、雪松、杏仁桉）、九樹種巨樹原生地、樹冠健康對比、酷熱柔光前後、動物特寫同動物影片（mp4）、動物上限，輸出去 `/workspace/tree-game-shots/v6/`（可以用 `ONLY=islands,grid,canopy,heat,animals,video,caps` 揀部分）。
 - `node scripts/v8-shots.mjs`：v8 檢查（樹頂 = G、圍欄離邊、同一動物系數、行地動物喺欄內同唔落水、飛鳥 ≤ 樹高 + 5 米、樹種目標、舊存檔轉換、冇 console 錯誤）同截圖，輸出去 `/workspace/tree-game-shots/v8/`（`ONLY=audit,fence,animals,lineup,flyers,water,rail,migrate`）。
+- `node scripts/v11-tracks.mjs`（`BASE_URL`、`TAG`、`SIM`）＋ `node scripts/v11-analyze.mjs before.json after.json 輸出目錄`：地上動物軌跡量度同覆蓋熱圖；`node scripts/v11-shots.mjs`：繞石頭、牛群唔重疊截圖同現場檢查，輸出去 `/workspace/tree-game-shots/v11/`。
 - `node scripts/v10-shots.mjs`：v10 追拍鏡、跟拍轉鏡、「新」消失、細道具比例（同 v9 對比）、更多水同 v8／v9 保證，輸出去 `/workspace/tree-game-shots/v10/`。
 - `node scripts/v9-shots.mjs`：v9 動物提示（全景標記、撳標記跟拍、到訪通知、動物清單、鳥群軌跡同昆蟲閃光）同 v8 保證，輸出去 `/workspace/tree-game-shots/v9/`。
 - `node scripts/weather-check.mjs`、`node scripts/forecast-check.mjs`：真實天氣同預報卡。
