@@ -3256,3 +3256,12 @@ body.cold #scene {
 .emerg-act.cold {
   background: linear-gradient(135deg, #86b8ea, #3a6db0);
 }
+
+/* v16: while a collapse / death plays, the note cards fade out of the way (the tree is the show). */
+.note-slot {
+  transition: opacity 0.35s ease;
+}
+body.tree-fx .note-slot {
+  opacity: 0;
+  pointer-events: none;
+}

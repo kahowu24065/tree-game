@@ -17,7 +17,11 @@ import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data
 import {
   advanceVirtualDay,
   applyWarningWater,
+  brokenTop,
   catchUp,
+  DYING_MS,
+  fallenLogDay,
+  resolveDyingExpiry,
   checkWaterDeath,
   previewNight,
   checkRescue,
@@ -58,6 +62,7 @@ import {
   togglePreview,
   updateModal,
   setAlbumMode,
+  setUiClock,
   type Pick,
   type View,
 } from './ui';
@@ -151,6 +156,22 @@ function today(): string {
   const real = realToday();
   if (state.virtualToday && daysBetween(real, state.virtualToday) > 0) return state.virtualToday;
   return real;
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * v16 game clock: the wall clock, moved ahead by the developer's virtual days — so a day skip also moves the 瀕死
+ * countdown and a tree can die during skips.
+ */
+function virtualNow(): number {
+  return Date.now() + Math.max(0, daysBetween(realToday(), today())) * DAY_MS;
+}
+setUiClock(virtualNow);
+
+/** How far into today (local clock) it is, for settling each missed night at the end of its own day. */
+function msIntoToday(): number {
+  return clockMinutes(timezone) * 60000 + (Date.now() % 60000);
 }
 
 function reconcileClock(): void {
@@ -305,6 +326,12 @@ function sceneInput(): SceneInput {
     landmark: Boolean(meta.landmark) && state.legacyBonus > 0,
     starry: meta.starry,
     mulch: mulchLaid(state, today()),
+    brokenTop: brokenTop(state),
+    fallenLog: fallenLogDay(state, today()),
+    collapseKey: state.lastCollapse ? `${state.lastCollapse.date}|${state.lastCollapse.heightBefore}` : '',
+    dying: Boolean(state.dying) && !state.over,
+    dead: state.over?.kind === 'dead',
+    deathPending: state.over?.kind === 'dead' && state.over.fallSeen === false,
   };
 }
 
@@ -384,7 +411,63 @@ function handleOver(): boolean {
   }
   const lines = [...bookMilestones(meta, state), ...bookGameEnd(meta, state)];
   persist();
-  if (state.started) openModal(overModal(state, meta, lines));
+  if (!state.started) return true;
+  const open = () => {
+    if (state.over) openModal(overModal(state, meta, lines));
+  };
+  // v16: the first time a death is seen it plays (leaves drop, the tree falls; or the fatal third collapse) and the
+  // result card follows ~2.5 s later. Afterwards the tree just lies there as the fallen log.
+  if (state.over.fallSeen === false) {
+    state.over.fallSeen = true;
+    const lc = state.lastCollapse;
+    const fatal = lc && lc.fatal && !lc.seen ? lc : null;
+    if (lc) lc.seen = true;
+    persist();
+    closeModal();
+    if (!playFall(fatal, open)) open();
+  } else open();
+  return true;
+}
+
+/** v16: death (or fatal collapse) animation; `done` runs when the result card may open. False = nothing played. */
+function playFall(fatal: GameState['lastCollapse'], done: () => void): boolean {
+  if (scene3d) {
+    const ok = fatal
+      ? scene3d.playCollapse({ heightBefore: fatal.heightBefore, stageBefore: stageOf(fatal.heightBefore), healthBefore: healthBeforeOn(fatal.date), fatal: true, reduced: reducedMotion }, done)
+      : scene3d.playDeath(reducedMotion, done);
+    return ok;
+  }
+  scene2d?.playFall(reducedMotion);
+  window.setTimeout(done, reducedMotion ? 600 : 1800);
+  return true;
+}
+
+function stageOf(cm: number): number {
+  return stageIndexFor(cm, speciesTargetCm(state.species));
+}
+
+function healthBeforeOn(date: string): number {
+  const s = state.lastSettlement;
+  return s && s.date === date ? s.hBefore : Math.max(30, state.health);
+}
+
+/**
+ * v16: a collapse not seen yet plays once (the latest, if several nights were caught up — the rest get a line);
+ * `after` runs when it is over (the morning card / modals wait for it). Returns false when none is pending.
+ */
+function playPendingCollapse(report: CatchupReport | null, after: () => void): boolean {
+  const lc = state.lastCollapse;
+  if (!lc || lc.seen || lc.fatal || state.over || !state.started) return false;
+  lc.seen = true;
+  persist();
+  const count = report ? report.settlements.filter((s) => s.collapse).length : 1;
+  if (count > 1) toast(`你唔喺度嗰陣棵樹倒塌咗 ${count} 次，而家重播最近一次。`);
+  const healthBefore = report?.settlements.find((s) => s.date === lc.date)?.hBefore ?? healthBeforeOn(lc.date);
+  if (scene3d) {
+    return scene3d.playCollapse({ heightBefore: lc.heightBefore, stageBefore: stageOf(lc.heightBefore), healthBefore, fatal: false, reduced: reducedMotion }, after);
+  }
+  scene2d?.playCollapse(reducedMotion);
+  window.setTimeout(after, reducedMotion ? 500 : 1400);
   return true;
 }
 
@@ -399,22 +482,42 @@ function maybeExplainWind(): boolean {
 function showReport(report: CatchupReport): void {
   persist();
   render();
-  if (handleOver()) return;
-  if (report.messages.length) {
-    const message = report.messages.join(' ');
-    if (!state.started) pendingNote = message;
-    else openModal(stormModal(message));
+  if (state.over) {
+    handleOver();
+    return;
   }
-  maybeExplainWind();
-  const names = report.animals.map(animalName);
-  if (names.length) toast(`${names.join('、')}嚟咗。`);
+  const rest = () => {
+    if (handleOver()) return;
+    if (report.messages.length) {
+      const message = report.messages.join(' ');
+      if (!state.started) pendingNote = message;
+      else openModal(stormModal(message));
+    }
+    maybeExplainWind();
+    const names = report.animals.map(animalName);
+    if (names.length) toast(`${names.join('、')}嚟咗。`);
+  };
+  // v16: a fresh collapse plays first; the night's card and any other modal wait until it is over.
+  if (!playPendingCollapse(report, rest)) rest();
 }
 
 function runCatchup(): void {
   reconcileClock();
-  const report = catchUp(state, today(), eventsFor, meta, Date.now());
+  const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
   showReport(report);
   syncWarningWater();
+  checkDyingExpiry();
+}
+
+/** v16: 瀕死 ends the moment its 24 hours are up (not at the next nightly settlement). */
+function checkDyingExpiry(): void {
+  if (!state.dying || state.over || virtualNow() - state.dying.at < DYING_MS) return;
+  const res = resolveDyingExpiry(state, today(), meta, virtualNow(), clockOf(Date.now()));
+  if (!res) return;
+  persist();
+  render();
+  if (res === 'revived') toast('免死金牌救返棵樹！');
+  if (state.over) handleOver();
 }
 
 /**
@@ -426,7 +529,7 @@ function syncWarningWater(): boolean {
   // Real weather: only what was actually seen today (HKO warnings / live detection), not forecast guesses — those
   // still count at the nightly settlement (and already show in 今晚預計). Manual developer weather counts at once.
   const seen = manual() ? todayEvents() : (state.dayEvents[today()]?.events ?? []);
-  const hits = applyWarningWater(state, today(), seen, meta, Date.now());
+  const hits = applyWarningWater(state, today(), seen, meta, virtualNow());
   if (!hits.length) return false;
   const last = hits[hits.length - 1]!;
   flashWater(last.delta >= 0 ? 'up' : 'down');
@@ -462,7 +565,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     if (got.length) toast(`${got.map(animalName).join('、')}嚟咗。`);
   }
   if (today() !== before) {
-    const report = catchUp(state, today(), eventsFor, meta, Date.now());
+    const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
     showReport(report);
     syncWarningWater();
     return;
@@ -893,6 +996,14 @@ export interface DevApi {
   triggerPest: () => void;
   /** v13: 倒塌 count and the 青年樹 wind unlock. */
   setCollapses: (n: number) => void;
+  /** v16: settle a 八號風球 night with R 0 (a real collapse; `fatal` = the third one), then play it. */
+  triggerCollapse: (fatal: boolean) => void;
+  /** v16: play the latest collapse again. */
+  replayCollapse: () => void;
+  /** v16: 瀕死 now (24-hour countdown starts). */
+  triggerDying: () => void;
+  /** v16: 瀕死 that has just run out → dies (or 免死金牌) with the death animation. */
+  triggerDeath: () => void;
   setWindUnlocked: (on: boolean) => void;
   /** Grow the tree to the start of a stage (0-4); reaching 青年樹 unlocks wind the normal way. */
   setStageHeight: (stage: number) => void;
@@ -930,14 +1041,14 @@ if (DEV_PANEL) {
     countdown,
     advanceDay: () => {
       if (state.over) return;
-      const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now());
+      const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow());
       showReport(report);
       syncWarningWater();
     },
     advanceDays: (n) => {
       if (state.over) return;
       const all: CatchupReport[] = [];
-      for (let i = 0; i < n && !state.over; i++) all.push(advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now()));
+      for (let i = 0; i < n && !state.over; i++) all.push(advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow()));
       const last = all[all.length - 1];
       if (!last) return;
       showReport({ ...last, daysPassed: all.length, messages: all.flatMap((r) => r.messages), animals: all.flatMap((r) => r.animals), settlements: all.flatMap((r) => r.settlements), milestones: all.flatMap((r) => r.milestones) });
@@ -946,7 +1057,7 @@ if (DEV_PANEL) {
     setStat: (key, value) => {
       state[key] = Math.max(0, Math.min(key === 'moisture' ? 150 : 100, value));
       if (key === 'health' && value > 0) state.dying = null;
-      if (key === 'moisture') checkWaterDeath(state, today(), Date.now());
+      if (key === 'moisture') checkWaterDeath(state, today(), virtualNow());
       checkRescue(state);
       persist();
       render();
@@ -961,6 +1072,38 @@ if (DEV_PANEL) {
       state.collapses = Math.max(0, Math.min(3, Math.round(n)));
       persist();
       render();
+    },
+    triggerCollapse: (fatal) => {
+      if (state.over) return;
+      // A real night: 八號風球 with 抗風力 0 → 倒塌 through the normal settlement (fatal = this is the third).
+      state.windUnlocked = true;
+      state.windExplained = true;
+      state.resist = 0;
+      state.collapses = fatal ? 2 : Math.min(state.collapses || 0, 1);
+      closeModal();
+      const report = advanceVirtualDay(state, today(), ['typhoon8'], meta, virtualNow());
+      showReport(report);
+    },
+    replayCollapse: () => {
+      if (!state.lastCollapse || state.over) return;
+      state.lastCollapse.seen = false;
+      closeModal();
+      playPendingCollapse(null, () => undefined);
+    },
+    triggerDying: () => {
+      if (state.over) return;
+      state.health = 0;
+      state.dying = { since: today(), at: virtualNow() };
+      persist();
+      render();
+    },
+    triggerDeath: () => {
+      if (state.over) return;
+      // 瀕死 whose 24 hours ran out a moment ago: the timer path (免死金牌 still applies).
+      state.health = 0;
+      state.dying = { since: today(), at: virtualNow() - DYING_MS - 1000 };
+      closeModal();
+      checkDyingExpiry();
     },
     setWindUnlocked: (on) => {
       state.windUnlocked = on;
@@ -1058,6 +1201,16 @@ if (DEV_PANEL) {
     playCare: (kind: 'water' | 'fertilize') => scene3d?.playCare(kind),
     careFxSpeed: (k: number) => scene3d?.setCareFxSpeed(k),
     advanceDay: () => api.advanceDay(),
+    // v16 collapse / death checks.
+    collapse: (fatal = false) => api.triggerCollapse(fatal),
+    replayCollapse: () => api.replayCollapse(),
+    dying: () => api.triggerDying(),
+    kill: () => api.triggerDeath(),
+    setStat: (key: 'health' | 'moisture' | 'nutrients' | 'resist', v: number) => api.setStat(key, v),
+    grow: (stage: number) => api.setStageHeight(stage),
+    fx: () => scene3d?.fxInfo() ?? null,
+    fxSpeed: (k: number) => scene3d?.setCareFxSpeed(k),
+    game: () => ({ health: state.health, dying: state.dying, over: state.over, lastCollapse: state.lastCollapse, collapses: state.collapses, heightCm: state.heightCm, today: today() }),
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');
@@ -1099,7 +1252,10 @@ let lastFollowUid: number | null = null;
 function syncAnimalHud(time: number): void {
   if (!scene3d) return;
   animalHud ??= mountAnimalHud(scene3d, (id) => state.animals.includes(id) && !state.seenAnimals.includes(id));
-  animalHud.setEnabled(state.started && !state.over && Boolean(document.getElementById('modal')?.hidden));
+  const busy = scene3d.fxBusy();
+  // v16: the note cards step aside while a collapse / death plays (they come back once it is over).
+  if (document.body.classList.contains('tree-fx') !== busy) document.body.classList.toggle('tree-fx', busy);
+  animalHud.setEnabled(state.started && !state.over && !busy && Boolean(document.getElementById('modal')?.hidden));
   // v10: following an animal (marker, toast, list or a direct tap) counts as seeing it: its 新 badge goes everywhere.
   const uid = scene3d.followingUid();
   if (uid !== lastFollowUid) {
@@ -1124,8 +1280,8 @@ function frame(time: number): void {
   if (time - lastChrome > 15000) {
     lastChrome = time;
     renderChrome(view(input));
-    if (state.dying && !state.over && Date.now() - state.dying.at > 24 * 3600 * 1000) render();
   }
+  checkDyingExpiry();
   if (!document.hidden) requestAnimationFrame(frame);
 }
 

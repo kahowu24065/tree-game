@@ -147,6 +147,7 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     doubleRPending: false,
     doubleRDate: null,
     doubleRSeen: false,
+    lastCollapse: null,
   };
   state.targetCm = speciesTargetCm(state.species);
   addLog(state, today, legacyBonus ? `一棵幼苗喺上一棵樹留低嘅養分地標旁邊種低，一開始就有 +${legacyBonus} 養分。` : '一棵幼苗種低咗，由今日開始慢慢陪佢大。', {
@@ -229,6 +230,68 @@ export interface WarningHit {
 }
 
 const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: '酷熱天氣警告', rainstorm: '暴雨警告', blackrain: '黑雨警告' };
+
+/** The tree dies (v14: the only way a game ends). v16: `fallSeen: false` = the death animation is still to play. */
+function killTree(state: GameState, date: string, time: string): void {
+  state.health = 0;
+  state.dying = null;
+  const days = daysBetween(state.createdOn, date) + 1;
+  // v14: perk badges come with the age milestones (booked while alive), not at death.
+  state.over = { kind: 'dead', date, tiers: [], days, fallSeen: false };
+  addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time });
+}
+
+export const DYING_MS = DYING_HOURS * 3600 * 1000;
+
+/**
+ * v16: 瀕死 whose 24 hours are up at `nowMs` ends now: a 免死金牌 revives the tree (H 30), otherwise it dies.
+ * Used by the nightly settlement and by the in-game timer the moment the countdown reaches 0.
+ */
+export function resolveDyingExpiry(state: GameState, date: string, meta: MetaState | null, nowMs: number, time?: string): 'dead' | 'revived' | null {
+  const d = state.dying;
+  if (!d || state.over || nowMs - d.at < DYING_MS) return null;
+  if (meta && meta.reviveTokens > 0) {
+    meta.reviveTokens -= 1;
+    state.health = REVIVE_HEALTH;
+    state.dying = null;
+    addLog(state, date, `免死金牌生效，棵樹重新有咗生氣（健康度 ${REVIVE_HEALTH}）。`, { kind: 'badge', title: '免死金牌', reward: { text: `健康 ${REVIVE_HEALTH}`, tone: 'purple' }, time });
+    return 'revived';
+  }
+  killTree(state, date, time ?? '');
+  return 'dead';
+}
+
+/**
+ * v16 (visual only) broken-top amount: 1 right after a collapse, fading to 0 as the tree regrows to the height it had
+ * before. 0 with no collapse (or after a fatal one).
+ */
+export function brokenTop(state: Pick<GameState, 'lastCollapse' | 'heightCm'>): number {
+  const c = state.lastCollapse;
+  if (!c || c.fatal) return 0;
+  const lost = c.heightBefore - c.heightAfter;
+  if (!(lost > 0)) return 0;
+  return Math.max(0, Math.min(1, (c.heightBefore - state.heightCm) / lost));
+}
+
+/** v16: days the fallen top lies beside the tree after a collapse (settlement night = day 0). */
+export const FALLEN_LOG_DAYS = 3;
+
+/** v16: the fallen log (the snapped-off top) is shown on days 1–3 after the collapse; 0 = not shown. */
+export function fallenLogDay(state: Pick<GameState, 'lastCollapse' | 'over'>, today: string): number {
+  const c = state.lastCollapse;
+  if (!c || c.fatal || state.over) return 0;
+  const d = daysBetween(c.date, today);
+  return d >= 0 && d <= FALLEN_LOG_DAYS ? Math.max(1, d) : 0;
+}
+
+/**
+ * v16: the moment the night of `date` counts as settled during a catch-up — the end of that day (midnight), capped at
+ * now. `msIntoToday` is how far into today (local clock) `nowMs` is.
+ */
+export function dayEndMs(date: string, today: string, nowMs: number, msIntoToday: number): number {
+  const DAY = 24 * 3600 * 1000;
+  return Math.min(nowMs, nowMs - msIntoToday - (daysBetween(date, today) - 1) * DAY);
+}
 
 /** Enter 24-hour 瀕死 (H goes to 0). Returns false when already dying. */
 function enterDying(state: GameState, date: string, nowMs: number, why: string, time?: string): boolean {
@@ -653,6 +716,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
       messages.push(`${label}令棵樹倒塌，斷咗部分主幹（高度 −20%，倒塌 ${Math.min(c.count, COLLAPSE_MAX)}/${COLLAPSE_MAX}）。聽日加固效果雙倍，快啲補返抗風力。`);
     }
     collapseInfo = { event: c.event, threshold: c.threshold, count: c.count, heightBefore: hBeforeCollapse, heightAfter: state.heightCm, fatal: c.fatal, revived: collapseRevived };
+    // v16 (visual only): what the scene needs for the collapse animation, the broken top and the fallen log.
+    state.lastCollapse = { date, event: c.event, heightBefore: hBeforeCollapse, heightAfter: state.heightCm, count: c.count, fatal: collapseDied, seen: false };
   }
   // 蟲害 triggers for the coming days.
   state.pest.lowNDays = state.nutrients < 30 ? state.pest.lowNDays + 1 : 0;
@@ -698,30 +763,18 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const wasDying = state.dying;
   if (collapseDied) {
     died = true;
-    state.health = 0;
-    state.dying = null;
-    const days = daysBetween(state.createdOn, date) + 1;
-    state.over = { kind: 'dead', date, tiers: [], days };
-    addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time: '' });
+    killTree(state, date, '');
   } else if (state.health <= 0) {
     state.health = 0;
     if (!wasDying) {
       enterDying(state, date, nowMs, plan.waterDeath ? `水分去到 ${W_MAX}，根部浸死` : '健康度跌到 0', '');
       messages.push(`棵樹瀕死！24 小時內將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`);
-    } else if (nowMs - wasDying.at >= DYING_HOURS * 3600 * 1000) {
-      if (meta && meta.reviveTokens > 0) {
-        meta.reviveTokens -= 1;
-        state.health = REVIVE_HEALTH;
-        state.dying = null;
+    } else {
+      const end = resolveDyingExpiry(state, date, meta, nowMs, '');
+      if (end === 'dead') died = true;
+      if (end === 'revived') {
         revived = true;
-        addLog(state, date, `免死金牌生效，棵樹重新有咗生氣（健康度 ${REVIVE_HEALTH}）。`, { kind: 'badge', title: '免死金牌', reward: { text: `健康 ${REVIVE_HEALTH}`, tone: 'purple' }, time: '' });
         messages.push('免死金牌救返棵樹！');
-      } else {
-        died = true;
-        const days = daysBetween(state.createdOn, date) + 1;
-        // v14: perk badges come with the age milestones (booked while alive), not at death.
-        state.over = { kind: 'dead', date, tiers: [], days };
-        addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time: '' });
       }
     }
   } else if (wasDying) {
@@ -1091,6 +1144,7 @@ export function catchUp(
   eventsFor: (date: string) => WeatherEventId[],
   meta: MetaState | null,
   nowMs: number,
+  msIntoToday = 0,
 ): CatchupReport {
   const healthBefore = state.health;
   const heightBefore = state.heightCm;
@@ -1106,7 +1160,8 @@ export function catchUp(
   if (gap > 0 && !state.over) {
     for (let i = 0; i < gap; i++) {
       const date = addDays(state.lastSeenDate, i);
-      const res = settleDay(state, date, eventsFor(date), meta, nowMs);
+      // v16: each night settles at its own time (end of that day), so 瀕死 can run out within one catch-up.
+      const res = settleDay(state, date, eventsFor(date), meta, dayEndMs(date, today, nowMs, msIntoToday));
       settlements.push(res.settlement);
       milestones.push(...res.milestones);
       messages.push(...res.messages);

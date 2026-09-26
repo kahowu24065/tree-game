@@ -158,7 +158,7 @@ export interface GameState {
   morningNote: string | null;
   dying: { since: string; at: number } | null;
   /** The tree died (v14: the only way a game ends). `tiers` is kept for old saves; v14 books perks at milestones. */
-  over: null | { kind: 'dead'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean };
+  over: null | { kind: 'dead'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean; fallSeen?: boolean };
   /** Date the tree first went above its 紀錄高度 R (R is a milestone, not a cap). */
   passedTargetOn?: string | null;
   /** 紀錄高度 R (cm) this save uses — the species' record height rounded to 10 m. */
@@ -178,6 +178,24 @@ export interface GameState {
   doubleRDate: string | null;
   /** v13: the double-加固 banner has been dismissed for doubleRDate. */
   doubleRSeen: boolean;
+  /**
+   * v16 visual only: the latest 倒塌 — drives the one-off collapse animation (`seen`), the broken-top look (fades as the
+   * tree regrows toward `heightBefore`) and the fallen log beside the tree for a few days. Never affects balance.
+   */
+  lastCollapse?: LastCollapse | null;
+}
+
+/** v16: the latest collapse, as the scene needs it. */
+export interface LastCollapse {
+  date: string;
+  event: WeatherEventId;
+  heightBefore: number;
+  heightAfter: number;
+  /** Collapse count after it (3 = fatal unless a 免死金牌 blocked it). */
+  count: number;
+  fatal: boolean;
+  /** The collapse animation has been shown (played once, on the first view after the settlement). */
+  seen: boolean;
 }
 
 /** v14: one milestone reached by one tree. */

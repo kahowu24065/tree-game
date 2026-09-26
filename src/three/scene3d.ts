@@ -7,7 +7,9 @@ import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
-import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
+import { buildTree, healthUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
+import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
+import { healthLook } from '../treeLook';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
 import { jitterGeometry, merge, paint } from './util3d';
@@ -163,6 +165,20 @@ export class Scene3D {
   /** Mulch animation clock; runs at `fxSpeed` × real time (checks slow it to screenshot mid-way). */
   private mulchClock = 0;
   private fxSpeed = 1;
+  /** v16: 0→1 while a collapse / death plays — the camera drops lower and backs off a little to show the fall. */
+  private fxCam = 0;
+  /** v16 collapse / death effect in progress, and the dead log left by a death (a finished death FallFx). */
+  private fall: FallFx | null = null;
+  private fallSwapped = false;
+  private fallReady: (() => void) | null = null;
+  private deadLog: FallFx | null = null;
+  private lastParams: TreeParams | null = null;
+  private leafLoop = new LeafLoop(40);
+  private fxStorm = 0;
+  private shake = 0;
+  /** v16 fallen top beside the tree (island units; days 1–3 after a collapse). */
+  private logProp: { group: THREE.Group; key: string; x: number; z: number; a: number; lenU: number; rU: number } | null = null;
+  private logWant: { key: string } | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality = 'low') {
     this.canvas = canvas;
@@ -173,6 +189,8 @@ export class Scene3D {
     this.renderer.toneMappingExposure = 0.95;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // v16: broken tops and the collapse / death split use material clipping planes.
+    this.renderer.localClippingEnabled = true;
 
     // Gradient sky dome.
     this.skyMat = new THREE.ShaderMaterial({
@@ -205,6 +223,7 @@ export class Scene3D {
     this.scene.add(this.island.group);
     this.pivot.position.y = 0.18;
     this.scene.add(this.pivot);
+    this.pivot.add(this.leafLoop.group);
     this.scene.add(this.animals.root);
 
     // Sea far below plus distant islets and cliffs.
@@ -376,7 +395,252 @@ export class Scene3D {
   /** v15.1/v15.2 checks: slow the care effects and the mulch laying down (1 = normal) so a headless browser can screenshot them mid-way. */
   setCareFxSpeed(k: number): void {
     this.careFx.timeScale = Math.max(0.01, k);
-    this.fxSpeed = Math.max(0.01, k);
+    this.fxSpeed = Math.max(0, k);
+  }
+
+  /** v16: tree materials without the health look (thumbnails, line-ups). */
+  private neutralLook(fn: () => void): void {
+    const saved = { w: healthUniforms.uWither.value, d: healthUniforms.uDroop.value, p: healthUniforms.uPulse.value };
+    healthUniforms.uWither.value = healthUniforms.uDroop.value = healthUniforms.uPulse.value = 0;
+    try {
+      fn();
+    } finally {
+      healthUniforms.uWither.value = saved.w;
+      healthUniforms.uDroop.value = saved.d;
+      healthUniforms.uPulse.value = saved.p;
+    }
+  }
+
+  /** Horizontal unit vector to the camera's right in the default view (deaths fall across the view). */
+  private viewRight(): THREE.Vector3 {
+    const az = BASE_AZIMUTH + this.dragAz;
+    return new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
+  }
+
+  private stumpCut(build: TreeBuild): number {
+    return Math.max(0.02, Math.min(build.visibleTop * 0.07, build.trunkRadius * 2.2 + build.visibleTop * 0.02));
+  }
+
+  /**
+   * v16: play the collapse as it happened: the tree as it stood (`heightBefore`, stage / health of that night) sways in a
+   * darkened storm, snaps, its top falls toward where the fallen log will lie, fades, and the real shorter tree settles.
+   * `fatal`: the third collapse — snaps at the base and the whole tree falls, staying as the dead log (`onReady` = time
+   * for the over card). Returns false when it cannot play (no tree yet).
+   */
+  playCollapse(info: { heightBefore: number; stageBefore: number; healthBefore: number; fatal: boolean; reduced: boolean }, onReady?: () => void): boolean {
+    const cur = this.lastParams;
+    if (!cur || !this.tree) return false;
+    this.clearFall();
+    const before = buildTree({ ...cur, heightCm: info.heightBefore, stage: info.stageBefore, health: Math.max(8, info.healthBefore), brokenTop: 0 });
+    let mode: FallMode = 'collapse';
+    let cutY: number;
+    let dir: THREE.Vector3;
+    if (info.fatal) {
+      mode = 'fatal';
+      cutY = this.stumpCut(before);
+      dir = this.viewRight();
+    } else {
+      const frac = clamp(this.tree.visibleTop / Math.max(0.01, before.visibleTop), 0.62, 0.82);
+      cutY = before.visibleTop * frac;
+      const spot = this.ensureLogSpot(true);
+      dir = spot ? new THREE.Vector3(Math.cos(spot.a), 0, Math.sin(spot.a)) : this.viewRight();
+    }
+    this.startFall(new FallFx(before, mode, dir, cutY, info.reduced), onReady ?? null);
+    return true;
+  }
+
+  /** v16 death: leaves drop, the tree leans and falls with a dust burst, then lies as the dead log. */
+  playDeath(reduced: boolean, onReady?: () => void): boolean {
+    const cur = this.lastParams;
+    if (!cur || !this.tree) return false;
+    if (this.fall && this.fall.mode !== 'collapse') return false;
+    this.clearFall();
+    this.clearDeadLog();
+    const build = buildTree({ ...cur, health: Math.max(cur.health, 6) });
+    this.startFall(new FallFx(build, 'death', this.viewRight(), this.stumpCut(build), reduced), onReady ?? null);
+    return true;
+  }
+
+  private startFall(fx: FallFx, onReady: (() => void) | null): void {
+    this.fall = fx;
+    this.fallSwapped = false;
+    this.follow = null;
+    this.followRef = null;
+    this.fallReady = onReady;
+    this.pivot.add(fx.root);
+  }
+
+  private clearFall(): void {
+    if (!this.fall) return;
+    const ready = this.fallReady;
+    this.fallReady = null;
+    if (this.fall.mode === 'collapse') this.fall.dispose();
+    else {
+      this.fall.finish();
+      this.clearDeadLog();
+      this.deadLog = this.fall;
+    }
+    this.fall = null;
+    ready?.();
+  }
+
+  private clearDeadLog(): void {
+    this.deadLog?.dispose();
+    this.deadLog = null;
+  }
+
+  /** v16: a collapse / death animation is playing. */
+  fxBusy(): boolean {
+    return Boolean(this.fall);
+  }
+
+  /** v16 effect state for checks and the dev panel. */
+  fxInfo(): {
+    fall: { mode: FallMode; phase: string; t: number } | null;
+    deadLog: boolean;
+    treeVisible: boolean;
+    broken: boolean;
+    visibleTopM: number;
+    heightM: number;
+    leafFall: number;
+    logProp: boolean;
+    animals: boolean;
+    wither: number;
+    droop: number;
+    pulse: number;
+    storm: number;
+    shake: number;
+  } {
+    return {
+      fall: this.fall ? { mode: this.fall.mode, phase: this.fall.phase(), t: this.fall.time() } : null,
+      deadLog: Boolean(this.deadLog),
+      treeVisible: Boolean(this.tree?.group.visible),
+      broken: Boolean(this.tree?.brokenCut),
+      visibleTopM: this.tree?.visibleTop ?? 0,
+      heightM: this.tree?.height ?? 0,
+      leafFall: this.leafLoop.active(),
+      logProp: Boolean(this.logProp?.group.visible),
+      animals: this.animals.root.visible,
+      wither: healthUniforms.uWither.value,
+      droop: healthUniforms.uDroop.value,
+      pulse: healthUniforms.uPulse.value,
+      storm: this.fxStorm,
+      shake: this.shake,
+    };
+  }
+
+  /**
+   * v16 fallen top beside the tree: a spot (island units) on dry land to the camera's right, the log pointing away from
+   * the trunk. Kept per collapse (logWant key) so it never jumps; `force` picks one even before the prop shows.
+   */
+  private ensureLogSpot(force = false): { x: number; z: number; a: number; lenU: number; rU: number } | null {
+    const want = this.logWant;
+    const tree = this.tree;
+    if (!tree || (!want && !force)) return null;
+    const key = want?.key ?? 'pending';
+    if (this.logProp && this.logProp.key === key) return this.logProp;
+    const kS = islandScaleFor(tree.metricScale);
+    const trunkU = (tree.trunkRadius * 1.0) / Math.max(1e-3, kS);
+    let lenU = clamp((tree.height * 0.28) / kS, 0.35, 2.4);
+    const rU = clamp(Math.max(tree.trunkAxis(tree.visibleTop * 0.75).r * 1.25, tree.trunkRadius * 0.55) / kS, 0.03, 0.3);
+    const R = this.habitat?.radius ?? ISLAND_R;
+    const right = this.viewRight();
+    // A little away from the camera: the top falls across the view (not foreshortened toward the lens) and the log
+    // lies on open ground to the right of the trunk. (+angle turns toward the camera.)
+    const base = Math.atan2(right.z, right.x) - 0.3;
+    let pick: { x: number; z: number; a: number } | null = null;
+    for (let shrink = 0; shrink < 3 && !pick; shrink++) {
+      for (const j of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6]) {
+        const a = base + j * 0.45;
+        const start = trunkU * 2.4 + 0.12;
+        const dx = Math.cos(a);
+        const dz = Math.sin(a);
+        let ok = start + lenU < shoreRadius(R, a) - FENCE_INSET_UNITS - 0.3;
+        for (let k = 0; ok && k <= 4; k++) {
+          const d = start + (lenU * k) / 4;
+          if (this.wetOrBlocked(dx * d, dz * d, rU + 0.05)) ok = false;
+          if (this.fireSpot && Math.hypot(this.fireSpot.x - dx * d, this.fireSpot.z - dz * d) < this.fireSpot.rU + rU + 0.1) ok = false;
+          if (Math.hypot(2.8 - dx * d, 2.2 - dz * d) < 0.7) ok = false;
+        }
+        if (ok) {
+          pick = { x: dx * start, z: dz * start, a };
+          break;
+        }
+      }
+      if (!pick) lenU *= 0.65;
+    }
+    if (!pick) return null;
+    if (this.logProp) {
+      this.scene.remove(this.logProp.group);
+      disposeGroup(this.logProp.group);
+    }
+    const group = fallenLog(lenU, rU, hashString(key) % 17);
+    group.visible = false;
+    this.scene.add(group);
+    this.logProp = { group, key, ...pick, lenU, rU };
+    return this.logProp;
+  }
+
+  private updateLogProp(input: SceneInput): void {
+    const day = input.fallenLog ?? 0;
+    this.logWant = day > 0 && !input.dead ? { key: input.collapseKey || 'log' } : null;
+    if (this.logProp && this.logWant && this.logProp.key === 'pending') this.logProp.key = this.logWant.key;
+    const spot = this.logWant ? this.ensureLogSpot() : null;
+    if (!spot || !this.logProp) {
+      if (this.logProp) this.logProp.group.visible = false;
+      return;
+    }
+    const K = this.islandK;
+    const g = this.logProp.group;
+    g.visible = !this.fall || (this.fall.mode === 'collapse' && this.fallSwapped);
+    g.scale.setScalar(K);
+    g.position.set(spot.x * K, this.groundFast(spot.x, spot.z) * K, spot.z * K);
+    g.rotation.set(0, -spot.a, 0);
+  }
+
+  /** v16: collapse / death effects, the dead log, the health look and the falling-leaf loop — once per frame. */
+  private updateTreeFx(input: SceneInput, tree: TreeBuild, t: number, dt: number): void {
+    const fdt = dt * this.fxSpeed;
+    this.shake = 0;
+    this.fxStorm = 0;
+    if (!input.dead && this.deadLog) this.clearDeadLog();
+    if (this.fall) {
+      const f = this.fall.update(fdt);
+      this.shake = f.shake;
+      this.fxStorm = f.storm;
+      if (f.flash) this.flash = 1;
+      if (f.swap && !this.fallSwapped) {
+        this.fallSwapped = true;
+        this.growFrom = clamp(this.fall.split.cutY / Math.max(0.01, tree.visibleTop), 0.6, 1.6);
+        this.growStart = t;
+      }
+      if (f.ready && this.fallReady) {
+        const cb = this.fallReady;
+        this.fallReady = null;
+        cb();
+      }
+      if (f.done) this.clearFall();
+    }
+    if (input.dead && !input.deathPending && !this.fall && !this.deadLog && this.lastParams) {
+      // A dead tree seen again (reload, or the animation skipped): it just lies there.
+      const build = buildTree({ ...this.lastParams, health: 6 });
+      const fx = new FallFx(build, 'death', this.viewRight(), this.stumpCut(build), true);
+      fx.finish();
+      this.deadLog = fx;
+      this.pivot.add(fx.root);
+    }
+    const hideTree = Boolean(this.deadLog) || Boolean(this.fall && (this.fall.mode !== 'collapse' || !this.fallSwapped));
+    tree.group.visible = !hideTree;
+    this.animals.root.visible = !this.fall && !this.deadLog && !input.dead;
+    // Health look (continuous, no rebuild).
+    const look = healthLook(input.health, Boolean(input.dying), Boolean(input.dead));
+    healthUniforms.uWither.value = look.wither;
+    healthUniforms.uDroop.value = look.droop * (input.reducedMotion ? 0.7 : 1);
+    healthUniforms.uPulse.value = look.pulse ? (input.reducedMotion ? 0.07 : 0.04 + 0.09 * (0.5 + 0.5 * Math.sin(t * 2.6))) : 0;
+    const rate = hideTree ? 0 : look.leafFall * (input.reducedMotion ? 0.25 : 1);
+    this.leafLoop.update(dt, rate, tree.visibleTop, tree.crownY, tree.canopyRadius);
+    this.leafLoop.group.scale.setScalar(tree.group.scale.x);
+    this.updateLogProp(input);
   }
 
   /** Campfire / mulch state for checks: night fade, fire spot (metres), mulch ring (metres), live care effects. */
@@ -834,7 +1098,9 @@ export class Scene3D {
       scars: input.scars,
       seed: (hashString(input.treeName || 'tree') % 97) + 1,
       reinforce: input.reinforce,
+      brokenTop: input.brokenTop ?? 0,
     };
+    this.lastParams = params;
     const key = treeKey(params);
     if (key !== this.treeKeyStr) {
       const old = this.tree;
@@ -985,7 +1251,8 @@ export class Scene3D {
    */
   private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean, fire: (CampfireSpot & { rU: number; key: string }) | null): void {
     const trunkU = Math.max(0.05, (tree.trunkRadius * 1.3) / Math.max(1e-3, K));
-    const key = `${this.habitatKey}|${landmark ? 1 : 0}|${fire ? fire.key : ''}`;
+    const log = this.logWant && this.logProp && this.logProp.key !== 'pending' ? this.logProp : null;
+    const key = `${this.habitatKey}|${landmark ? 1 : 0}|${fire ? fire.key : ''}|${log ? log.key : ''}`;
     if (this.nav && key === this.navKey && Math.abs(propK - this.navPk) / this.navPk < 0.04 && Math.abs(trunkU - this.navTrunk) / this.navTrunk < 0.08) return;
     this.navKey = key;
     this.navPk = propK;
@@ -997,6 +1264,11 @@ export class Scene3D {
     if (hab && hab.stage > 0) for (const o of resolveObstacles(hab.obstacles, propK)) obstacles.push({ ...o, fixed: true });
     if (landmark) obstacles.push({ x: 2.8, z: 2.2, r: 0.55, fixed: true, kind: 'landmark' });
     if (fire) obstacles.push({ x: fire.x, z: fire.z, r: fire.rU * 1.15, fixed: true, kind: 'campfire' });
+    // v16: the fallen top beside the tree (a few circles along the log).
+    if (log) for (let i = 0; i < 3; i++) {
+      const d = log.lenU * (0.2 + i * 0.3);
+      obstacles.push({ x: log.x + Math.cos(log.a) * d, z: log.z + Math.sin(log.a) * d, r: Math.max(0.12, log.rU * 1.8), fixed: true, kind: 'log' });
+    }
     this.nav = new WalkNav({
       R,
       limit: (a) => shoreRadius(R, a) - FENCE_INSET_UNITS - 0.15,
@@ -1051,14 +1323,16 @@ export class Scene3D {
     const day = clamp(input.daylight, 0, 1);
     const night = 1 - day;
     const over = overcastOf(input);
-    const rain = rainOf(input);
+    const rain = Math.max(rainOf(input), this.fxStorm * 0.8);
     const storming = input.cond.stormKind === 'typhoon' || input.cond.code >= 95;
     const stormy = storming || !!input.cond.stormKind;
+    // v16: the collapse replay darkens the sky like a storm (fxStorm is last frame's value; it eases in and out).
+    const sk = Math.max(stormy ? 1 : 0, this.fxStorm);
     const golden = day > 0 && day < 1 ? 1 - Math.abs(day - 0.5) * 2 : 0;
     const goldenish = Math.max(golden, clamp(1 - Math.min(Math.abs(input.minute - input.sunriseMin), Math.abs(input.minute - input.sunsetMin)) / 70, 0, 1) * day);
 
-    const skyTopDay = new THREE.Color('#79bfeb').lerp(new THREE.Color('#8d99a6'), over).lerp(new THREE.Color('#4b5563'), stormy ? 0.55 : 0);
-    const skyMidDay = new THREE.Color('#cde8f6').lerp(new THREE.Color('#b8c2ca'), over).lerp(new THREE.Color('#687380'), stormy ? 0.5 : 0);
+    const skyTopDay = new THREE.Color('#79bfeb').lerp(new THREE.Color('#8d99a6'), over).lerp(new THREE.Color('#4b5563'), 0.55 * sk);
+    const skyMidDay = new THREE.Color('#cde8f6').lerp(new THREE.Color('#b8c2ca'), over).lerp(new THREE.Color('#687380'), 0.5 * sk);
     const dusk = new THREE.Color('#f3b27a');
     skyMidDay.lerp(dusk, goldenish * 0.55 * (1 - over));
     const skyTopNight = new THREE.Color('#0f1d3a');
@@ -1077,11 +1351,11 @@ export class Scene3D {
     if (input.cond.hot) sunWarm.lerp(new THREE.Color('#ffd28a'), 0.3);
     const moon = new THREE.Color('#a9bcf2');
     this.sun.color.copy(moon.clone().lerp(sunWarm, day));
-    this.sun.intensity = (0.7 * night + day * 2.6) * (1 - over * 0.72) * (stormy ? 0.45 : 1) * (1 + this.heatK * 0.12);
+    this.sun.intensity = (0.7 * night + day * 2.6) * (1 - over * 0.72) * (1 - 0.55 * sk) * (1 + this.heatK * 0.12);
     this.sun.color.lerp(new THREE.Color('#ffcf87'), this.heatK * 0.45);
     this.hemi.color.copy(new THREE.Color('#7086bd').lerp(new THREE.Color('#fff2da'), day).lerp(new THREE.Color('#c7cdd3'), over * 0.5));
     this.hemi.groundColor.copy(new THREE.Color('#2c3a33').lerp(new THREE.Color('#78905a'), day));
-    this.hemi.intensity = (0.75 + day * 0.55) * (stormy ? 0.62 : 1);
+    this.hemi.intensity = (0.75 + day * 0.55) * (1 - 0.38 * sk);
     this.fill.intensity = 0.25 + day * 0.2;
 
     // Lightning in typhoons and thunderstorms.
@@ -1100,7 +1374,7 @@ export class Scene3D {
 
     // Wind sway: amplitude and frequency follow the weather (calm → breeze → gale → typhoon), with gusts.
     const motion = input.reducedMotion ? 0.3 : 1;
-    const level = clamp(input.sway, 0, 1);
+    const level = Math.max(clamp(input.sway, 0, 1), this.fxStorm * 0.9);
     if (t > this.nextGust) {
       this.gustTarget = level > 0.25 ? 0.45 + Math.random() * 0.55 : Math.random() * 0.35;
       this.nextGust = t + 1.2 + Math.random() * (4.5 - level * 3);
@@ -1160,7 +1434,11 @@ export class Scene3D {
       this.glow.scale.set(Math.max(1, h * 0.35), 1, Math.max(1, h * 0.35));
       (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
     }
+    this.updateTreeFx(input, tree, t, dt);
     this.pivot.updateMatrixWorld(true);
+    tree.sync();
+    this.fall?.sync();
+    this.deadLog?.sync();
     const fire = this.ensureCampfire(input, tree, K, propK);
     this.ensureNav(tree, K, propK, Boolean(input.landmark), fire);
     this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
@@ -1169,7 +1447,7 @@ export class Scene3D {
     const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
     const islandStage = this.habitat?.stage ?? 0;
     // Clouds drift; overcast brings more and darker clouds.
-    const cloudTint = new THREE.Color('#ffffff').lerp(new THREE.Color('#9aa3ad'), over).lerp(new THREE.Color('#59616b'), stormy ? 0.6 : 0).lerp(new THREE.Color('#39435e'), night * 0.8);
+    const cloudTint = new THREE.Color('#ffffff').lerp(new THREE.Color('#9aa3ad'), over).lerp(new THREE.Color('#59616b'), 0.6 * sk).lerp(new THREE.Color('#39435e'), night * 0.8);
     this.cloudMat.color.copy(cloudTint);
     this.cloudMat.emissiveIntensity = 0.35 * day * (1 - over * 0.6);
     const visibleClouds = 8 + Math.round(over * 8);
@@ -1189,7 +1467,8 @@ export class Scene3D {
     (this.sea.material as THREE.MeshStandardMaterial).color.set('#58b6e0').lerp(new THREE.Color('#5d7482'), over * 0.8).lerp(new THREE.Color('#122036'), night * 0.7);
 
     // Camera: keep the whole tree framed at a 45-degree look-down, rising as it grows.
-    const H = tree.height * tree.group.scale.y;
+    // v16: while the collapse replays the (taller) tree as it stood, frame that one.
+    const H = Math.max(tree.height * tree.group.scale.y, this.fall?.mode === 'collapse' && !this.fallSwapped ? this.fall.split.build.height : 0);
     // v6 framing, in metres: every v6 constant is multiplied by the scene scale K.
     const KF = this.islandK;
     const W = Math.max(1.0 * KF, tree.canopyRadius * tree.group.scale.x);
@@ -1213,9 +1492,11 @@ export class Scene3D {
       this.dragEl *= 1 - Math.min(1, dt * 0.6);
     }
     const az = BASE_AZIMUTH + this.dragAz + Math.sin(t * 0.05) * 0.03 * motion;
-    const el = ELEVATION + this.dragEl;
+    const fxGoal = this.fall && !this.fall.reduced ? 1 : 0;
+    this.fxCam += (fxGoal - this.fxCam) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.8));
+    const el = ELEVATION + this.dragEl - this.fxCam * 0.3;
     const target = new THREE.Vector3(0, this.camTargetY, 0).add(this.panOff);
-    let dist = this.camDist * this.zoom;
+    let dist = this.camDist * this.zoom * (1 + this.fxCam * 0.12);
     // Follow cam (tap an animal, or the developer panel): frame one animal up close, at its real size.
     let focus: ReturnType<Animals3D['focusRef']> = this.followRef ? this.animals.focusRef(this.followRef) : this.follow ? this.animals.focus(this.follow) : null;
     if (this.followRef && !focus) this.followRef = null;
@@ -1291,6 +1572,13 @@ export class Scene3D {
       if (this.camera.position.y < gy) this.camera.position.y = gy;
     }
     this.camera.lookAt(target);
+    if (this.shake > 0.001 && !input.reducedMotion) {
+      // v16 snap / impact shake: a small jitter of the camera position (the view direction stays).
+      const a = this.shake * Math.max(0.02, H * 0.012);
+      this.camera.position.x += (Math.sin(t * 61) + Math.sin(t * 37.3)) * 0.5 * a;
+      this.camera.position.y += (Math.sin(t * 53.1 + 1) + Math.sin(t * 29.7)) * 0.5 * a;
+      this.camera.position.z += Math.sin(t * 47.9 + 2) * 0.5 * a;
+    }
     const shift = portrait ? 0.085 : 0.03;
     this.camera.setViewOffset(this.width, this.height, 0, -this.height * shift, this.width, this.height);
     this.camera.near = clamp(dist * 0.02, 0.005, 2);
@@ -1340,11 +1628,16 @@ export class Scene3D {
     const dirtU = 1.1 * clamp(0.3 + tree.localHeight * 0.09, 0.3, 1.5);
     this.mulchR = mulchRadii(trunkU, dirtU);
     const rU = campfireRadiusUnits(animalFactor(tree.height), kS, tree.height / Math.max(1e-3, kS));
-    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}`;
+    const log = this.logWant && this.logProp && this.logProp.key !== 'pending' ? this.logProp : null;
+    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}|${log ? log.key : ''}`;
     if (!this.fireSpot || this.fireSpot.key !== key) {
       const hab = this.habitat;
       const props = [...this.island.obstacles().map((o) => ({ x: o.x, z: o.z, r: o.r * propK })), ...(hab && hab.stage > 0 ? resolveObstacles(hab.obstacles, propK) : [])];
       if (input.landmark) props.push({ x: 2.8, z: 2.2, r: 0.55 });
+      if (log) for (let i = 0; i < 3; i++) {
+        const d = log.lenU * (0.2 + i * 0.3);
+        props.push({ x: log.x + Math.cos(log.a) * d, z: log.z + Math.sin(log.a) * d, r: Math.max(0.12, log.rU * 1.8) });
+      }
       const spot = campfireSpot({
         trunkU: trunkU * 2.2,
         clearU: this.mulchR.outer * 1.06,
@@ -1511,7 +1804,7 @@ export class Scene3D {
     this.renderer.setRenderTarget(rt);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear();
-    this.renderer.render(scene, cam);
+    this.neutralLook(() => this.renderer.render(scene, cam));
     const px = new Uint8Array(size * size * 4);
     this.renderer.readRenderTargetPixels(rt, 0, 0, size, size, px);
     this.renderer.setRenderTarget(prevTarget);
@@ -1595,7 +1888,7 @@ export class Scene3D {
     this.renderer.setRenderTarget(rt);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear();
-    this.renderer.render(scene, cam);
+    this.neutralLook(() => this.renderer.render(scene, cam));
     const px = new Uint8Array(size * size * 4);
     this.renderer.readRenderTargetPixels(rt, 0, 0, size, size, px);
     this.renderer.setRenderTarget(prevTarget);
@@ -1670,7 +1963,7 @@ export class Scene3D {
     this.renderer.setRenderTarget(rt);
     this.renderer.setClearColor(0xdfeef5, 1);
     this.renderer.clear();
-    this.renderer.render(scene, cam);
+    this.neutralLook(() => this.renderer.render(scene, cam));
     const px = new Uint8Array(w * h * 4);
     this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
     this.renderer.setRenderTarget(prevTarget);

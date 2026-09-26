@@ -40,6 +40,18 @@ export interface SceneInput {
   starry?: boolean;
   /** v15.2: 保暖 done today → mulch layer round the roots (the campfire now shows every night on its own). */
   mulch?: boolean;
+  /** v16: broken top after a collapse, 1 just snapped … 0 regrown (visual only). */
+  brokenTop?: number;
+  /** v16: day 1–3 after a collapse the snapped-off top lies beside the tree (0 = not shown). */
+  fallenLog?: number;
+  /** v16: identifies the latest collapse (the fallen log keeps its spot). */
+  collapseKey?: string;
+  /** v16 瀕死 (H 0, the 24-hour window running). */
+  dying?: boolean;
+  /** v16: the tree is dead — it lies as a fallen log. */
+  dead?: boolean;
+  /** v16: dead, but the death animation has not played yet (keep the standing tree until it does). */
+  deathPending?: boolean;
 }
 
 interface Pt {
@@ -137,9 +149,24 @@ export class Scene {
   private drops: { x: number; y: number; v: number; len: number; drift: number }[] = [];
   private flakes: { x: number; y: number; v: number; r: number }[] = [];
   private motes: { x: number; y: number; v: number; r: number; phase: number }[] = [];
+  /** v16 simple 2D collapse / death animations (start times, ms on the rAF clock). */
+  private fallStart = -1;
+  private collapseStart = -1;
+  private fxReduced = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+  }
+
+  /** v16: the dead tree tips over (1.5 s; reduced motion: at once). */
+  playFall(reduced: boolean): void {
+    this.fallStart = performance.now();
+    this.fxReduced = reduced;
+  }
+
+  /** v16: the snapped top drops beside the tree (1.4 s; reduced motion: skipped). */
+  playCollapse(reduced: boolean): void {
+    this.collapseStart = reduced ? -1 : performance.now();
   }
 
   resize(): void {
@@ -173,8 +200,12 @@ export class Scene {
     this.sky(ctx, input, time, heavy, storming);
     this.hills(ctx, input, time);
     this.ground(ctx, model, input);
-    this.tree(ctx, model, input, sway);
-    this.animals(ctx, model, input, time, sway);
+    if (input.fallenLog && !input.dead) this.fallenLog(ctx, model);
+    if (input.dead && !input.deathPending) this.deadTree(ctx, model, input, time);
+    else this.tree(ctx, model, input, sway);
+    this.collapseFx(ctx, model, time);
+    if (input.dying && !input.dead) this.dyingFx(ctx, model, input, time);
+    if (!input.dead) this.animals(ctx, model, input, time, sway);
     this.weatherFx(ctx, input, time, heavy, storming);
     this.vignette(ctx, input.daylight);
   }
@@ -345,11 +376,40 @@ export class Scene {
 
     for (const limb of model.limbs) drawLimb(ctx, limb, sway, false);
     const leaves = [...model.leaves].sort((a, b) => a.z - b.z);
+    // v16: a broken top loses the crown above the break; 瀕死 is nearly bare.
+    const top = Math.min(...model.leaves.map((l) => l.y - l.ry), model.trunk.at(-1)?.y ?? model.groundY);
+    const cutY = top + (model.groundY - top) * 0.17 * (input.brokenTop ?? 0);
+    let i = 0;
     for (const leaf of leaves) {
+      i++;
+      if ((input.brokenTop ?? 0) > 0.02 && leaf.y < cutY) continue;
+      if (input.dying && i % 5 < 3) continue;
       const x = leaf.x + sway(leaf.y) * 1.12;
       ctx.fillStyle = leafColor(input.health, leaf.tint, leaf.z);
       ctx.beginPath();
       ctx.ellipse(x, leaf.y, leaf.rx, leaf.ry, leaf.rot, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if ((input.brokenTop ?? 0) > 0.02) {
+      // Pale splintered wood where the top snapped, and a fresh green shoot.
+      const tp = model.trunk.reduce((a, b) => (Math.abs(b.y - cutY) < Math.abs(a.y - cutY) ? b : a), model.trunk[0]!);
+      const x = tp.x + sway(cutY);
+      const r = Math.max(3, tp.r);
+      ctx.fillStyle = '#ecdcb4';
+      ctx.beginPath();
+      ctx.moveTo(x - r, cutY + 3);
+      for (let k = 0; k <= 6; k++) ctx.lineTo(x - r + (2 * r * k) / 6, cutY - (k % 2 ? r * 1.2 : r * 0.2));
+      ctx.lineTo(x + r, cutY + 3);
+      ctx.fill();
+      ctx.strokeStyle = '#7fb24a';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x + r * 0.3, cutY - r * 0.4);
+      ctx.quadraticCurveTo(x + r * 0.9, cutY - r * 2, x + r * 0.5, cutY - r * 3.2);
+      ctx.stroke();
+      ctx.fillStyle = '#8fd06a';
+      ctx.beginPath();
+      ctx.ellipse(x + r * 0.5, cutY - r * 3.3, 3, 2, 0.4, 0, Math.PI * 2);
       ctx.fill();
     }
     for (const pest of model.pests) {
@@ -358,6 +418,102 @@ export class Scene {
       ctx.arc(pest.x + sway(pest.y), pest.y, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /** v16: the dead tree lies on the ground (tipping over once when it has just died). */
+  private deadTree(ctx: CanvasRenderingContext2D, model: TreeModel, input: SceneInput, time: number): void {
+    const p = this.fallStart < 0 || this.fxReduced ? 1 : clamp((time - this.fallStart) / 1500, 0, 1);
+    const baseX = model.trunk[0]?.x ?? this.w / 2;
+    const baseY = model.groundY;
+    const still = () => 0;
+    ctx.save();
+    ctx.translate(baseX, baseY - 4);
+    ctx.rotate(p * p * (Math.PI / 2 - 0.1));
+    ctx.translate(-baseX, -(baseY - 4));
+    ctx.globalAlpha = 0.92;
+    for (const limb of model.limbs) drawLimb(ctx, limb, still, false);
+    drawTrunk(ctx, model.trunk, still);
+    if (p < 0.6) {
+      ctx.globalAlpha = 1 - p / 0.6;
+      for (const leaf of model.leaves) {
+        ctx.fillStyle = leafColor(0, leaf.tint, leaf.z);
+        ctx.beginPath();
+        ctx.ellipse(leaf.x, leaf.y + p * 60, leaf.rx, leaf.ry, leaf.rot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    // Stump.
+    const r = Math.max(4, model.trunk[0]?.r ?? 6);
+    ctx.fillStyle = '#5c3b2a';
+    ctx.fillRect(baseX - r, baseY - 8, r * 2, 8);
+    ctx.fillStyle = '#ecdcb4';
+    ctx.beginPath();
+    ctx.ellipse(baseX, baseY - 8, r, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    void input;
+  }
+
+  /** v16: the snapped-off top lying beside the tree for a few days. */
+  private fallenLog(ctx: CanvasRenderingContext2D, model: TreeModel): void {
+    const x = this.w * 0.5 + 58;
+    const y = model.groundY + 10;
+    ctx.fillStyle = '#6e5442';
+    ctx.beginPath();
+    ctx.roundRect?.(x, y - 6, 64, 10, 5);
+    if (!ctx.roundRect) ctx.rect(x, y - 6, 64, 10);
+    ctx.fill();
+    ctx.fillStyle = '#ecdcb4';
+    ctx.beginPath();
+    ctx.ellipse(x + 2, y - 1, 3.5, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#8a7440';
+    ctx.beginPath();
+    ctx.ellipse(x + 50, y - 9, 9, 5, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** v16: 2D collapse — the snapped top tumbles down beside the tree and fades. */
+  private collapseFx(ctx: CanvasRenderingContext2D, model: TreeModel, time: number): void {
+    if (this.collapseStart < 0) return;
+    const u = (time - this.collapseStart) / 1400;
+    if (u >= 1) {
+      this.collapseStart = -1;
+      return;
+    }
+    const top = Math.min(...model.leaves.map((l) => l.y), model.groundY - 80);
+    const x = this.w * 0.5 + u * 70;
+    const y = top + (model.groundY - top) * Math.min(1, u * u * 1.4);
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.max(0, (u - 0.6) / 0.4);
+    ctx.translate(x, y);
+    ctx.rotate(u * 1.6);
+    ctx.fillStyle = '#5f8a3e';
+    blob(ctx, 0, 0, 26, 18);
+    ctx.fillStyle = '#6e5442';
+    ctx.fillRect(-4, 0, 8, 26);
+    ctx.restore();
+  }
+
+  /** v16 瀕死: a few leaves drifting down and a faint red pulse over the tree. */
+  private dyingFx(ctx: CanvasRenderingContext2D, model: TreeModel, input: SceneInput, time: number): void {
+    const top = Math.min(...model.leaves.map((l) => l.y), model.groundY - 60);
+    const cx = this.w * 0.5;
+    for (let i = 0; i < 12; i++) {
+      const u = input.reducedMotion ? (i / 12) : ((time * 0.00012 + i * 0.083) % 1);
+      const x = cx + Math.sin(i * 2.3) * 60 + Math.sin(time * 0.002 + i) * 8;
+      const y = top + (model.groundY - top) * u;
+      ctx.fillStyle = i % 2 ? '#a07a34' : '#7a5a2e';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 3, 1.8, i + time * 0.003, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const a = input.reducedMotion ? 0.07 : 0.05 + 0.06 * (0.5 + 0.5 * Math.sin(time * 0.0026));
+    const g = ctx.createRadialGradient(cx, (top + model.groundY) / 2, 10, cx, (top + model.groundY) / 2, (model.groundY - top) * 0.8);
+    g.addColorStop(0, `rgba(210, 30, 20, ${a})`);
+    g.addColorStop(1, 'rgba(210, 30, 20, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, this.w, this.h);
   }
 
   private animals(

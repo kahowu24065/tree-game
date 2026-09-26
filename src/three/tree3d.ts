@@ -33,6 +33,8 @@ export interface TreeParams {
   scars: number;
   seed: number;
   reinforce?: Reinforcement;
+  /** v16: broken top after a collapse (0 none … 1 just snapped); the crown is lowered and the trunk ends in a jagged cap. */
+  brokenTop?: number;
 }
 
 export interface Perch {
@@ -56,6 +58,14 @@ export interface TreeBuild {
   trunkSpots: Perch[];
   nest: Perch | null;
   hollow: Perch | null;
+  /** v16: highest point actually drawn (metres) — lower than `height` when the top is broken off. */
+  visibleTop: number;
+  /** v16: broken-top clip heights (metres): bark is cut at `bark`, foliage at `leaf`. Null when the top is whole. */
+  brokenCut: { bark: number; leaf: number } | null;
+  /** v16: trunk axis and radius at a height (metres, tree-group space). */
+  trunkAxis(yM: number): { x: number; z: number; r: number };
+  /** v16: keep world-space clipping planes (broken top) in step with the tree's transform; call after matrices update. */
+  sync(): void;
   dispose(): void;
 }
 
@@ -69,14 +79,46 @@ export const windUniforms = {
   uGust: { value: 0 },
 };
 
+/**
+ * v16 health look, shared by the tree's foliage and bark (set every frame by the scene, see treeLook.ts):
+ * uWither 0 healthy … 1 dead brown, uDroop drooping leaf tips, uPulse faint red 瀕死 pulse. Thumbnails zero them.
+ */
+export const healthUniforms = {
+  uWither: { value: 0 },
+  uDroop: { value: 0 },
+  uPulse: { value: 0 },
+};
+
+const HEALTH_FRAG_HEAD = 'uniform float uWither; uniform float uDroop; uniform float uPulse;';
+/** Dull → yellow → brown by uWither (linear colours, keeps the vertex-colour shading). */
+const WITHER_LEAF = `
+  {
+    vec3 c0 = diffuseColor.rgb;
+    float l = dot(c0, vec3(0.299, 0.587, 0.114));
+    vec3 dull = mix(c0, vec3(l), min(1.0, uWither * 1.6) * 0.5);
+    vec3 sick = mix(vec3(0.42, 0.3, 0.06), vec3(0.17, 0.08, 0.025), smoothstep(0.45, 0.95, uWither)) * (0.55 + l * 2.2);
+    diffuseColor.rgb = mix(dull, sick, smoothstep(0.12, 0.95, uWither) * 0.95);
+  }`;
+const WITHER_BARK = `
+  {
+    float l = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(l) * vec3(1.0, 0.93, 0.85), uWither * 0.45) * (1.0 - uWither * 0.18);
+  }`;
+const PULSE = `
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.07, 0.05), uPulse);`;
+
 let leafMaterial: THREE.MeshStandardMaterial | null = null;
 export function leafMat(): THREE.MeshStandardMaterial {
   if (leafMaterial) return leafMaterial;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, side: THREE.DoubleSide });
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, windUniforms);
+    Object.assign(shader.uniforms, windUniforms, healthUniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>${WITHER_LEAF}`)
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}`);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform float uHeight; uniform float uGust;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform float uHeight; uniform float uGust; uniform float uDroop;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -88,7 +130,9 @@ export function leafMat(): THREE.MeshStandardMaterial {
         float amp = uHeight * (0.004 + uWind * 0.03) * (1.0 + uGust * 0.8);
         transformed.x += (sway * 0.7 + flutter * 0.35) * amp * bend + uGust * uWind * bend * uHeight * 0.02;
         transformed.z += (cos(uTime * 1.1 + ph) * 0.4 + flutter * 0.3) * amp * bend;
-        transformed.y += flutter * amp * 0.25 * hk;`,
+        transformed.y += flutter * amp * 0.25 * hk;
+        float rr = length(position.xz);
+        transformed.y -= uDroop * rr * rr / max(uHeight, 0.5) * 0.5 * hk;`,
       );
   };
   leafMaterial = m;
@@ -96,10 +140,35 @@ export function leafMat(): THREE.MeshStandardMaterial {
 }
 
 let barkMaterial: THREE.MeshStandardMaterial | null = null;
-function barkMat(): THREE.MeshStandardMaterial {
-  barkMaterial ??= new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92 });
-  return barkMaterial;
+export function barkMat(): THREE.MeshStandardMaterial {
+  if (barkMaterial) return barkMaterial;
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92 });
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, healthUniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>${WITHER_BARK}`)
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}`);
+  };
+  barkMaterial = m;
+  return m;
 }
+
+/**
+ * v16: a copy of a tree material (keeps the wind / health shader) with its own clipping planes; `transparent` is fixed
+ * up front so fading later never recompiles.
+ */
+export function clippedMat(base: THREE.Material, planes: THREE.Plane[], transparent = false): THREE.MeshStandardMaterial {
+  const m = (base as THREE.MeshStandardMaterial).clone();
+  m.onBeforeCompile = base.onBeforeCompile;
+  m.clippingPlanes = planes;
+  m.clipShadows = true;
+  m.transparent = transparent;
+  return m;
+}
+
+/** v16: which tree mesh this is (FX split trees by part). */
+export type TreePart = 'bark' | 'leaf' | 'extra';
 
 /* ---------- Build context ---------- */
 
@@ -127,6 +196,7 @@ class Ctx {
   trunkPts: THREE.Vector3[] = [];
   trunkTop = 0;
   trunkRadius = 0.05;
+  trunkRTop = 0;
   crownY = 0;
   nest: Perch | null = null;
   hollow: Perch | null = null;
@@ -142,14 +212,17 @@ class Ctx {
     this.fullness = 0.62 + 0.38 * this.density;
   }
 
-  /** Leaf colour: species base, dulled toward sick yellow-brown when health is low. */
+  /**
+   * Leaf colour: species base with a little jitter. v16: low health no longer bakes a sick tint here — the foliage
+   * shader withers it continuously (healthUniforms), so colour changes need no rebuild.
+   */
   leaf(hex: string, jitter = 0.05, light = 0): THREE.Color {
     const c = col(hex);
     const hsl = { h: 0, s: 0, l: 0 };
     c.getHSL(hsl);
     c.setHSL(hsl.h + (this.rand() - 0.5) * jitter * 0.4, clamp(hsl.s + (this.rand() - 0.5) * jitter, 0, 1), clamp(hsl.l + (this.rand() - 0.5) * jitter + light, 0, 1));
-    const sick = new THREE.Color().setHSL(0.1 + this.rand() * 0.03, 0.45, 0.4);
-    return c.lerp(sick, clamp((60 - this.health) / 50, 0, 0.85));
+    void this.rand();
+    return c;
   }
 
   /** Straight-ish trunk along a gently wandering polyline. */
@@ -175,6 +248,7 @@ class Ctx {
     this.trunkPts = pts;
     this.trunkTop = height;
     this.trunkRadius = r0;
+    this.trunkRTop = rTop;
   }
 
   /** Point on the trunk at height fraction f. */
@@ -192,7 +266,8 @@ class Ctx {
   /** Low health thins the crown: some optional foliage pieces are left out. */
   skip(): boolean {
     if (this.stage === 0 || this.spots.length < 6) return false;
-    const thin = clamp((0.6 - this.density) * 0.85, 0, 0.45);
+    // v16: 瀕死 / dead (health 0) is nearly bare.
+    const thin = this.health <= 0 ? 0.72 : clamp((0.6 - this.density) * 0.85, 0, 0.45);
     return thin > 0 && this.rand() < thin;
   }
 
@@ -874,13 +949,68 @@ function lushen(c: Ctx, form: TreeForm): void {
   }
 }
 
+/**
+ * v16: foliage density is built in a few health tiers (colour is continuous in the shader), so most health changes
+ * never rebuild the tree. Returns the health the tier is built with.
+ */
+export function healthTierHealth(h: number): number {
+  if (h <= 0) return 0;
+  if (h >= 85) return 95;
+  if (h >= 60) return 72;
+  if (h >= 40) return 50;
+  if (h >= 25) return 32;
+  if (h >= 10) return 17;
+  return 6;
+}
+
+/** v16: broken-top buckets (the look fades in 8 steps as the tree regrows). */
+export function brokenBucket(b: number | undefined): number {
+  return Math.round(clamp(b ?? 0, 0, 1) * 8);
+}
+
 export function treeKey(p: TreeParams): string {
   const v = visualHeight(p.heightCm);
   const r = p.reinforce;
-  return [p.species, p.stage, Math.round(v * 40), Math.round(p.health / 12), p.pests > 45 ? 1 : 0, Math.min(4, p.scars), r?.stakes ? 1 : 0, r?.ropes ? 1 : 0, r?.prune ? 1 : 0, p.seed].join('|');
+  return [p.species, p.stage, Math.round(v * 40), healthTierHealth(p.health), p.pests > 45 ? 1 : 0, Math.min(4, p.scars), r?.stakes ? 1 : 0, r?.ropes ? 1 : 0, r?.prune ? 1 : 0, p.seed, brokenBucket(p.brokenTop)].join('|');
+}
+
+/** Highest vertex y over a list of geometries (model units). */
+function topOf(geos: THREE.BufferGeometry[]): number {
+  let top = 0;
+  for (const g of geos) {
+    g.computeBoundingBox();
+    top = Math.max(top, g.boundingBox!.max.y);
+  }
+  return top;
+}
+
+/** v16: pale splintered wood where the trunk snapped (points up, base at y 0). */
+export function jaggedCap(r: number, seed: number, down = false): THREE.BufferGeometry {
+  const rand = mulberry32(seed * 31 + 5);
+  const parts: THREE.BufferGeometry[] = [];
+  const disc = new THREE.CylinderGeometry(r * 0.92, r * 0.98, r * 0.18, 9);
+  disc.translate(0, r * 0.05, 0);
+  paint(disc, col('#e8d8ae'));
+  parts.push(disc);
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.5;
+    const rr = r * (0.35 + rand() * 0.5);
+    const h = r * (0.5 + rand() * 1.3);
+    const g = new THREE.ConeGeometry(r * (0.22 + rand() * 0.16), h, 4);
+    g.translate(0, h / 2, 0);
+    g.rotateZ((rand() - 0.5) * 0.5);
+    g.translate(Math.cos(a) * rr, r * 0.08, Math.sin(a) * rr);
+    paint(g, (y) => col('#f1e4c0').lerp(col('#c7ad7c'), clamp(1 - y / h, 0, 1) * 0.6));
+    parts.push(g);
+  }
+  const out = merge(parts, true);
+  if (down) out.rotateX(Math.PI);
+  return out;
 }
 
 export function buildTree(p: TreeParams): TreeBuild {
+  p = { ...p, health: healthTierHealth(p.health) };
   const c = new Ctx(p);
   const form = speciesDef(p.species).form;
   if (c.stage === 0) seedling(c, form);
@@ -915,15 +1045,123 @@ export function buildTree(p: TreeParams): TreeBuild {
     c.bark.push(paint(ring, col('#3a2a20')));
   }
 
+  // v16 broken top: the upper part snapped off in a collapse. Foliage above the cut goes, the bark is clipped at the
+  // cut (material clipping plane), the trunk ends in a pale jagged cap with one or two fresh shoots growing from it.
+  const broken = c.stage >= 1 ? clamp(p.brokenTop ?? 0, 0, 1) : 0;
+  const fullTop = broken > 0.02 ? Math.max(topOf(c.bark), topOf(c.leaves)) : 0;
+  let cutLocal: number | null = null;
+  const extraBark: THREE.BufferGeometry[] = [];
+  const extraLeaves: THREE.BufferGeometry[] = [];
+  if (broken > 0.02) {
+    const cut = fullTop * (1 - 0.2 * broken);
+    cutLocal = cut;
+    const margin = fullTop * 0.05;
+    // A notch in the middle of the crown where the leader went, so the snapped wood shows from the usual look-down.
+    const ax = c.trunkAt(clamp(cut / (c.trunkTop || V), 0, 1));
+    const notchR = V * 0.17 * broken;
+    const notchY = cut - fullTop * 0.1 * broken;
+    c.leaves = c.leaves.filter((g) => {
+      const b = g.boundingBox!;
+      const cx = (b.min.x + b.max.x) / 2 - ax.x;
+      const cz = (b.min.z + b.max.z) / 2 - ax.z;
+      const cy = (b.min.y + b.max.y) / 2;
+      const inNotch = cy > notchY && Math.hypot(cx, cz) < notchR;
+      const keep = !inNotch && cy < cut && b.min.y < cut - margin * 0.2;
+      if (!keep) g.dispose();
+      return keep;
+    });
+    c.spots = c.spots.filter((sp) => sp.c.y < cut);
+    c.bark = c.bark.filter((g) => {
+      const keep = g.boundingBox!.min.y < cut;
+      if (!keep) g.dispose();
+      return keep;
+    });
+    const tTop = c.trunkTop || V;
+    const f = clamp(cut / tTop, 0, 1);
+    const at = c.trunkAt(f);
+    const reaches = tTop >= cut * 0.97;
+    const rCut = Math.max(0.01, reaches ? c.trunkRadius + ((c.trunkRTop || c.trunkRadius * 0.5) - c.trunkRadius) * f : c.trunkRadius * 0.35);
+    const base = new V3(at.x, cut - rCut * 0.1, at.z);
+    const cap = jaggedCap(rCut * 1.04, p.seed);
+    cap.translate(base.x, base.y, base.z);
+    extraBark.push(cap);
+    if (!reaches) {
+      // Decurrent crown: the trunk ends lower, so a few snapped limbs stick up out of the lowered crown instead.
+      for (let i = 0; i < 3; i++) {
+        const a = p.seed + i * 2.1;
+        const from = new V3(at.x + Math.cos(a) * rCut * 2, cut - V * 0.12, at.z + Math.sin(a) * rCut * 2);
+        // Snapped limbs poke out of the lowered crown but never above where the whole tree reached.
+        const toY = cut + (fullTop - cut) * (0.4 + 0.08 * i);
+        const to = new V3(from.x + Math.cos(a) * V * 0.03, Math.max(from.y + V * 0.04, toY), from.z + Math.sin(a) * V * 0.03);
+        extraBark.push(paint(limb(from, to, rCut * 0.8, rCut * 0.45, 5), col('#7a634d')));
+        const tip = jaggedCap(rCut * 0.5, p.seed + i);
+        tip.translate(to.x, to.y - rCut * 0.1, to.z);
+        extraBark.push(tip);
+      }
+    }
+    // Fresh shoots (longer as the tree regrows).
+    const shoots = broken > 0.5 ? 2 : 1;
+    for (let i = 0; i < shoots; i++) {
+      const a = p.seed * 0.7 + i * 2.6;
+      // Longer as the tree regrows, but the shoots never reach the height the tree had before the snap.
+      const len = Math.min(V * (0.05 + 0.1 * (1 - broken)) + rCut * 1.5, (fullTop - base.y) * 0.65);
+      const from = base.clone().add(new V3(Math.cos(a) * rCut * 0.45, rCut * 0.3, Math.sin(a) * rCut * 0.45));
+      const mid = from.clone().add(new V3(Math.cos(a) * len * 0.18, len * 0.55, Math.sin(a) * len * 0.18));
+      const tip = mid.clone().add(new V3(-Math.cos(a) * len * 0.08, len * 0.45, -Math.sin(a) * len * 0.08));
+      const sr = Math.max(0.006, rCut * 0.16);
+      extraBark.push(paint(limb(from, mid, sr, sr * 0.8, 4), col('#7d8a48')));
+      extraBark.push(paint(limb(mid, tip, sr * 0.8, sr * 0.45, 4), col('#8a9a50')));
+      const lr = Math.max(0.025, len * 0.16);
+      for (const [pt, r] of [[mid, lr * 0.8], [tip, lr]] as const) {
+        const g = new THREE.IcosahedronGeometry(r, 0);
+        g.scale(1, 0.75, 1);
+        g.translate(pt.x, pt.y + r * 0.3, pt.z);
+        paint(g, col('#8fd06a').offsetHSL(0, 0, (i - 0.5) * 0.04));
+        extraLeaves.push(g);
+      }
+    }
+    // Nest / crown height stay below the break.
+    c.crownY = Math.min(c.crownY, cut * 0.86);
+    if (c.nest && c.nest.pos.y > cut * 0.92) c.nest.pos.y = cut * 0.88;
+  }
+
   const group = new THREE.Group();
-  const barkMesh = new THREE.Mesh(merge(c.bark, true), barkMat());
+  const planes: { plane: THREE.Plane; local: THREE.Plane }[] = [];
+  const clipAt = (y: number) => {
+    const local = new THREE.Plane(new V3(0, -1, 0), y);
+    const plane = local.clone();
+    planes.push({ plane, local });
+    return plane;
+  };
+  const barkPlane = cutLocal !== null ? clipAt(cutLocal) : null;
+  const leafPlane = cutLocal !== null ? clipAt(cutLocal + fullTop * 0.06) : null;
+  const ownMats: THREE.Material[] = [];
+  const barkMesh = new THREE.Mesh(merge(c.bark, true), barkPlane ? clippedMat(barkMat(), [barkPlane]) : barkMat());
+  if (barkPlane) ownMats.push(barkMesh.material as THREE.Material);
   barkMesh.castShadow = true;
   barkMesh.receiveShadow = true;
+  barkMesh.userData.treePart = 'bark' satisfies TreePart;
   group.add(barkMesh);
-  const canopy = new THREE.Mesh(merge(c.leaves, true), leafMat());
+  const canopy = new THREE.Mesh(merge(c.leaves, true), leafPlane ? clippedMat(leafMat(), [leafPlane]) : leafMat());
+  if (leafPlane) ownMats.push(canopy.material as THREE.Material);
   canopy.castShadow = true;
   canopy.receiveShadow = true;
+  canopy.userData.treePart = 'leaf' satisfies TreePart;
   group.add(canopy);
+  if (extraBark.length) {
+    const m = new THREE.Mesh(merge(extraBark, true), barkMat());
+    m.castShadow = true;
+    m.userData.treePart = 'bark' satisfies TreePart;
+    m.userData.brokenCap = true;
+    group.add(m);
+  }
+  if (extraLeaves.length) {
+    const m = new THREE.Mesh(merge(extraLeaves, true), leafMat());
+    m.castShadow = true;
+    m.userData.treePart = 'leaf' satisfies TreePart;
+    m.userData.brokenCap = true;
+    group.add(m);
+  }
 
   // Perches: tops of foliage spots on the camera side first.
   const top = c.trunkAt(1);
@@ -962,6 +1200,7 @@ export function buildTree(p: TreeParams): TreeBuild {
     if (sticks.length) {
       const m = new THREE.Mesh(merge(sticks), mat('#c99a63'));
       m.castShadow = true;
+      m.userData.treePart = 'extra' satisfies TreePart;
       group.add(m);
     }
     if (ropes.length) {
@@ -969,7 +1208,9 @@ export function buildTree(p: TreeParams): TreeBuild {
       band.rotateX(Math.PI / 2);
       band.translate(0, h * 0.85, 0);
       ropes.push(band);
-      group.add(new THREE.Mesh(merge(ropes), mat('#e8dcc0')));
+      const m = new THREE.Mesh(merge(ropes), mat('#e8dcc0'));
+      m.userData.treePart = 'extra' satisfies TreePart;
+      group.add(m);
     }
   }
   void rand;
@@ -984,7 +1225,21 @@ export function buildTree(p: TreeParams): TreeBuild {
   // Metre scale: the shape is modelled at a comfortable size, then scaled uniformly so the highest rendered point is
   // exactly the game height G (1 unit = 1 m, see scale.ts).
   group.updateMatrixWorld(true);
-  const localTop = Math.max(0.01, new THREE.Box3().setFromObject(group).max.y);
+  let drawnTop = Math.max(0.01, new THREE.Box3().setFromObject(group).max.y);
+  if (cutLocal !== null) {
+    // v16: clipped meshes are drawn only up to their clip plane (the geometry above it is still in the buffers).
+    let top = 0.01;
+    for (const child of group.children) {
+      const box = new THREE.Box3().setFromObject(child);
+      if (box.isEmpty()) continue;
+      const mat = (child as THREE.Mesh).material as THREE.Material | undefined;
+      const clip = mat && !Array.isArray(mat) ? mat.clippingPlanes : null;
+      top = Math.max(top, clip?.length ? Math.min(box.max.y, ...clip.map((pl) => pl.constant)) : box.max.y);
+    }
+    drawnTop = Math.min(drawnTop, top);
+  }
+  // v16: a broken tree keeps the scale of the whole tree (its game height), so the break really lowers the crown.
+  const localTop = cutLocal !== null ? Math.max(drawnTop, fullTop) : drawnTop;
   const k = modelScaleFor(localTop, p.heightCm);
   const outer = new THREE.Group();
   group.scale.setScalar(k);
@@ -998,6 +1253,23 @@ export function buildTree(p: TreeParams): TreeBuild {
     }
   };
   for (const pr of [...perches, ...trunkSpots, c.nest, c.hollow]) if (pr) sc(pr.pos);
+  const tPts = c.trunkPts.map((q) => q.clone().multiplyScalar(k));
+  const tTopM = (c.trunkTop || V) * k;
+  const r0M = c.trunkRadius * k;
+  const rTopM = (c.trunkRTop || c.trunkRadius * 0.5) * k;
+  const trunkAxis = (yM: number) => {
+    const f = clamp(yM / Math.max(1e-4, tTopM), 0, 1);
+    if (tPts.length < 2) return { x: 0, z: 0, r: r0M * (1 - f * 0.5) };
+    const x = f * (tPts.length - 1);
+    const i = Math.min(tPts.length - 2, Math.floor(x));
+    const q = new V3().lerpVectors(tPts[i]!, tPts[i + 1]!, x - i);
+    return { x: q.x, z: q.z, r: yM > tTopM ? rTopM * 0.6 : r0M + (rTopM - r0M) * f };
+  };
+  const sync = () => {
+    if (!planes.length) return;
+    group.updateWorldMatrix(true, false);
+    for (const pl of planes) pl.plane.copy(pl.local).applyMatrix4(group.matrixWorld);
+  };
   return {
     group: outer,
     canopy,
@@ -1011,6 +1283,13 @@ export function buildTree(p: TreeParams): TreeBuild {
     trunkSpots,
     nest: c.nest,
     hollow: c.hollow,
-    dispose: () => disposeTree(outer),
+    visibleTop: drawnTop * k,
+    brokenCut: cutLocal !== null ? { bark: cutLocal * k, leaf: (cutLocal + fullTop * 0.06) * k } : null,
+    trunkAxis,
+    sync,
+    dispose: () => {
+      disposeTree(outer);
+      ownMats.forEach((m) => m.dispose());
+    },
   };
 }

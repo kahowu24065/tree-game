@@ -47,7 +47,7 @@ const hash = (i: number, k: number) => {
 };
 
 /** A pool of points with per-point RGBA; hidden points get alpha 0. */
-class PointPool {
+export class PointPool {
   points: THREE.Points;
   pos: Float32Array;
   col: Float32Array;

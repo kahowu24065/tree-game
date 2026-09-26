@@ -75,8 +75,14 @@ function hm(minutes: number): string {
   return `${Math.floor(m / 60)} 小時 ${String(m % 60).padStart(2, '0')} 分`;
 }
 
+/** v16: the game clock (developer day skips run ahead of the wall clock) — the 瀕死 countdown uses it. */
+let uiNow = () => Date.now();
+export function setUiClock(fn: () => number): void {
+  uiNow = fn;
+}
+
 export function dyingLeftMs(state: GameState): number {
-  return state.dying ? state.dying.at + 24 * 3600 * 1000 - Date.now() : 0;
+  return state.dying ? state.dying.at + 24 * 3600 * 1000 - uiNow() : 0;
 }
 
 /** v12 water side effect of an event, in words. */

@@ -171,9 +171,17 @@ describe('瀕死、枯死、遺產', () => {
     expect(meta.reviveTokens).toBe(0);
   });
 
-  it('離開幾日都唔會一返嚟就死：先有 24 小時瀕死', () => {
+  it('v16：離開幾日，每晚按嗰日完結嘅時間結算 — 瀕死 24 小時過咗就喺追結算入面枯死', () => {
     const s = game({ health: 20, moisture: 20, nutrients: 20 });
     s.lastSeenDate = '2026-09-20';
+    const report = catchUp(s, '2026-09-27', () => ['clear'], null, NOW);
+    expect(report.over).toBe(true);
+    expect(s.over).toMatchObject({ kind: 'dead', fallSeen: false });
+  });
+
+  it('v16：只係離開一晚，瀕死由嗰晚完結（上限而家）開始計，唔會即死', () => {
+    const s = game({ health: 3, moisture: 20, nutrients: 20 });
+    s.lastSeenDate = '2026-09-26';
     const report = catchUp(s, '2026-09-27', () => ['clear'], null, NOW);
     expect(report.over).toBe(false);
     expect(s.dying?.at).toBe(NOW);

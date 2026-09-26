@@ -88,6 +88,14 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="grow-young">長到青年樹</button>
         ${[0, 1, 2, 3].map((n) => `<button type="button" class="${(s.collapses || 0) === n ? 'on' : ''}" data-dev-collapses="${n}">倒塌 ${n}</button>`).join('')}
       </div>
+      <h4 class="dev-h">倒塌・枯死動畫（v16）</h4>
+      <div class="dev-actions">
+        <button type="button" data-dev="fx-collapse">觸發倒塌（八號風球結算）</button>
+        <button type="button" data-dev="fx-fatal">觸發致命倒塌</button>
+        <button type="button" data-dev="fx-replay" ${s.lastCollapse ? '' : 'disabled'}>重播倒塌</button>
+        <button type="button" data-dev="fx-dying">瀕死</button>
+        <button type="button" class="danger" data-dev="fx-death">枯死（動畫）</button>
+      </div>
       <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米・樹齡 ${s.ageDays || 0} 日・里程碑 ${Object.keys(s.milestones ?? {}).join('、') || '冇'}</p>
       <h4 class="dev-h">樹種・生長階段預覽</h4>
       <div class="dev-row">
@@ -144,6 +152,11 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     if (!cmd) return;
     if (cmd === 'wind-toggle') api.setWindUnlocked(!api.state().windUnlocked);
     if (cmd === 'grow-young') api.setStageHeight(2);
+    if (cmd === 'fx-collapse') api.triggerCollapse(false);
+    if (cmd === 'fx-fatal') api.triggerCollapse(true);
+    if (cmd === 'fx-replay') api.replayCollapse();
+    if (cmd === 'fx-dying') api.triggerDying();
+    if (cmd === 'fx-death') api.triggerDeath();
     if (cmd === 'toggle') api.setDev({ ...d, open: !d.open });
     if (cmd === 'mode-real') api.setDev({ ...d, mode: 'real' });
     if (cmd === 'mode-manual') api.setDev({ ...d, mode: 'manual' });

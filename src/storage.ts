@@ -113,6 +113,23 @@ export function renameWarmCover(data: GameState): void {
 }
 
 /**
+ * v16 visual-only fields: no collapse on record for old saves; a tree that died before v16 has already been seen dead
+ * (no death animation replays on load, it just lies there as the fallen log).
+ */
+export function migrateV16(data: GameState): void {
+  if (data.lastCollapse === undefined) data.lastCollapse = null;
+  const lc = data.lastCollapse;
+  if (lc && (typeof lc !== 'object' || typeof lc.heightBefore !== 'number' || typeof lc.date !== 'string')) data.lastCollapse = null;
+  else if (lc) {
+    lc.heightAfter = typeof lc.heightAfter === 'number' ? lc.heightAfter : data.heightCm;
+    lc.count = Number(lc.count) || 1;
+    lc.fatal = Boolean(lc.fatal);
+    lc.seen = lc.seen !== false;
+  }
+  if (data.over && data.over.fallSeen === undefined) data.over.fallSeen = true;
+}
+
+/**
  * v2 = 《世界之樹》rules. No migration from older keys (yiri-yisyu-v1). Rule changes inside v2 migrate by field
  * presence; v14 adds `rules: 14` (see migrateV14).
  */
@@ -150,6 +167,7 @@ export function parseSave(raw: string): GameState | null {
     migrateTarget(data);
     migrateWind(data);
     migrateV14(data);
+    migrateV16(data);
     return data;
   } catch {
     return null;
