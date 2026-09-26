@@ -37,9 +37,10 @@ describe('公式', () => {
     expect(pickEvent([])).toBe('clear');
   });
 
-  it('颱風分兩級：初級係高級嘅一半', () => {
-    expect(WEATHER_EVENTS.typhoon8).toMatchObject({ damage: 60, dR: -80 });
-    expect(WEATHER_EVENTS.typhoon1).toMatchObject({ damage: 30, dR: -40 });
+  it('颱風分兩級：初級消耗係高級嘅一半（v13：35 → 18）', () => {
+    expect(WEATHER_EVENTS.typhoon8).toMatchObject({ damage: 60, dR: -35, collapseBelow: 40 });
+    expect(WEATHER_EVENTS.typhoon1).toMatchObject({ damage: 30, dR: -18, collapseBelow: 20 });
+    expect(WEATHER_EVENTS.thunder).toMatchObject({ damage: 35, dR: -25, collapseBelow: 25 });
   });
 
   it('H_mult 階梯', () => {
@@ -69,10 +70,10 @@ describe('公式', () => {
 });
 
 describe('夜間結算', () => {
-  it('健康公式、抗風減免、ΔG（高級颱風）', () => {
-    const s = game({ resist: 50 });
+  it('健康公式、抗風減免、ΔG（高級颱風，青年樹後）', () => {
+    const s = game({ resist: 50, windUnlocked: true });
     const { settlement } = settleDay(s, '2026-09-25', ['typhoon8'], null, NOW);
-    expect(settlement).toMatchObject({ event: 'typhoon8', wFactor: 5, nFactor: 5, baseDamage: 60, finalDamage: 30, hAfter: 50, rAfter: 0, hMult: 1 });
+    expect(settlement).toMatchObject({ event: 'typhoon8', wFactor: 5, nFactor: 5, baseDamage: 60, finalDamage: 30, hAfter: 50, rAfter: 13, hMult: 1 });
     expect(settlement.wAfter).toBe(50);
     expect(settlement.nAfter).toBe(60);
     // 樟樹目標 50 米 / 90 日 = 55.6 厘米一日。
@@ -82,20 +83,22 @@ describe('夜間結算', () => {
     expect(s.heightCm).toBeCloseTo(51.4, 5);
   });
 
-  it('暴雨同颱風一齊：傷害唔疊加（只計颱風）；暴雨水分係即時 +20，落雨日冇流失', () => {
-    const s = game({ resist: 50 });
+  it('v13：暴雨同颱風唔同類，疊加計（雨 −10 ＋ 風 30）；暴雨水分係即時 +20，落雨日冇流失', () => {
+    const s = game({ resist: 50, windUnlocked: true });
     const { settlement } = settleDay(s, '2026-09-25', ['rainstorm', 'typhoon8'], null, NOW);
     expect(settlement.event).toBe('typhoon8');
-    expect(settlement.finalDamage).toBe(30);
+    expect(settlement.finalDamage).toBe(40);
+    expect(settlement.rain).toMatchObject({ event: 'rainstorm', score: -10 });
+    expect(settlement.wind).toMatchObject({ event: 'typhoon8', score: -30 });
     expect(s.moisture).toBe(80);
-    expect(settlement.notes.join()).toContain('只計最重');
+    expect(settlement.notes.join()).toContain('各自計埋');
   });
 
-  it('初級颱風傷害同消耗都係一半', () => {
-    const s = game({ resist: 50 });
+  it('初級颱風傷害係一半，消耗 18', () => {
+    const s = game({ resist: 50, windUnlocked: true });
     const { settlement } = settleDay(s, '2026-09-25', ['typhoon1'], null, NOW);
     expect(settlement.finalDamage).toBe(15);
-    expect(s.resist).toBe(8);
+    expect(s.resist).toBe(30);
   });
 
   it('v12：晴天每晚 −10、毛毛雨 +10 冇流失、酷熱（未即時計過）−20 再 −10', () => {
@@ -108,7 +111,7 @@ describe('夜間結算', () => {
   });
 
   it('推高抗風力捱過風暴有生長加成', () => {
-    const s = game({ resist: 100, health: 90 });
+    const s = game({ resist: 100, health: 90, windUnlocked: true });
     const r = settleDay(s, '2026-09-25', ['thunder'], null, NOW);
     expect(r.settlement.finalDamage).toBe(0);
     expect(r.settlement.weatherBonus).toBe(1.04);
@@ -211,7 +214,7 @@ describe('瀕死、枯死、遺產', () => {
 
 describe('照顧同動物', () => {
   it('澆水每日 3 次、落雨唔使澆，疏水降水分，加固每樣每日一次', () => {
-    const s = game({ moisture: 30 });
+    const s = game({ moisture: 30, windUnlocked: true });
     s.care.date = '2026-09-25';
     expect(performAction(s, 'water', { raining: true }).ok).toBe(false);
     for (let i = 0; i < 3; i++) expect(performAction(s, 'water', { raining: false }).ok).toBe(true);

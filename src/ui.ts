@@ -1,4 +1,4 @@
-import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
+import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, SEASONS, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, type PrepId, type WeatherEventId } from './balance';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
@@ -10,7 +10,7 @@ import { dayEvent, hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import type { HkoWarning } from './hko';
 import { carbonKg, hMultTier, seasonDef } from './rules';
-import { actionLimit, advice, dayNumber, eventTitle, type NightPlan } from './sim';
+import { actionLimit, advice, dayNumber, doubleRActive, emergencyOptions, eventTitle, prepAmount, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, TabId } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -88,12 +88,28 @@ function waterText(id: WeatherEventId, short = false): string {
   return short ? 'W 晚上 −10' : '水分照常每晚 −10';
 }
 
-function effectText(id: WeatherEventId): string {
+/** v13 health effect of an event, in words (熱／雨: 應急行動 cancels it; 風: × (1 − R/100), 青年樹 onwards). */
+function damageText(id: WeatherEventId, unlocked: boolean): string {
   const d = ev(id);
-  const parts = [d.damage ? `健康 −${d.damage}（抗風力可減免）` : '冇傷害'];
+  if (!d.damage) return '冇傷害';
+  if (d.category === 'heat') return `健康 −${d.damage}（做酷熱澆水就唔扣）`;
+  if (d.category === 'rain') return `健康 −${d.damage}（做暴雨疏水就唔扣）`;
+  if (!unlocked) return '青年樹前唔受風災影響';
+  return `健康 −${d.damage} × (1 − R/100)・R 低過 ${d.collapseBelow} 會倒塌`;
+}
+
+function effectText(id: WeatherEventId, unlocked = true): string {
+  const d = ev(id);
+  const parts = [damageText(id, unlocked)];
   parts.push(waterText(id));
-  if (d.dR) parts.push(`抗風力 ${d.dR}`);
+  if (d.dR && unlocked) parts.push(`抗風力 ${d.dR}`);
   return parts.join('・');
+}
+
+/** 倒塌 count text, e.g. 倒塌 1/2. */
+export function collapseText(state: GameState): string {
+  const n = state.collapses || 0;
+  return n > COLLAPSE_MAX ? `倒塌 ${n} 次・再倒即死` : `倒塌 ${n}/${COLLAPSE_MAX}`;
 }
 
 const M = '−';
@@ -118,24 +134,52 @@ function nLabel(score: number): string {
   return score > 0 ? '充足' : score < 0 ? '營養不良' : '一般';
 }
 
+/** v13 collapse warning for 今晚預計 (null when tonight is safe). */
+export function collapseWarning(p: NightPlan, collapses: number): { text: string; fatal: boolean } | null {
+  const c = p.collapse;
+  if (!c) return null;
+  const label = ev(c.event).label;
+  const head = `⚠️ R ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚會倒塌`;
+  if (c.fatal && !c.revive) return { text: `${head}，已倒 ${collapses} 次，今次會死！`, fatal: true };
+  if (c.fatal) return { text: `${head}，已倒 ${collapses} 次，要靠免死金牌先保得住`, fatal: true };
+  return { text: `${head}（已倒 ${collapses}/${COLLAPSE_MAX} 次）`, fatal: false };
+}
+
 /** The lines of the 今晚預計 breakdown (same NightPlan as settlement). */
 export function previewLines(p: NightPlan): { text: string; value: string; tone: string; sub?: string }[] {
   const tone = (v: number) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
   const waterSub =
     p.water.kind === 'loss' ? `而家 ${fmt(p.wBefore)}，今晚流失 ${signed(p.water.delta)}` : p.water.kind === 'drizzle' ? `而家 ${fmt(p.wBefore)}，毛毛雨 ${signed(p.water.delta)}，冇流失` : `而家 ${fmt(p.wBefore)}，落雨日冇流失`;
-  const lines = [
+  const lines: { text: string; value: string; tone: string; sub?: string }[] = [
     { text: `水分 ${fmt(p.wAfter)}｜${p.waterDeath ? '根部浸死' : p.wLabel}`, value: p.waterDeath ? '瀕死' : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: waterSub },
     { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: `每晚用 10${p.residentN ? `，長駐動物 +${p.residentN}` : ''}` },
-    p.baseDamage
-      ? { text: `${ev(p.event).label}傷害（抗風力 ${Math.round(p.rBefore)}）`, value: signed(-p.damage), tone: tone(-p.damage), sub: `基礎 ${p.baseDamage} × (1 − ${Math.round(p.rBefore)}/100)，只計當日最重事件` }
-      : { text: `天氣：${ev(p.event).label}`, value: '0', tone: 'flat' },
   ];
+  if (p.heat) lines.push(p.heat.handled ? { text: '熱｜酷熱：已應對', value: '0', tone: 'flat', sub: '做咗酷熱澆水' } : { text: '熱｜酷熱', value: signed(p.heat.score), tone: 'down', sub: '做「酷熱澆水」就唔扣' });
+  if (p.rain) {
+    const label = ev(p.rain.event).label;
+    lines.push(p.rain.handled ? { text: `雨｜${label}：已應對`, value: '0', tone: 'flat', sub: '做咗暴雨疏水' } : { text: `雨｜${label}`, value: signed(p.rain.score), tone: 'down', sub: '做「暴雨疏水」就唔扣' });
+  }
+  if (p.wind) {
+    const label = ev(p.wind.event).label;
+    lines.push(
+      p.wind.locked
+        ? { text: `風｜${label}`, value: '0', tone: 'flat', sub: '青年樹前唔受風災影響' }
+        : { text: `風｜${label}（抗風力 ${Math.round(p.wind.r)}）`, value: signed(p.wind.score), tone: tone(p.wind.score), sub: `基礎 ${p.wind.base} × (1 − ${Math.round(p.wind.r)}/100)` },
+    );
+  }
+  if (!p.heat && !p.rain && !p.wind) lines.push({ text: `天氣：${ev(p.event).label}`, value: '0', tone: 'flat' });
+  if (p.emergencyBonus) lines.push({ text: p.emergencyCount > 1 ? '應急獎勵 (3 + 3) × 0.75' : '應急獎勵', value: signed(p.emergencyBonus), tone: 'up', sub: p.emergencyCount > 1 ? '酷熱澆水同暴雨疏水都做咗' : '應急行動做得啱時' });
   if (p.pest) lines.push({ text: '蟲害', value: signed(-p.pest), tone: 'down' });
   return lines;
 }
 
-function previewChip(p: NightPlan, dying: boolean): { chip: string; pop: string } {
-  const t = p.waterDeath ? 'down' : p.dH > 0 ? 'up' : p.dH < 0 ? 'down' : 'flat';
+function collapseHtml(p: NightPlan, collapses: number): string {
+  const w = collapseWarning(p, collapses);
+  return w ? `<p class="collapse-warn ${w.fatal ? 'fatal' : ''}">${esc(w.text)}</p>` : '';
+}
+
+function previewChip(p: NightPlan, dying: boolean, collapses = 0): { chip: string; pop: string } {
+  const t = p.waterDeath || p.collapse ? 'down' : p.dH > 0 ? 'up' : p.dH < 0 ? 'down' : 'flat';
   const val = p.waterDeath ? '瀕死' : signed(p.dH);
   const lines = previewLines(p)
     .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span><b>${esc(l.value)}</b></li>`)
@@ -143,12 +187,13 @@ function previewChip(p: NightPlan, dying: boolean): { chip: string; pop: string 
   const pop = previewOpen
     ? `<div class="night-pop glass" role="dialog" aria-label="今晚預計明細">
         <p class="eyebrow">今晚結算預計</p>
+        ${collapseHtml(p, collapses)}
         <ul>${lines}</ul>
-        <p class="night-total ${t}">健康 ${Math.round(p.hBefore)} → ${Math.round(p.hAfter)}<b>${esc(val)}</b></p>
+        <p class="night-total ${t}">健康 ${fmt(p.hBefore)} → ${fmt(p.hAfter)}<b>${esc(val)}</b></p>
         <p class="fine">${dying ? '瀕死中：水分 50–100、養分 60 以上即刻救返。' : '照而家狀態計；澆水、疏水、加固或者天氣變咗會即刻更新。'}</p>
       </div>`
     : '';
-  return { chip: `<button type="button" class="night-chip ${t}" data-action="preview" aria-expanded="${previewOpen}">今晚預計 <b>${esc(val)}</b>${icon(previewOpen ? 'chevronDown' : 'chevronRight')}</button>`, pop };
+  return { chip: `<button type="button" class="night-chip ${t}" data-action="preview" aria-expanded="${previewOpen}">${p.collapse ? '⚠️' : ''}今晚預計 <b>${esc(val)}</b>${icon(previewOpen ? 'chevronDown' : 'chevronRight')}</button>`, pop };
 }
 
 /** 水分 bar on a 0-150 scale: 最佳 50-100, 飽和線 at 100, 爛根區 shaded darker per tier, line at 150. */
@@ -198,7 +243,8 @@ export function renderChrome(view: View): void {
     const season = seasonDef(state.season);
     const stage = stageFor(state.heightCm, speciesTargetCm(state.species));
     const drains = actionLimit(state, 'drain');
-    const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying)) : null;
+    const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying), state.collapses || 0) : null;
+    const emerg = state.started && !state.over ? emergencyButtons(view, 'mini') : '';
     status.classList.toggle('pop-open', Boolean(night?.pop));
     status.innerHTML = `
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
@@ -208,16 +254,25 @@ export function renderChrome(view: View): void {
         <div class="night-row">${night?.chip ?? ''}</div>
         ${waterBar(state.moisture)}
         ${statBar('N', '養分', state.nutrients, N_OPTIMAL, 'food')}
-        ${statBar('R', '抗風', state.resist, [60, 100], 'shield')}
+        ${statBar('R', '抗風', state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked')}
       </div>
+      ${state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : ''}
       <div class="mini-acts">
         <button type="button" class="mini ${state.pest.active ? 'alert' : ''}" data-action="deworm" ${state.care.dewormed ? 'disabled' : ''}>${icon('bug')}<span>${state.care.dewormed ? '除過喇' : state.pest.active ? '有蟲！' : '除蟲'}</span></button>
         <button type="button" class="mini ${state.moisture > W_SATURATED ? 'alert' : ''}" data-action="drain" ${drains.used >= drains.max ? 'disabled' : ''}>${icon('drain')}<span>${drains.used >= drains.max ? '疏過喇' : `疏水 ${drains.max - drains.used}`}</span></button>
-      </div>${night?.pop ?? ''}`;
+      </div>${emerg ? `<div class="emerg-acts">${emerg}</div>` : ''}${night?.pop ?? ''}`;
   }
 
   const rail = document.getElementById('rail');
-  if (rail) rail.innerHTML = railHtml(state);
+  if (rail) {
+    rail.innerHTML = railHtml(state);
+    // v13: the status card grows with 應急行動 / 倒塌 rows — keep the height rail below it.
+    rail.style.top = '';
+    if (status && status.offsetHeight) {
+      const bottom = status.offsetTop + status.offsetHeight + 12;
+      if (bottom > rail.offsetTop) rail.style.top = `${bottom}px`;
+    }
+  }
 
   const dock = document.getElementById('dock');
   if (dock) {
@@ -225,12 +280,13 @@ export function renderChrome(view: View): void {
     const water = actionLimit(state, 'water');
     const feed = actionLimit(state, 'fertilize');
     const cd = view.countdown;
-    const prepShort = Boolean(cd && ev(cd.event).damage > 0 && state.resist < 60);
+    const prepShort = Boolean(state.windUnlocked && cd && ev(cd.event).category === 'wind' && state.resist < 60);
+    const dbl = state.windUnlocked && doubleRActive(state);
     const freshAnimals = state.animals.filter((id) => !state.seenAnimals.includes(id)).length;
     dock.innerHTML = `
       ${dockBtn('d-water', 'data-action="water"', 'drop', '澆水', rainBlocks ? '落緊雨' : state.moisture >= W_SATURATED ? '飽和' : `${water.used}/${water.max}`, water.used >= water.max || rainBlocks)}
       ${dockBtn('d-feed', 'data-action="fertilize"', 'sprout', '施肥', feed.used >= feed.max ? '施過喇' : '', feed.used >= feed.max)}
-      ${dockBtn('d-guard', 'data-open="forecast"', 'shield', '加固', prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, false, prepShort ? '!' : '')}
+      ${dockBtn('d-guard', 'data-open="forecast"', 'shield', '加固', !state.windUnlocked ? '青年樹解鎖' : dbl ? '今日雙倍' : prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : '')}
       ${dockBtn('d-album', 'data-open="album"', 'book', '圖鑑', `${state.animals.length}/${ANIMALS.length}`, false, freshAnimals ? String(freshAnimals) : '')}`;
   }
 
@@ -240,7 +296,10 @@ export function renderChrome(view: View): void {
       ? `<article class="glass note-card dying"><p><b>瀕死・${esc(hm(Math.max(0, dyingLeftMs(state)) / 60000))}</b>將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上即刻救返。</p></article>`
       : '';
     const note = state.started && state.morningNote ? `<article class="glass note-card"><p>${esc(state.morningNote)}</p><button type="button" data-action="dismiss-note">知道喇</button></article>` : '';
-    const html = dying + note;
+    const dbl = state.started && !state.over && state.windUnlocked && doubleRActive(state) && !state.doubleRSeen
+      ? `<article class="glass note-card double-r" role="alert"><p><b>🪵 棵樹昨晚倒塌咗</b>今日加固效果雙倍：打木樁 +${PREPS.stakes.amount * 2}、綁防風繩 +${PREPS.ropes.amount * 2}、修枝防風 +${PREPS.prune.amount * 2}（最多 ${R_MAX}）。${esc(collapseText(state))}。</p><div class="note-btns"><button type="button" data-open="forecast">去加固</button><button type="button" data-action="dismiss-double">知道喇</button></div></article>`
+      : '';
+    const html = dying + dbl + note;
     if (slot.innerHTML !== html) slot.innerHTML = html;
   }
   document.body.classList.toggle('night', view.night);
@@ -271,7 +330,9 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   const label = view.manual ? ev(view.todayEvent).label : cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code);
   let line: string;
   if (cd) {
-    line = `<span class="warn-line">${icon('warn')}${esc(ev(cd.event).label)} · ${hoursText(cd.hours)} · 抗風力 ${Math.round(state.resist)}</span>`;
+    const cat = ev(cd.event).category;
+    const tail = cat === 'wind' ? (state.windUnlocked ? `抗風力 ${Math.round(state.resist)}` : '青年樹前冇影響') : cat === 'heat' ? '可以酷熱澆水' : cat === 'rain' ? '可以暴雨疏水' : '';
+    line = `<span class="warn-line">${icon('warn')}${esc(ev(cd.event).label)} · ${hoursText(cd.hours)}${tail ? ` · ${tail}` : ''}</span>`;
   } else if (wx.rainInHours !== null && !cond.raining && !simulated && !view.manual) {
     line = wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`;
   } else {
@@ -351,6 +412,9 @@ const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }
   badge: { icon: 'sparkle', tone: 'purple', title: '徽章' },
   event: { icon: 'sparkle', tone: 'yellow', title: '今日小事' },
   grow: { icon: 'sprout', tone: 'blue', title: '靜靜長高' },
+  emergency: { icon: 'drop', tone: 'blue', title: '應急行動' },
+  collapse: { icon: 'warn', tone: 'red', title: '棵樹倒塌' },
+  unlock: { icon: 'shield', tone: 'orange', title: '風災同加固解鎖' },
 };
 
 let sheetKey = '';
@@ -439,6 +503,30 @@ function body(view: View): string {
   }
 }
 
+/**
+ * v13 應急行動 buttons: shown only while today's warning is issued (酷熱 → 酷熱澆水；暴雨／黑雨 → 暴雨疏水),
+ * highlighted until done, then disabled with 「今日做咗」.
+ */
+export function emergencyButtons(view: View, variant: 'mini' | 'act'): string {
+  const { state } = view;
+  const opts = emergencyOptions(view.todayEvents);
+  const items: { id: 'heatWater' | 'rainDrain'; action: string; label: string; sub: string; done: boolean; tone: string }[] = [];
+  if (opts.heatWater) items.push({ id: 'heatWater', action: 'heat-water', label: '酷熱澆水', sub: state.moisture >= W_SATURATED ? '飽和・都算做咗' : `+${EMERGENCY.heatWater.amount} 水分・免扣 10`, done: Boolean(state.care.heatWater), tone: 'heat' });
+  if (opts.rainDrain) {
+    const rainLabel = view.todayEvents.includes('blackrain') ? '黑雨' : '暴雨';
+    items.push({ id: 'rainDrain', action: 'rain-drain', label: '暴雨疏水', sub: `−10（最低 ${EMERGENCY.rainDrain.floor}）・免扣 ${rainLabel === '黑雨' ? 15 : 10}`, done: Boolean(state.care.rainDrain), tone: 'rain' });
+  }
+  if (!items.length) return '';
+  if (variant === 'mini') {
+    return items
+      .map((i) => `<button type="button" class="emerg ${i.tone} ${i.done ? 'done' : 'hot-pulse'}" data-action="${i.action}" ${i.done ? 'disabled' : ''}>${icon(i.id === 'heatWater' ? 'drop' : 'drain')}<span>${i.label}</span><small>${i.done ? '今日做咗' : '應急'}</small></button>`)
+      .join('');
+  }
+  return `<div class="emerg-card"><p class="eyebrow">${icon('warn')}應急行動・每日各一次，唔佔普通次數</p><div class="emerg-row">${items
+    .map((i) => `<button type="button" class="emerg-act ${i.tone} ${i.done ? 'done' : 'hot-pulse'}" data-action="${i.action}" ${i.done ? 'disabled' : ''}><span class="act-ic">${icon(i.id === 'heatWater' ? 'drop' : 'drain')}</span><span>${i.label}</span><small>${esc(i.done ? '今日做咗' : i.sub)}</small></button>`)
+    .join('')}</div><p class="fine">做咗：今晚唔扣嗰類天氣分，應急獎勵 +3；兩樣都做 (3 + 3) × 0.75 = +4.5。</p></div>`;
+}
+
 function careTab(view: View): string {
   const { state, cond } = view;
   const event = eventTitle(state);
@@ -453,17 +541,20 @@ function careTab(view: View): string {
     <article class="card event-card ${today.severe ? 'warn' : ''}">
       <p class="eyebrow">今日天氣事件${view.manual ? '（手動）' : ''}</p>
       <h2>${esc(today.label)}</h2>
-      <p>${esc(effectText(view.todayEvent))}。${esc(today.tip)}</p>
-      ${multi.length > 1 ? `<p class="fine">同時有${multi.map((e) => esc(ev(e).label)).join('、')}：唔會疊加，只計最重嘅${esc(today.label)}。</p>` : ''}
+      <p>${esc(effectText(view.todayEvent, state.windUnlocked))}。${esc(today.tip)}</p>
+      ${multi.length > 1 ? `<p class="fine">同時有${multi.map((e) => esc(ev(e).label)).join('、')}：熱、雨、風三類各自計埋；同一類只計最嚴重嗰個。</p>` : ''}
+      ${multi.filter((e) => e !== view.todayEvent && ev(e).category).map((e) => `<p class="fine">${esc(ev(e).label)}：${esc(effectText(e, state.windUnlocked))}。</p>`).join('')}
       <p class="fine">今晚結算：${esc(hm(view.minutesToSettle))}後</p>
     </article>
     <div class="meters">
       ${meter('健康 H', state.health, 'health', [50, 100])}
       ${waterMeter(state.moisture)}
       ${meter('養分 N', state.nutrients, 'food', N_OPTIMAL)}
-      ${meter('抗風力 R', state.resist, 'shield', [60, 100])}
+      ${meter(state.windUnlocked ? '抗風力 R' : '抗風力 R（青年樹時解鎖）', state.resist, 'shield', [60, 100])}
     </div>
-    ${nightCard(view.preview)}
+    ${state.windUnlocked ? `<p class="fine collapse-line">${esc(collapseText(state))}：抗風力低過門檻（初級颱風 20、狂風雷暴 25、高級颱風 40）就會倒塌，高度 −20%；第 3 次會死。</p>` : `<p class="fine">棵樹未到青年樹：抗風力唔會變，風災唔會傷到佢，亦唔會倒塌。</p>`}
+    ${emergencyButtons(view, 'act')}
+    ${nightCard(view.preview, state.collapses || 0)}
     <p class="fine">最佳：水分 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}（0–150；100 以上爛根，150 瀕死），養分 ${N_OPTIMAL[0]}–100。而家${esc(tier.label)}（×${tier.mult}）${state.health >= 80 ? '，有綠光' : ''}。${state.pest.active ? '<b class="bad">有蟲害：每晚 −15 健康。</b>' : ''}</p>
     <p class="advice">${esc(advice(state, view.preview, view.countdown))}</p>
     <div class="actions">
@@ -489,9 +580,20 @@ export function settlementCard(s: NonNullable<GameState['lastSettlement']>): str
       <ul class="breakdown">
         <li><span>水分${s.wLabel ? `・${esc(s.wLabel)}` : '因素'}</span><b>${s.wFactor > 0 ? '+' : ''}${s.wFactor}</b><small>W ${Math.round(s.wBefore)}→${Math.round(s.wAfter)}${s.wNight ? (s.wNight.kind === 'loss' ? '（流失）' : s.wNight.kind === 'drizzle' ? '（毛毛雨）' : '（落雨日）') : ''}</small></li>
         <li><span>養分因素</span><b>${s.nFactor > 0 ? '+' : ''}${s.nFactor}</b><small>N ${Math.round(s.nBefore)}→${Math.round(s.nAfter)}</small></li>
-        <li><span>天氣損傷</span><b>−${s.finalDamage}</b><small>基礎 ${s.baseDamage} × (1 − ${Math.round(s.rBefore)}/100)</small></li>
+        ${
+          s.heat === undefined && s.wind === undefined
+            ? `<li><span>天氣損傷</span><b>−${s.finalDamage}</b><small>基礎 ${s.baseDamage} × (1 − ${Math.round(s.rBefore)}/100)</small></li>`
+            : `${s.heat ? `<li><span>熱・酷熱</span><b>${s.heat.handled ? '0' : `−${s.heat.base}`}</b><small>${s.heat.handled ? '已應對' : '冇做酷熱澆水'}</small></li>` : ''}${
+                s.rain ? `<li><span>雨・${esc(ev(s.rain.event).label)}</span><b>${s.rain.handled ? '0' : `−${s.rain.base}`}</b><small>${s.rain.handled ? '已應對' : '冇做暴雨疏水'}</small></li>` : ''
+              }${
+                s.wind ? `<li><span>風・${esc(ev(s.wind.event).label)}</span><b>${s.wind.score ? `−${-s.wind.score}` : '0'}</b><small>${s.wind.locked ? '青年樹前唔受影響' : `基礎 ${s.wind.base} × (1 − ${Math.round(s.wind.r)}/100)`}</small></li>` : ''
+              }${!s.heat && !s.rain && !s.wind ? `<li><span>天氣</span><b>0</b><small>${esc(ev(s.event).label)}</small></li>` : ''}${
+                s.emergencyBonus ? `<li><span>應急獎勵</span><b>+${s.emergencyBonus}</b><small>${(s.emergencyCount ?? 0) > 1 ? '(3 + 3) × 0.75' : ''}</small></li>` : ''
+              }`
+        }
         ${s.pestDamage ? `<li><span>蟲害</span><b>−${s.pestDamage}</b><small></small></li>` : ''}
         <li><span>生長</span><b>${s.deltaG >= 0 ? '+' : ''}${s.deltaG} 厘米</b><small>${s.baseGrowth} × ${s.hMult} × ${s.weatherBonus}</small></li>
+        ${s.collapse ? `<li class="down"><span>倒塌</span><b>−20% 高度</b><small>${esc(formatHeight(s.collapse.heightBefore))} → ${esc(formatHeight(s.collapse.heightAfter))}・第 ${s.collapse.count} 次${s.collapse.revived ? '（免死金牌）' : ''}</small></li>` : ''}
       </ul>
       ${s.notes.length ? `<p class="fine">${s.notes.map(esc).join('；')}</p>` : ''}
     </article>`;
@@ -513,15 +615,16 @@ function waterMeter(w: number): string {
 }
 
 /** 今晚預計 card in the 照顧 tab (same breakdown as the status-card popover). */
-function nightCard(p: NightPlan): string {
+function nightCard(p: NightPlan, collapses = 0): string {
   const t = p.waterDeath ? 'down' : p.dH > 0 ? 'up' : p.dH < 0 ? 'down' : 'flat';
   const rows = previewLines(p)
     .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}</span><b>${esc(l.value)}</b><small>${esc(l.sub ?? '')}</small></li>`)
     .join('');
   return `<article class="card night-card">
       <p class="eyebrow">今晚預計</p>
-      <h2 class="${t}">健康 ${Math.round(p.hBefore)} → ${Math.round(p.hAfter)}（${p.waterDeath ? '瀕死' : signed(p.dH)}）</h2>
+      ${collapseHtml(p, collapses)}
       <ul class="breakdown">${rows}</ul>
+      <h2 class="${t} night-total-h">健康 ${fmt(p.hBefore)} → ${fmt(p.hAfter)}（${p.waterDeath ? '瀕死' : signed(p.dH)}）</h2>
     </article>`;
 }
 
@@ -534,6 +637,18 @@ function meter(label: string, value: number, kind: string, band: readonly [numbe
   </div>`;
 }
 
+/** v13 countdown line: what the coming event will do with the tree as it stands. */
+function countdownDamage(state: GameState, id: WeatherEventId): string {
+  const d = ev(id);
+  if (d.category === 'heat') return `警告一出可以做「酷熱澆水」：做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
+  if (d.category === 'rain') return `警告一出可以做「暴雨疏水」：做咗唔扣健康（唔做 −${d.damage}），仲有應急獎勵 +3。抗風力幫唔到手。`;
+  if (d.category !== 'wind') return '';
+  if (!state.windUnlocked) return '棵樹未到青年樹，風災唔會傷到佢，亦唔會倒塌。';
+  const dmg = Math.round(d.damage * (1 - state.resist / 100) * 10) / 10;
+  const below = state.resist < (d.collapseBelow ?? 0);
+  return `以而家抗風力 ${Math.round(state.resist)} 計，傷害會係 ${dmg}（${d.damage} × (1 − ${Math.round(state.resist)}/100)）。${below ? `⚠️ 低過倒塌門檻 ${d.collapseBelow}，會倒塌！` : `倒塌門檻 ${d.collapseBelow}，而家安全。`}`;
+}
+
 function forecastTab(view: View): string {
   const { state } = view;
   const cd = view.countdown;
@@ -541,18 +656,30 @@ function forecastTab(view: View): string {
     ? `<article class="card warn countdown">
         <p class="eyebrow">${icon('warn')}12 小時惡劣天氣預警</p>
         <h2>${esc(ev(cd.event).label)} · ${esc(hoursText(cd.hours))}</h2>
-        <p>${esc(effectText(cd.event))}。${esc(ev(cd.event).tip)}</p>
-        <p class="fine">來源：${esc(cd.source)}。以而家抗風力 ${Math.round(state.resist)} 計，傷害會係 ${Math.round(ev(cd.event).damage * (1 - state.resist / 100))}。</p>
+        <p>${esc(effectText(cd.event, state.windUnlocked))}。${esc(ev(cd.event).tip)}</p>
+        <p class="fine">來源：${esc(cd.source)}。${esc(countdownDamage(state, cd.event))}</p>
       </article>`
     : `<article class="card"><p class="eyebrow">12 小時預警</p><p>未來 12 小時未見惡劣天氣。</p></article>`;
+  const locked = !state.windUnlocked;
+  const dbl = !locked && doubleRActive(state);
   const preps = (Object.keys(PREPS) as PrepId[])
-    .map((k) => `<button type="button" class="prep ${state.care.preps[k] ? 'on' : ''}" data-prep="${k}" aria-pressed="${state.care.preps[k]}"><span>${PREPS[k].label}</span><small>${state.care.preps[k] ? '今日做過' : `+${PREPS[k].amount} 抗風力`}</small></button>`)
+    .map((k) => {
+      const done = state.care.preps[k];
+      const sub = locked ? '（青年樹時解鎖）' : done ? '今日做過' : dbl ? `+${prepAmount(state, k)}（雙倍）` : `+${prepAmount(state, k)} 抗風力`;
+      return `<button type="button" class="prep ${done ? 'on' : ''} ${locked ? 'locked' : ''} ${dbl && !done ? 'double' : ''}" data-prep="${k}" aria-pressed="${done}" ${locked ? 'disabled aria-disabled="true"' : ''}><span>${PREPS[k].label}</span><small>${sub}</small></button>`;
+    })
     .join('');
-  const shield = `<article class="card">
-      <p class="eyebrow">加固・抗風力 R</p>
+  const emerg = emergencyButtons(view, 'act');
+  const shield = `<article class="card ${locked ? 'locked-card' : ''}">
+      <p class="eyebrow">加固・抗風力 R${locked ? '（青年樹時解鎖）' : `・${esc(collapseText(state))}`}</p>
+      ${dbl ? `<p class="double-banner">🪵 棵樹昨晚倒塌咗，今日加固效果雙倍！</p>` : ''}
       <h2>${Math.round(state.resist)} / ${R_MAX}</h2>
       <div class="track fat"><div class="fill shield" style="width:${Math.round(state.resist)}%"></div></div>
-      <p>最終天氣損傷 = 基礎傷害 × (1 − R/100)。狂風雷暴會消耗 30、初級颱風 40、高級颱風 80；每晚繩索鬆少少（−2）。每樣加固每日做一次。</p>
+      <p>${
+        locked
+          ? `棵樹未到青年樹：抗風力唔會變（唔會每晚減，風災亦唔會消耗），風災唔會傷樹、唔會倒塌。長到青年樹就會解鎖加固。`
+          : `只有風災（初級颱風、狂風雷暴、高級颱風）受抗風力影響：傷害 = 基礎 × (1 − R/100)。風災會消耗抗風力：初級颱風 18、狂風雷暴 25、高級颱風 35；每晚繩索鬆少少（−${R_DAILY_DECAY}）。R 低過門檻（20／25／40）一定倒塌：高度 −20%，最多倒 2 次，第 3 次會死。每樣加固每日做一次。`
+      }</p>
       <div class="preps">${preps}</div>
     </article>`;
   const rows = view.forecast
@@ -589,17 +716,23 @@ function forecastTab(view: View): string {
       </article>`
     : '';
   const table = (Object.values(WEATHER_EVENTS))
-    .map((d) => `<tr><td>${esc(d.label)}</td><td>${d.damage ? `−${d.damage}` : '0'}</td><td>${esc([waterText(d.id, true), d.dR ? `R ${d.dR}` : ''].filter(Boolean).join(' '))}</td></tr>`)
+    .map((d) => {
+      const cat = d.category ? WX_CATEGORY_LABEL[d.category] : '—';
+      const hp = !d.damage ? '0' : d.category === 'wind' ? `−${d.damage}×(1−R/100)` : `−${d.damage}`;
+      const counter = d.category === 'heat' ? '酷熱澆水免扣' : d.category === 'rain' ? '暴雨疏水免扣' : d.category === 'wind' ? `R ${d.dR}・R&lt;${d.collapseBelow} 倒塌` : '';
+      return `<tr><td>${esc(d.label)}</td><td>${cat}</td><td>${hp}</td><td>${esc(waterText(d.id, true))}${counter ? `<br><small>${counter}</small>` : ''}</td></tr>`;
+    })
     .join('');
   return `
     ${alert}
+    ${emerg}
     ${shield}
     ${hkoCard}
     <p class="status">${esc(view.statusLine)}${wx.provider === 'sim' && !wx.overridden ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
     <div class="days">${rows}</div>
     <h3 class="sub">天氣事件表</h3>
-    <table class="evtable"><thead><tr><th>事件</th><th>健康</th><th>副作用</th></tr></thead><tbody>${table}</tbody></table>
-    <p class="fine">香港：酷熱天氣警告 → 酷熱；黃／紅雨 → 暴雨；黑雨 → 黑雨；雷暴警告或強烈季候風 → 狂風雷暴；一號／三號風球 → 初級颱風；八號或以上 → 高級颱風。其他地方按 Open-Meteo 天氣碼、陣風同雨量判斷。同一日幾個警告唔會疊加，只計基礎傷害最高嗰個。</p>
+    <table class="evtable"><thead><tr><th>事件</th><th>類</th><th>健康</th><th>副作用・應對</th></tr></thead><tbody>${table}</tbody></table>
+    <p class="fine">香港：酷熱天氣警告 → 酷熱；黃／紅雨 → 暴雨；黑雨 → 黑雨；雷暴警告或強烈季候風 → 狂風雷暴；一號／三號風球 → 初級颱風；八號或以上 → 高級颱風。其他地方按 Open-Meteo 天氣碼、陣風同雨量判斷。熱、雨、風三類天氣各自計埋（例如酷熱加暴雨加颱風三樣都扣）；同一類只計最嚴重嗰個（風：初級颱風 &lt; 狂風雷暴 &lt; 高級颱風；雨：黑雨 &gt; 暴雨）。風災要棵樹長到青年樹先會生效。</p>
     <button type="button" class="texty" data-action="locate">用我所在位置更新天氣</button>
   `;
 }
@@ -774,10 +907,10 @@ export function toast(message: string): void {
   toastTimer = window.setTimeout(() => el.classList.remove('show'), 3600);
 }
 
-export function openModal(inner: string): void {
+export function openModal(inner: string, cls = ''): void {
   const modal = document.getElementById('modal');
   if (!modal) return;
-  modal.innerHTML = `<div class="modal-card glass" role="dialog" aria-modal="true">${inner}</div>`;
+  modal.innerHTML = `<div class="modal-card glass ${cls}" role="dialog" aria-modal="true">${inner}</div>`;
   modal.hidden = false;
   paintThumbs();
   const field = modal.querySelector('input');
@@ -878,6 +1011,24 @@ export function completeModal(state: GameState, meta: MetaState, lines: string[]
     <button type="button" class="texty" data-action="new-game">開始新一局</button>`;
 }
 
+/** v13: full-screen card the first time the tree reaches 青年樹. */
+export function windExplainerModal(state: GameState): string {
+  return `
+    <div class="explainer">
+      <p class="eyebrow">🌳 ${esc(state.treeName)}長成青年樹</p>
+      <h2>由今日開始，風災會影響棵樹</h2>
+      <ul class="explain-list">
+        <li><b>加固解鎖</b><span>打木樁 +${PREPS.stakes.amount}、綁防風繩 +${PREPS.ropes.amount}、修枝防風 +${PREPS.prune.amount}，每樣每日一次（最多 ${R_MAX}）。</span></li>
+        <li><b>抗風力開始生效</b><span>而家 ${Math.round(state.resist)}。每晚鬆少少（−${R_DAILY_DECAY}）；風災過後會消耗：初級颱風 18、狂風雷暴 25、高級颱風 35。</span></li>
+        <li><b>風災會傷樹</b><span>傷害 = 基礎 × (1 − R/100)：初級颱風 30、狂風雷暴 35、高級颱風 60。抗風力越高，傷得越少；擋到七成半以上仲有生長 ×1.3。</span></li>
+        <li><b>倒塌</b><span>風災嗰晚抗風力低過門檻（初級颱風 20、狂風雷暴 25、高級颱風 40）一定倒塌：主幹斷咗一截，高度 −20%。最多倒 2 次，第 3 次棵樹會死。倒塌後第二日加固雙倍。</span></li>
+        <li><b>今晚預計會提你</b><span>有風災而抗風力唔夠，「今晚預計」會出倒塌警告。</span></li>
+      </ul>
+      <p class="fine">酷熱同暴雨照舊靠應急行動（酷熱澆水、暴雨疏水），抗風力幫唔到手。</p>
+      <button type="button" class="primary" data-action="wind-explained">明白</button>
+    </div>`;
+}
+
 export function stormModal(message: string): string {
   return `
     <p class="eyebrow">夜間結算</p>
@@ -934,10 +1085,11 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
       </div>
     </div>
     <div class="howto">
-      <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 − 天氣損傷 − 蟲害。</p>
+      <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 + 熱／雨／風三類天氣分 + 應急獎勵 − 蟲害。</p>
       <p>水分 0–150：50–100 +5；低過 50 乾旱 −10；101–115 輕度爛根 −10；116–135 嚴重爛根 −20；136–149 根部壞死 −30；去到 150 即刻瀕死。養分 60 以上 +5、30–59 為 0、低過 30 −10。</p>
       <p>澆水每日 3 次、每次 +15，最多澆到 100（泥土飽和就唔使澆，唔會用咗次數）；疏水每日 3 次、每次 −10。酷熱警告一出水分即時 −20；暴雨／黑雨即時 +20（過咗 100 最多再加 10，同一日只計一次）。狀態卡「今晚預計」會話你今晚健康會點變。</p>
-      <p>天氣跟住現實（香港用天文台警告）。惡劣天氣前 12 小時會倒數，記得加固推高抗風力 R：傷害 × (1 − R/100)。</p>
+      <p>天氣跟住現實（香港用天文台警告）。熱、雨、風三類各自計，同一類只計最嚴重嗰個。酷熱：警告一出可以做「酷熱澆水」（額外一次，+5 水分），唔做 −10。暴雨／黑雨：可以做「暴雨疏水」（額外一次，−10 但唔低過 50），唔做 −10／−15。做咗應急行動 +3，兩樣都做 (3 + 3) × 0.75 = +4.5。</p>
+      <p>風災（初級颱風、狂風雷暴、高級颱風）要棵樹長到青年樹先生效：之前抗風力唔變、風災唔傷樹。之後傷害 = 基礎 × (1 − R/100)，抗風力每晚 −2、風災再消耗；R 低過門檻（20／25／40）會倒塌：高度 −20%，最多倒 2 次，第 3 次會死（免死金牌可以擋一次）。倒塌後第二日加固雙倍。</p>
       <p>健康 80 以上長得最快（×1.5，有綠光）；健康跌到 0 或者水分去到 150 會瀕死 24 小時，將水分調返 50–100、養分 60 以上就救得返。</p>
     </div>
     <button type="button" class="primary" data-action="close-modal">好</button>

@@ -30,7 +30,10 @@ export const N_OPTIMAL: readonly [number, number] = [60, 100];
 /** 養分 below this = 營養不良. 30-59 counts as neither (N_factor 0). */
 export const N_MALNOURISHED = 30;
 
-/** Daily H formula: H_new = H_old + W_score + N_factor − final weather damage − pest damage. */
+/**
+ * v13 daily H formula: H_new = H_old + W_score + N_factor + 天氣分(酷熱) + 天氣分(暴雨／黑雨) + 天氣分(風災) + 應急獎勵 − 蟲害.
+ * Each weather category (熱／雨／風) counts on its own; within one category only the most severe event counts.
+ */
 export const N_FACTOR = { good: 5, mid: 0, bad: -10 } as const;
 
 /** The tree uses up this much 養分 every night. */
@@ -41,18 +44,28 @@ export const R_DAILY_DECAY = 2;
 /* ---------- Weather events ---------- */
 export type WeatherEventId = 'clear' | 'hot' | 'drizzle' | 'rainstorm' | 'blackrain' | 'thunder' | 'typhoon1' | 'typhoon8';
 
+/** v13 weather categories: they stack with each other; inside one category only the most severe event counts. */
+export type WeatherCategory = 'heat' | 'rain' | 'wind';
+
 export interface WeatherEventDef {
   id: WeatherEventId;
   label: string;
-  /** 天氣基礎傷害 to H (before 抗風力 reduction). */
+  /** v13 category (熱／雨／風); 晴天、毛毛雨 have none (water only). */
+  category: WeatherCategory | null;
+  /**
+   * 天氣基礎傷害 to H. 酷熱／暴雨／黑雨: flat, avoided by the day's 應急行動 (酷熱澆水／暴雨疏水), NOT reduced by R.
+   * 風災: × (1 − R/100), only once the tree has reached 青年樹.
+   */
   damage: number;
   /**
    * Effect on 水分 W. v12: 酷熱／暴雨／黑雨 apply the moment the warning is first seen (once per day);
    * 毛毛雨 applies at the nightly settlement. Others: 0.
    */
   dW: number;
-  /** Side effect on 抗風力 R (consumption, ≤ 0). */
+  /** Side effect on 抗風力 R (consumption, ≤ 0). v13: wind only, and only after 青年樹. */
   dR: number;
+  /** v13 風災: R below this (before the night's consumption) = the tree collapses (倒塌). */
+  collapseBelow?: number;
   /** 天氣獎勵加成 for ΔG. */
   growth: number;
   /** Shown in the 12-hour countdown. */
@@ -61,22 +74,29 @@ export interface WeatherEventDef {
 }
 
 /**
- * 天氣與災害權重表. Order matters only for ties in 基礎傷害 (later = heavier side effects wins).
- * 初級颱風 (一號／三號風球) is exactly half of 高級颱風 (八號或以上).
+ * 天氣與災害權重表 (v13). 熱：酷熱；雨：暴雨 < 黑雨；風：初級颱風 < 狂風雷暴 < 高級颱風.
+ * 初級颱風 (一號／三號風球) R consumption = half of 高級颱風 (八號或以上), rounded.
  */
 export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
-  clear: { id: 'clear', label: '晴天／多雲', damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
-  drizzle: { id: 'drizzle', label: '毛毛雨', damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
-  hot: { id: 'hot', label: '酷熱', damage: 10, dW: -20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 −20，記得澆水防乾旱。' },
-  rainstorm: { id: 'rainstorm', label: '暴雨', damage: 20, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10），記得疏水，輕度加固。' },
-  blackrain: { id: 'blackrain', label: '黑雨', damage: 20, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；預早疏水，輕度加固。' },
-  typhoon1: { id: 'typhoon1', label: '初級颱風', damage: 30, dW: 0, dR: -40, growth: 0.8, severe: true, tip: '一號／三號風球：提早加固。' },
-  thunder: { id: 'thunder', label: '狂風雷暴', damage: 35, dW: 0, dR: -30, growth: 0.8, severe: true, tip: '需提前加固樹幹。' },
-  typhoon8: { id: 'typhoon8', label: '高級颱風', damage: 60, dW: 0, dR: -80, growth: 0.6, severe: true, tip: '八號或以上：終極考驗，需推高 R 值。' },
+  clear: { id: 'clear', label: '晴天／多雲', category: null, damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
+  drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
+  hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
+  typhoon1: { id: 'typhoon1', label: '初級颱風', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '一號／三號風球：青年樹之後，抗風力低過 20 會倒塌，提早加固。' },
+  thunder: { id: 'thunder', label: '狂風雷暴', category: 'wind', damage: 35, dW: 0, dR: -25, collapseBelow: 25, growth: 0.8, severe: true, tip: '青年樹之後，抗風力低過 25 會倒塌，要提前加固樹幹。' },
+  typhoon8: { id: 'typhoon8', label: '高級颱風', category: 'wind', damage: 60, dW: 0, dR: -35, collapseBelow: 40, growth: 0.6, severe: true, tip: '八號或以上：終極考驗。青年樹之後，抗風力低過 40 一定倒塌。' },
 };
+/** v13: severity order inside each category (last = most severe). */
+export const WX_CATEGORY_ORDER: Record<WeatherCategory, WeatherEventId[]> = {
+  heat: ['hot'],
+  rain: ['rainstorm', 'blackrain'],
+  wind: ['typhoon1', 'thunder', 'typhoon8'],
+};
+export const WX_CATEGORY_LABEL: Record<WeatherCategory, string> = { heat: '熱', rain: '雨', wind: '風' };
 export const EVENT_ORDER: WeatherEventId[] = ['clear', 'drizzle', 'hot', 'rainstorm', 'blackrain', 'typhoon1', 'thunder', 'typhoon8'];
 
-/** Weathering a damaging event with ≤ this share of its base damage (well reinforced) earns the storm bonus. */
+/** Weathering a wind event (after 青年樹) with ≤ this share of its base damage (well reinforced) earns the storm bonus. */
 export const STORM_SURVIVE_SHARE = 0.25;
 export const STORM_SURVIVE_GROWTH = 1.3;
 
@@ -144,6 +164,26 @@ export type PrepId = keyof typeof PREPS;
 /* ---------- 抗風力 ---------- */
 /** 加固 raises R up to this cap (no resource spending: each season already has a fixed target height). */
 export const R_MAX = 100;
+/** v13: the day after a collapse every 加固 item gives this many times its R. */
+export const COLLAPSE_REINFORCE_MULT = 2;
+
+/* ---------- v13 應急行動、風災、倒塌 ---------- */
+export const EMERGENCY = {
+  /** 酷熱澆水: once a day on top of the 3 waterings, +5 water (never past 100; at ≥ 100 still counts). */
+  heatWater: { amount: 5 },
+  /** 暴雨疏水: once a day on top of the 3 drains, −10 water but never below this floor. */
+  rainDrain: { amount: -10, floor: 50 },
+  /** Bonus for each emergency action that met its warning. */
+  bonus: 3,
+  /** Both on the same day: (3 + 3) × this. */
+  bothMult: 0.75,
+} as const;
+/** Stage index (0-based, in STAGE_NAMES) from which 風災／加固／倒塌 apply: 2 = 青年樹. */
+export const WIND_UNLOCK_STAGE = 2;
+/** A collapse breaks part of the main trunk: height × (1 − this). */
+export const COLLAPSE_HEIGHT_LOSS = 0.2;
+/** Collapses a tree can take; the next one kills it (a 免死金牌 can block that death once). */
+export const COLLAPSE_MAX = 2;
 
 /* ---------- Health extremes, animals, legacy ---------- */
 export const DYING_HOURS = 24;
@@ -156,6 +196,6 @@ export const RESIDENT_LEAVE_H = 70;
 export const RESIDENT_N_EACH = 2;
 export const RESIDENT_N_MAX = 6;
 
-export const START = { health: 70, moisture: 60, nutrients: 50, resist: 10, heightCm: 18 } as const;
+export const START = { health: 70, moisture: 60, nutrients: 50, resist: 60, heightCm: 18 } as const;
 /** A tree that died becomes a 養分地標: the next tree starts with this much extra 養分. */
 export const LANDMARK_N_BONUS = 40;

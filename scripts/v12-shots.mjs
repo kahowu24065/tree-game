@@ -136,7 +136,8 @@ async function scene(saveOver, dev = devBase) {
   await page.waitForTimeout(300);
   await topShot(page, '04c-preview-storm-damage');
   const txt = await page.locator('.night-pop').innerText();
-  ok('storm damage line with R', txt.includes('暴雨傷害（抗風力 50）') && txt.includes('−10'), txt.replace(/\n/g, ' / '));
+  // v13: rain is its own category, not reduced by R (see scripts/v13-shots.mjs).
+  ok('storm damage line (v13 rain category)', txt.includes('雨｜暴雨') && txt.includes('−10'), txt.replace(/\n/g, ' / '));
   await ctx.close();
 }
 // 5. Saturated watering.

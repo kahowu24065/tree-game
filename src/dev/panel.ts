@@ -60,7 +60,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" class="${d.mode === 'real' ? 'on' : ''}" data-dev="mode-real">真實天氣</button>
         <button type="button" class="${d.mode === 'manual' ? 'on' : ''}" data-dev="mode-manual">手動天氣</button>
       </div>
-      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => WEATHER_EVENTS[e].label).join('、') || '晴天／多雲')}` : '可以揀多個警告，測試「唔疊加，只計最重」。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次）。'}</p>
+      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => WEATHER_EVENTS[e].label).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣。'}</p>
       <div class="dev-events">${api.events.map(eventBtn).join('')}</div>
       <div class="dev-row">
         <label>12 小時預報
@@ -79,6 +79,13 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="real-date">回到真日期</button>
         <button type="button" class="danger" data-dev="reset">重置存檔</button>
       </div>
+      <h4 class="dev-h">風災・倒塌（v13）</h4>
+      <div class="dev-actions">
+        <button type="button" class="${s.windUnlocked ? 'on' : ''}" data-dev="wind-toggle">風災解鎖：${s.windUnlocked ? '開' : '關'}</button>
+        <button type="button" data-dev="grow-young">長到青年樹</button>
+        ${[0, 1, 2, 3].map((n) => `<button type="button" class="${(s.collapses || 0) === n ? 'on' : ''}" data-dev-collapses="${n}">倒塌 ${n}</button>`).join('')}
+      </div>
+      <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米</p>
       <h4 class="dev-h">樹種・生長階段預覽</h4>
       <div class="dev-row">
         <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（${x.season}）</option>`).join('')}</select></label>
@@ -124,8 +131,16 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       draw();
       return;
     }
+    const col = el.closest<HTMLElement>('[data-dev-collapses]');
+    if (col) {
+      api.setCollapses(Number(col.dataset.devCollapses));
+      draw();
+      return;
+    }
     const cmd = el.closest<HTMLElement>('[data-dev]')?.dataset.dev;
     if (!cmd) return;
+    if (cmd === 'wind-toggle') api.setWindUnlocked(!api.state().windUnlocked);
+    if (cmd === 'grow-young') api.setStageHeight(2);
     if (cmd === 'toggle') api.setDev({ ...d, open: !d.open });
     if (cmd === 'mode-real') api.setDev({ ...d, mode: 'real' });
     if (cmd === 'mode-manual') api.setDev({ ...d, mode: 'manual' });

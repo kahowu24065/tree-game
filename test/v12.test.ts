@@ -157,6 +157,7 @@ describe('v12 即時警告', () => {
       if (i < 4) {
         expect(s.dying).toBeNull();
         expect(s.health).toBeGreaterThan(0);
+        s.health = 100; // v13: an unhandled rainstorm now costs 10 a night; this test is about the water reaching 150.
         settleDay(s, date, ['rainstorm'], null, NOW + i * 86400000);
         expect(s.moisture).toBe(want[i]);
       } else {

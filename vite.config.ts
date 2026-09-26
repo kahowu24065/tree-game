@@ -28,6 +28,6 @@ export default defineConfig(({ mode }) => {
     define: { __DEV_PANEL__: JSON.stringify(devPanel) },
     server: { host: '0.0.0.0', port: 4327, strictPort: true },
     preview: { host: '0.0.0.0', port: 4327, strictPort: true },
-    build: { outDir: 'dist', assetsDir: 'assets', chunkSizeWarningLimit: 900 },
+    build: { outDir: 'dist', assetsDir: 'assets', chunkSizeWarningLimit: 1000 },
   };
 });

@@ -1,7 +1,8 @@
 import { defaultSpecies, speciesDef, speciesTargetCm } from './data/species';
+import { START } from './balance';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
-import { addLog } from './sim';
+import { addLog, windStageCm } from './sim';
 import { formatHeight } from './util';
 
 /** Season targets before v8 (one per season), used to recognise saves made before per-species targets. */
@@ -36,6 +37,26 @@ export function migrateWater(data: GameState): void {
   data.care.fertilize = Number(data.care.fertilize) || 0;
 }
 
+/**
+ * v13 風災 rules: stats are kept. A tree already at/after 青年樹 is unlocked (its R stays; the explainer shows once
+ * so the player learns the new rules); a younger tree gets R = 60 (the new start) and stays locked. collapses = 0.
+ */
+export function migrateWind(data: GameState): void {
+  if (typeof data.windUnlocked !== 'boolean') {
+    const unlocked = data.heightCm >= windStageCm(data);
+    data.windUnlocked = unlocked;
+    data.windExplained = false;
+    if (!unlocked) data.resist = START.resist;
+  }
+  data.windExplained ??= false;
+  data.collapses = Number(data.collapses) || 0;
+  data.doubleRPending ??= false;
+  data.doubleRDate ??= null;
+  data.doubleRSeen ??= false;
+  data.care.heatWater ??= false;
+  data.care.rainDrain ??= false;
+}
+
 /** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
 export const SAVE_KEY = 'sekai-tree-v2';
 export const WEATHER_KEY = 'yiri-yisyu-weather';
@@ -68,6 +89,7 @@ export function parseSave(raw: string): GameState | null {
     migrateWater(data);
     data.passedTargetOn ??= null;
     migrateTarget(data);
+    migrateWind(data);
     return data;
   } catch {
     return null;

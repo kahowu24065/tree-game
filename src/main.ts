@@ -22,6 +22,8 @@ import {
   createGame,
   eventsForDate,
   performAction,
+  performEmergency,
+  checkWindUnlock,
   recordEvents,
   refreshUnlocks,
   reinforce,
@@ -48,6 +50,7 @@ import {
   settingsModal,
   startModal,
   stormModal,
+  windExplainerModal,
   toast,
   flashWater,
   togglePreview,
@@ -278,7 +281,7 @@ function sceneInput(): SceneInput {
     sunsetMin: sunset,
     eventId: state.dailyEventId,
     reducedMotion,
-    reinforce: visualReinforcement(state.resist),
+    reinforce: visualReinforcement(state.resist, state.windUnlocked),
     thriving: state.health >= 80 && !state.over,
     landmark: Boolean(meta.landmark) && state.legacyBonus > 0,
     starry: meta.starry,
@@ -362,6 +365,14 @@ function handleOver(): boolean {
   return true;
 }
 
+/** v13: the 青年樹 explainer, once, when no other modal is up. */
+function maybeExplainWind(): boolean {
+  if (!state.started || state.over || !state.windUnlocked || state.windExplained) return false;
+  if (!document.getElementById('modal')?.hidden) return false;
+  openModal(windExplainerModal(state), 'explainer-card');
+  return true;
+}
+
 function showReport(report: CatchupReport): void {
   persist();
   render();
@@ -371,6 +382,7 @@ function showReport(report: CatchupReport): void {
     if (!state.started) pendingNote = message;
     else openModal(stormModal(message));
   }
+  maybeExplainWind();
   const names = report.animals.map(animalName);
   if (names.length) toast(`${names.join('、')}嚟咗。`);
 }
@@ -684,6 +696,14 @@ function doAction(action: string, target: HTMLElement): void {
     if (result.ok) target.classList.add('pop');
     return;
   }
+  if (action === 'heat-water' || action === 'rain-drain') {
+    const result = performEmergency(state, action === 'heat-water' ? 'heatWater' : 'rainDrain', todayEvents());
+    if (result.ok) flashWater(action === 'heat-water' ? 'up' : 'down');
+    persist();
+    render();
+    toast(result.message);
+    return;
+  }
   switch (action) {
     case 'preview':
       togglePreview();
@@ -732,6 +752,18 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'close-modal':
       closeModal();
+      maybeExplainWind();
+      return;
+    case 'wind-explained':
+      state.windExplained = true;
+      persist();
+      closeModal();
+      render();
+      return;
+    case 'dismiss-double':
+      state.doubleRSeen = true;
+      persist();
+      render();
       return;
   }
 }
@@ -834,6 +866,11 @@ export interface DevApi {
   advanceDay: () => void;
   setStat: (key: 'health' | 'moisture' | 'nutrients' | 'resist', value: number) => void;
   triggerPest: () => void;
+  /** v13: 倒塌 count and the 青年樹 wind unlock. */
+  setCollapses: (n: number) => void;
+  setWindUnlocked: (on: boolean) => void;
+  /** Grow the tree to the start of a stage (0-4); reaching 青年樹 unlocks wind the normal way. */
+  setStageHeight: (stage: number) => void;
   reset: () => void;
   realDate: () => void;
   setPreview: (preview: DevSettings['preview']) => void;
@@ -885,6 +922,25 @@ if (DEV_PANEL) {
       persist();
       render();
       toast('觸發咗蟲害。');
+    },
+    setCollapses: (n) => {
+      state.collapses = Math.max(0, Math.min(3, Math.round(n)));
+      persist();
+      render();
+    },
+    setWindUnlocked: (on) => {
+      state.windUnlocked = on;
+      state.windExplained = !on;
+      persist();
+      render();
+      maybeExplainWind();
+    },
+    setStageHeight: (stage) => {
+      state.heightCm = Math.max(state.heightCm, stageSampleCm(stage, speciesTargetCm(state.species)));
+      checkWindUnlock(state, today(), clockOf(Date.now()));
+      persist();
+      render();
+      maybeExplainWind();
     },
     reset: () => {
       clearGame();

@@ -14,6 +14,9 @@ import {
   W_SATURATED,
   W_TIERS,
   WEATHER_EVENTS,
+  EMERGENCY,
+  WX_CATEGORY_ORDER,
+  type WeatherCategory,
   type SeasonDef,
   type SeasonId,
   type WeatherEventId,
@@ -103,8 +106,8 @@ export function finalDamage(base: number, resist: number): number {
 }
 
 /**
- * Several warnings at once do not stack: only the event with the highest 基礎傷害 applies,
- * with its own side effects. Ties go to the later (heavier) entry in EVENT_ORDER.
+ * The day's headline event (label, growth factor): the one with the highest 基礎傷害; ties go to the later entry in
+ * EVENT_ORDER. v13: health no longer uses only this one — see topInCategory (熱／雨／風 stack).
  */
 export function pickEvent(events: readonly WeatherEventId[]): WeatherEventId {
   let best: WeatherEventId = 'clear';
@@ -115,6 +118,21 @@ export function pickEvent(events: readonly WeatherEventId[]): WeatherEventId {
     if (a.damage > b.damage || (a.damage === b.damage && EVENT_ORDER.indexOf(id) > EVENT_ORDER.indexOf(best))) best = id;
   }
   return best;
+}
+
+/** v13: the most severe event of one category among the day's events (null if none). */
+export function topInCategory(events: readonly WeatherEventId[], cat: WeatherCategory): WeatherEventId | null {
+  const order = WX_CATEGORY_ORDER[cat];
+  let best: WeatherEventId | null = null;
+  for (const id of events) if (order.includes(id) && (best === null || order.indexOf(id) > order.indexOf(best))) best = id;
+  return best;
+}
+
+/** v13 應急獎勵: one action +3; both on the same day (3 + 3) × 0.75 = 4.5. */
+export function emergencyBonus(count: number): number {
+  if (count <= 0) return 0;
+  if (count === 1) return EMERGENCY.bonus;
+  return round1(EMERGENCY.bonus * count * EMERGENCY.bothMult);
 }
 
 export function hMultTier(h: number): (typeof H_MULT_TIERS)[number] {

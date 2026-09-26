@@ -10,6 +10,9 @@ export interface Care {
   dewormed: boolean;
   preps: Record<PrepId, boolean>;
   credited: boolean;
+  /** v13 應急行動 done today (each once a day, on top of the normal limits). */
+  heatWater?: boolean;
+  rainDrain?: boolean;
 }
 
 /** Visual reinforcement shown on the 3D tree (derived from 抗風力 R). */
@@ -37,7 +40,10 @@ export type LogKind =
   | 'dying'
   | 'badge'
   | 'event'
-  | 'grow';
+  | 'grow'
+  | 'emergency'
+  | 'collapse'
+  | 'unlock';
 
 export type RewardTone = 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'gray';
 
@@ -85,6 +91,14 @@ export interface Settlement {
   heightAfter: number;
   carbonKg: number;
   notes: string[];
+  /** v13 per-category weather scores (≤ 0) and the 應急獎勵. */
+  heat?: { event: WeatherEventId; base: number; handled: boolean; score: number } | null;
+  rain?: { event: WeatherEventId; base: number; handled: boolean; score: number } | null;
+  wind?: { event: WeatherEventId; base: number; locked: boolean; score: number; r: number } | null;
+  emergencyBonus?: number;
+  emergencyCount?: number;
+  /** v13 倒塌 this night (count after it). */
+  collapse?: { event: WeatherEventId; threshold: number; count: number; heightBefore: number; heightAfter: number; fatal: boolean; revived: boolean } | null;
 }
 
 export interface DayRecord {
@@ -144,6 +158,18 @@ export interface GameState {
   lastSettlement: Settlement | null;
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
   legacyBonus: number;
+  /** v13: 風災／加固／倒塌 switched on — set the first time the tree reaches 青年樹, never cleared. */
+  windUnlocked: boolean;
+  /** v13: the 青年樹 explainer card has been dismissed (shown once). */
+  windExplained: boolean;
+  /** v13: collapses so far (2 max; the 3rd kills unless a 免死金牌 blocks it; never reset). */
+  collapses: number;
+  /** v13: a collapse happened — the next care date gets double 加固. Cleared when that day starts. */
+  doubleRPending: boolean;
+  /** v13: the date on which 加固 gives double R (the first care date after a collapse). */
+  doubleRDate: string | null;
+  /** v13: the double-加固 banner has been dismissed for doubleRDate. */
+  doubleRSeen: boolean;
 }
 
 /** Progress kept across games (badges, legacy). */
