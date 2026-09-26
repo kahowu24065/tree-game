@@ -128,11 +128,18 @@ export function topInCategory(events: readonly WeatherEventId[], cat: WeatherCat
   return best;
 }
 
-/** v13 應急獎勵: one action +3; both on the same day (3 + 3) × 0.75 = 4.5. */
+/** 應急獎勵 (v15 general form): one action +3; n ≥ 2 on the same day 3n × 0.75 (2 → 4.5, 3 → 6.75). */
 export function emergencyBonus(count: number): number {
   if (count <= 0) return 0;
   if (count === 1) return EMERGENCY.bonus;
-  return round1(EMERGENCY.bonus * count * EMERGENCY.bothMult);
+  return Math.round(EMERGENCY.bonus * count * EMERGENCY.bothMult * 100) / 100;
+}
+
+/** 「(3 + 3 + 3) × 0.75 = +6.75」 wording for n ≥ 2 (just 「+3」 for one). */
+export function emergencyBonusText(count: number): string {
+  const b = emergencyBonus(count);
+  if (count <= 1) return `+${b}`;
+  return `(${Array(count).fill(EMERGENCY.bonus).join(' + ')}) × ${EMERGENCY.bothMult} = +${b}`;
 }
 
 export function hMultTier(h: number): (typeof H_MULT_TIERS)[number] {

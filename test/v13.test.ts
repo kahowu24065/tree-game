@@ -81,7 +81,7 @@ describe('v13 酷熱', () => {
   it('酷熱澆水：額外一次 +5（上限 100）、做咗唔扣仲 +3；飽和都做得', () => {
     const s = game({ moisture: 80 });
     expect(performEmergency(s, 'heatWater', ['clear']).ok).toBe(false);
-    expect(emergencyOptions(['hot'])).toEqual({ heatWater: true, rainDrain: false });
+    expect(emergencyOptions(['hot'])).toEqual({ heatWater: true, rainDrain: false, warmCover: false });
     const r1 = performEmergency(s, 'heatWater', ['hot']);
     expect(r1.ok).toBe(true);
     expect(s.moisture).toBe(85);

@@ -8,6 +8,7 @@ import { esc } from './util';
 import { bookGameEnd, bookMilestones, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
+import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
@@ -69,6 +70,7 @@ import {
   fetchForecast,
   hkoForecast,
   withHkoDays,
+  stampDays,
   inHongKong,
   nearHongKong,
   isRainCode,
@@ -100,6 +102,7 @@ let tab: TabId = 'care';
 let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
 let weather: WeatherSnapshot = initialWeather();
 let weatherLoading = weather.provider === 'sim';
+setLabelRegion(regionFor(weather.source, nearHongKong(weather.lat, weather.lon)));
 let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
@@ -184,7 +187,7 @@ function todayEvents(): WeatherEventId[] {
 function todayCond(): DayCond {
   const t = today();
   const day = presentedDays().find((d) => d.date === t) ?? mildDay(t);
-  if (manual()) return condForEvent(condFromForecast(mildDay(t), 28), pickEvent(todayEvents()));
+  if (manual()) return withCold(condForEvent(condFromForecast(mildDay(t), 28), pickEvent(todayEvents())), todayEvents(), true);
   const useLive = weather.origin !== 'offline';
   const temp = useLive ? weather.current.tempC : (day.tempMax + day.tempMin) / 2;
   const cond = condFromForecast(day, temp);
@@ -199,8 +202,23 @@ function todayCond(): DayCond {
     cond.stormKind = null;
   }
   // Severe events drive the scene only while in force right now.
-  const now = pickEvent(liveEvents());
-  return now === 'clear' ? cond : condForEvent(cond, now);
+  const live = liveEvents();
+  const now = pickEvent(live);
+  return withCold(now === 'clear' ? cond : condForEvent(cond, now), live, false);
+}
+
+/**
+ * v15: 寒冷 stacks with the headline event, so the scene gets its frosty tint either way. Manual (developer) weather
+ * also gets a cold temperature; real weather keeps the measured one.
+ */
+function withCold(cond: DayCond, events: readonly WeatherEventId[], fake: boolean): DayCond {
+  if (!events.includes('cold')) return cond;
+  const c = condForEvent(cond, 'cold');
+  if (fake) {
+    c.tempC = Math.min(c.tempC, 6);
+    c.tempMax = Math.min(c.tempMax, 10);
+  }
+  return c;
 }
 
 function localNowIso(): string {
@@ -234,7 +252,7 @@ function placeLabel(): { place: string; note: string } {
 }
 
 /** How hard the tree sways (0 calm … 1 typhoon), from the weather in force now; the dev panel can force it. */
-const EVENT_SWAY: Record<WeatherEventId, number> = { clear: 0.08, drizzle: 0.18, hot: 0.04, rainstorm: 0.55, blackrain: 0.65, typhoon1: 0.72, thunder: 0.85, typhoon8: 1 };
+const EVENT_SWAY: Record<WeatherEventId, number> = { clear: 0.08, drizzle: 0.18, hot: 0.04, cold: 0.1, rainstorm: 0.55, blackrain: 0.65, typhoon1: 0.72, thunder: 0.85, typhoon8: 1 };
 function swayLevel(cond: DayCond): number {
   if (DEV_PANEL && dev.sway !== null) return dev.sway;
   const events = manual() ? todayEvents() : liveEvents();
@@ -419,6 +437,7 @@ function syncWarningWater(): boolean {
 function applyWeather(snapshot: WeatherSnapshot): void {
   const before = today();
   weather = snapshot;
+  setLabelRegion(usesHko(snapshot) ? 'hk' : 'intl');
   timezone = snapshot.timezone || timezone;
   if (snapshot.origin === 'live') saveWeatherCache(snapshot);
   statusLine =
@@ -434,7 +453,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     recordEvents(state, today(), events, hkActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
-    if (fresh.length && state.started && !manual() && !watered) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => WEATHER_EVENTS[e].label).join('、')}生效，今晚結算前仲可以準備。`);
+    if (fresh.length && state.started && !manual() && !watered) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
@@ -461,7 +480,7 @@ function clockOf(ms: number): string {
 }
 
 function usesHko(snapshot: WeatherSnapshot): boolean {
-  return snapshot.source !== 'geo' || nearHongKong(snapshot.lat, snapshot.lon);
+  return regionFor(snapshot.source, nearHongKong(snapshot.lat, snapshot.lon)) === 'hk';
 }
 
 let refreshing: Promise<void> | null = null;
@@ -537,7 +556,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     origin: 'live',
     fetchedAt: Date.now(),
     current: { ...base.current },
-    daily: base.daily,
+    daily: stampDays(base.daily, !hk, base.normals),
+    normals: base.normals ?? null,
     provider,
     hko,
     district,
@@ -699,9 +719,10 @@ function doAction(action: string, target: HTMLElement): void {
     if (result.ok) target.classList.add('pop');
     return;
   }
-  if (action === 'heat-water' || action === 'rain-drain') {
-    const result = performEmergency(state, action === 'heat-water' ? 'heatWater' : 'rainDrain', todayEvents());
-    if (result.ok) flashWater(action === 'heat-water' ? 'up' : 'down');
+  if (action === 'heat-water' || action === 'rain-drain' || action === 'warm-cover') {
+    const result = performEmergency(state, action === 'heat-water' ? 'heatWater' : action === 'warm-cover' ? 'warmCover' : 'rainDrain', todayEvents());
+    if (result.ok && action !== 'warm-cover') flashWater(action === 'heat-water' ? 'up' : 'down');
+    if (result.ok && action === 'warm-cover') target.classList.add('pop');
     persist();
     render();
     toast(result.message);

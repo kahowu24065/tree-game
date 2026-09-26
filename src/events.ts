@@ -1,5 +1,5 @@
 /** Real weather → the game's weather events (設計書「天氣與災害權重表」). */
-import { WEATHER_EVENTS, type WeatherEventId } from './balance';
+import { COLD_ABS_MIN_C, COLD_REL_DROP_C, COLD_REL_MAX_C, HK_HOT_MAX_C, HOT_ABS_MAX_C, HOT_REL_MIN_C, HOT_REL_RISE_C, WEATHER_EVENTS, type WeatherEventId } from './balance';
 import { hkoIconRain, type HkoWarning } from './hko';
 import { pickEvent } from './rules';
 import type { CurrentWeather, DayCond, ForecastDay } from './types';
@@ -7,12 +7,13 @@ import { isRainCode, type HourPoint } from './weather';
 
 /**
  * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告或強烈季候風 → 狂風雷暴;
- * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風.
+ * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷.
  */
 export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
   for (const w of warnings ?? []) {
     if (w.group === 'WHOT') out.add('hot');
+    else if (w.group === 'WCOLD') out.add('cold');
     else if (w.group === 'WRAIN') out.add(w.code === 'WRAINB' ? 'blackrain' : 'rainstorm');
     else if (w.group === 'WTS' || w.group === 'WMSGNL') out.add('thunder');
     else if (w.group === 'WTCSGNL') out.add(/^TC(1|3)$/.test(w.code) ? 'typhoon1' : 'typhoon8');
@@ -20,30 +21,77 @@ export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): W
   return [...out];
 }
 
-/** Model numbers (Open-Meteo, anywhere in the world) → event. Wind first, then rain, then heat. */
-export function eventFromNumbers(input: { code: number; precipMm: number; gustKmh: number; windKmh: number; tempMax: number }): WeatherEventId {
+/** Temperature inputs for the v15 heat / cold rules. `intl` = outside HK / near-HK; normals from the past 14 days. */
+export interface TempInput {
+  tempMax: number;
+  tempMin?: number;
+  intl?: boolean;
+  normMax?: number | null;
+  normMin?: number | null;
+}
+
+const has = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * 酷熱 from numbers. HK / near-HK: the game threshold (≥ 33; HKO WHOT decides whenever HKO data is there).
+ * Elsewhere (v15): max ≥ 35, or max ≥ 28 AND ≥ local normal max + 5 (no normals → only the 35 rule).
+ */
+export function isHotDay(t: TempInput): boolean {
+  if (!t.intl) return t.tempMax >= HK_HOT_MAX_C;
+  if (t.tempMax >= HOT_ABS_MAX_C) return true;
+  return has(t.normMax) && t.tempMax >= HOT_REL_MIN_C && t.tempMax >= t.normMax + HOT_REL_RISE_C;
+}
+
+/**
+ * 寒冷 from numbers (v15). HK / near-HK: never from numbers — only the HKO 寒冷天氣警告 (WCOLD).
+ * Elsewhere: min ≤ 3, or min ≤ 10 AND ≤ local normal min − 8 (no normals → only the 3 rule).
+ */
+export function isColdDay(t: TempInput): boolean {
+  if (!t.intl || !has(t.tempMin)) return false;
+  if (t.tempMin <= COLD_ABS_MIN_C) return true;
+  return has(t.normMin) && t.tempMin <= COLD_REL_MAX_C && t.tempMin <= t.normMin - COLD_REL_DROP_C;
+}
+
+/** Both temperature events of a day (they are separate categories and stack with rain / wind). */
+export function tempEvents(t: TempInput): WeatherEventId[] {
+  const out: WeatherEventId[] = [];
+  if (isHotDay(t)) out.push('hot');
+  if (isColdDay(t)) out.push('cold');
+  return out;
+}
+
+/** Model numbers (Open-Meteo, anywhere in the world) → headline event. Wind first, then rain, then heat, then cold. */
+export function eventFromNumbers(input: { code: number; precipMm: number; gustKmh: number; windKmh: number } & TempInput): WeatherEventId {
   if (input.gustKmh >= 118 || input.windKmh >= 63) return 'typhoon8';
   if (input.gustKmh >= 88 || input.windKmh >= 50) return 'typhoon1';
   if (input.code >= 95 || input.gustKmh >= 62) return 'thunder';
   if (input.precipMm >= 70) return 'blackrain';
   if (input.precipMm >= 25) return 'rainstorm';
-  if (input.tempMax >= 33) return 'hot';
+  if (isHotDay(input)) return 'hot';
+  if (isColdDay(input)) return 'cold';
   if (input.precipMm >= 0.5 || isRainCode(input.code)) return 'drizzle';
   return 'clear';
 }
 
 /**
- * One forecast day → event. When HKO covers the day (hkoIcon set) its icon decides rain vs fine,
+ * One forecast day → headline event. When HKO covers the day (hkoIcon set) its icon decides rain vs fine,
  * so the game never calls a day rainy that the Observatory calls fine; wind storms still come from gusts.
  */
 export function dayEvent(day: ForecastDay): WeatherEventId {
   if (day.hkoIcon === undefined) return eventFromNumbers(day);
-  const windy = eventFromNumbers({ ...day, precipMm: 0, code: 0, tempMax: 0 });
+  const windy = eventFromNumbers({ ...day, precipMm: 0, code: 0, tempMax: 0, tempMin: undefined });
   if (windy !== 'clear') return windy;
   if (day.hkoIcon === 65) return 'thunder';
   if (day.hkoIcon === 64 && day.precipMm >= 25) return 'rainstorm';
-  if (day.tempMax >= 33) return 'hot';
+  if (isHotDay(day)) return 'hot';
   return hkoIconRain(day.hkoIcon) ? 'drizzle' : 'clear';
+}
+
+/** v15: every event of a forecast day — the headline plus 酷熱／寒冷 when they stack with rain or wind. */
+export function dayEvents(day: ForecastDay): WeatherEventId[] {
+  const out = new Set<WeatherEventId>([dayEvent(day)]);
+  if (day.hkoIcon === undefined) for (const e of tempEvents(day)) out.add(e);
+  return [...out];
 }
 
 /** Mild part of a day (drizzle or fine) — used next to HKO warnings, which decide the severe events. */
@@ -61,9 +109,17 @@ export function currentEvents(opts: { hk: boolean; warnings?: readonly HkoWarnin
     if (opts.current.precipMm >= 0.2 || isRainCode(opts.current.code)) out.add('drizzle');
   } else {
     const c = opts.current;
-    const e = eventFromNumbers({ code: c.code, precipMm: c.precipMm * 6, gustKmh: c.gustKmh, windKmh: c.windKmh, tempMax: Math.max(c.tempC, opts.today?.tempMax ?? 0) });
-    out.add(e);
-    if (opts.today) out.add(dayEvent(opts.today));
+    const d = opts.today;
+    const temps: TempInput = {
+      tempMax: Math.max(c.tempC, d?.tempMax ?? -Infinity),
+      tempMin: Math.min(c.tempC, d?.tempMin ?? Infinity),
+      intl: d?.intl,
+      normMax: d?.normMax,
+      normMin: d?.normMin,
+    };
+    out.add(eventFromNumbers({ code: c.code, precipMm: c.precipMm * 6, gustKmh: c.gustKmh, windKmh: c.windKmh, ...temps }));
+    for (const e of tempEvents(temps)) out.add(e);
+    if (d) for (const e of dayEvents(d)) out.add(e);
   }
   return [...out].filter((e) => e !== 'clear');
 }
@@ -132,6 +188,11 @@ export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
       c.hot = true;
       c.tempMax = Math.max(c.tempMax, 34);
       c.tempC = Math.max(c.tempC, 33);
+      break;
+    case 'cold':
+      // Flags only: real weather keeps the measured temperature (manual weather lowers it in main.ts).
+      c.cold = true;
+      c.hot = false;
       break;
     case 'drizzle':
       c.raining = true;

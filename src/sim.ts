@@ -43,7 +43,8 @@ import {
 import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
-import { dayEvent, mildEvent } from './events';
+import { dayEvents, mildEvent } from './events';
+import { emergencyName, eventLabel, regionalize } from './labels';
 import {
   baseDailyGrowth,
   carbonKg,
@@ -51,6 +52,7 @@ import {
   clampW,
   deltaG,
   emergencyBonus,
+  emergencyBonusText,
   finalDamage,
   hMult,
   hMultTier,
@@ -71,7 +73,7 @@ import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, Miles
 import { formatHeight } from './util';
 
 export function freshCare(date: string): Care {
-  return { date, water: 0, drain: 0, fertilize: 0, dewormed: false, preps: { stakes: false, ropes: false, prune: false }, credited: false, heatWater: false, rainDrain: false };
+  return { date, water: 0, drain: 0, fertilize: 0, dewormed: false, preps: { stakes: false, ropes: false, prune: false }, credited: false, heatWater: false, rainDrain: false, warmCover: false };
 }
 
 let logClock: () => string = () => '';
@@ -184,8 +186,8 @@ export function recordEvents(state: GameState, date: string, events: readonly We
 /** Events a date is settled with: what was seen that day, plus the day's forecast (HKO days: only drizzle/fine from the forecast). */
 export function eventsForDate(state: GameState, date: string, day: ForecastDay | undefined): WeatherEventId[] {
   const rec = state.dayEvents[date];
-  const base = rec?.hko ? mildEvent(day) : day ? dayEvent(day) : 'clear';
-  return [...new Set([base, ...(rec?.events ?? [])])];
+  const base = rec?.hko ? [mildEvent(day)] : day ? dayEvents(day) : ['clear' as const];
+  return [...new Set([...base, ...(rec?.events ?? [])])];
 }
 
 /* ---------- Nightly settlement ---------- */
@@ -268,8 +270,8 @@ export function applyWarningWater(
     const after = state.moisture;
     const delta = r1(after - before);
     const hint = after > W_SATURATED ? '記得疏水' : after < W_OPTIMAL[0] ? '記得澆水' : '水分仲喺適中範圍';
-    const message = `${WARNING_NAME[event]}！水分 ${sgn(delta)}，而家 ${Math.round(after)}，${hint}${toN ? `（二級徽章：${toN} 水分轉咗做養分）` : ''}`;
-    addLog(state, date, message, { kind: 'event', title: WARNING_NAME[event], reward: { text: `${sgn(delta)} 水分`, tone: delta < 0 ? 'orange' : 'blue' }, time });
+    const message = `${regionalize(WARNING_NAME[event])}！水分 ${sgn(delta)}，而家 ${Math.round(after)}，${hint}${toN ? `（二級徽章：${toN} 水分轉咗做養分）` : ''}`;
+    addLog(state, date, message, { kind: 'event', title: regionalize(WARNING_NAME[event]), reward: { text: `${sgn(delta)} 水分`, tone: delta < 0 ? 'orange' : 'blue' }, time });
     hits.push({ event, before, after, delta, toN, message, dying: false });
   };
   if (hot && !mark.hot) {
@@ -360,6 +362,8 @@ export interface NightPlan {
   /** R after the night (decay + wind consumption; unchanged before 青年樹). */
   rAfter: number;
   heat: CategoryHit | null;
+  /** v15 寒. */
+  cold: CategoryHit | null;
   rain: CategoryHit | null;
   wind: WindHit | null;
   /** Number of 應急行動 that met tonight's warnings, and the bonus they give. */
@@ -412,7 +416,8 @@ function careOn(state: GameState, date: string | null): Care | null {
 /**
  * The night in order (設計書 v13): first the water change (natural loss −10 or 毛毛雨), then
  * H_new = H_old + W_score + N_score + 天氣分(熱) + 天氣分(雨) + 天氣分(風) + 應急獎勵 − 蟲害.
- * 熱／雨: flat −10／−10 (黑雨 −15) unless 酷熱澆水／暴雨疏水 was done that day (then 0 and +3 each; both = 4.5).
+ * 熱／寒／雨: flat −10／−10／−10 (黑雨 −15) unless 酷熱澆水／保暖覆蓋／暴雨疏水 was done that day (then 0 and +3 each;
+ * n ≥ 2 actions = 3n × 0.75).
  * 風 (after 青年樹 only): base × (1 − R/100); R below the event's threshold = 倒塌.
  * `date` is the day being settled: that day's care flags count (null = trust state.care).
  */
@@ -431,6 +436,13 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
     const handled = Boolean(care?.heatWater);
     if (handled) emergencyCount += 1;
     heat = { event: hotId, base: WEATHER_EVENTS[hotId].damage, handled, score: handled ? 0 : -WEATHER_EVENTS[hotId].damage };
+  }
+  const coldId = topInCategory(events, 'cold');
+  let cold: CategoryHit | null = null;
+  if (coldId) {
+    const handled = Boolean(care?.warmCover);
+    if (handled) emergencyCount += 1;
+    cold = { event: coldId, base: WEATHER_EVENTS[coldId].damage, handled, score: handled ? 0 : -WEATHER_EVENTS[coldId].damage };
   }
   const rainId = topInCategory(events, 'rain');
   let rain: CategoryHit | null = null;
@@ -457,8 +469,8 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
     }
   }
   const bonus = emergencyBonus(emergencyCount);
-  const weather = (heat?.score ?? 0) + (rain?.score ?? 0) + (wind?.score ?? 0);
-  const baseDamage = (heat?.base ?? 0) + (rain?.base ?? 0) + (wind && !wind.locked ? wind.base : 0);
+  const weather = (heat?.score ?? 0) + (cold?.score ?? 0) + (rain?.score ?? 0) + (wind?.score ?? 0);
+  const baseDamage = (heat?.base ?? 0) + (cold?.base ?? 0) + (rain?.base ?? 0) + (wind && !wind.locked ? wind.base : 0);
   const pest = state.pest.active ? PEST_DAMAGE : 0;
   const death = waterDeath(water.wAfter);
   const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, state.health + tier.score + nScore + weather + bonus - pest)));
@@ -479,6 +491,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
     rBefore: state.resist,
     rAfter,
     heat,
+    cold,
     rain,
     wind,
     emergencyCount,
@@ -531,28 +544,29 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   // Warnings seen that day but never applied (app closed, or forecast-only days) hit first.
   const pre = applyWarningWater(state, date, events, meta, nowMs, '');
   for (const h of pre) {
-    notes.push(`${WARNING_NAME[h.event]}：水分 ${sgn(h.delta)}`);
+    notes.push(`${regionalize(WARNING_NAME[h.event])}：水分 ${sgn(h.delta)}`);
     if (h.toN) notes.push(`二級徽章：${h.toN} 水分轉咗做養分`);
   }
   const plan = planNight(state, events, perks, date);
   const eventId = plan.event;
-  const def = WEATHER_EVENTS[eventId];
   const hBefore = state.health;
   const wBefore = state.moisture;
   const nBefore = state.nutrients;
   const rBefore = state.resist;
-  const cats = [plan.heat, plan.rain, plan.wind].filter(Boolean).length;
-  const severeSeen = events.filter((e) => WEATHER_EVENTS[e].category);
-  if (severeSeen.length > cats) notes.push(`同一類天氣只計最嚴重嗰個（${[plan.heat, plan.rain, plan.wind].filter((x) => x).map((x) => WEATHER_EVENTS[x!.event].label).join('、')}）`);
-  if (cats > 1) notes.push('熱、雨、風唔同類，各自計埋');
+  const hits = [plan.heat, plan.cold, plan.rain, plan.wind].filter((x) => x);
+  const cats = hits.length;
+  const severeSeen = [...new Set(events)].filter((e) => WEATHER_EVENTS[e].category);
+  if (severeSeen.length > cats) notes.push(`同一類天氣只計最嚴重嗰個（${hits.map((x) => eventLabel(x!.event)).join('、')}）`);
+  if (cats > 1) notes.push('熱、寒、雨、風唔同類，各自計埋');
   if (plan.water.kind === 'loss' && perks.waterSaver) notes.push('一級徽章：水分流失減少 10%');
   if (plan.water.kind === 'rain') notes.push('落雨日：今晚水分冇流失');
   if (plan.water.kind === 'drizzle') notes.push(`毛毛雨：水分 ${sgn(plan.water.delta)}，冇流失`);
   if (plan.residentN) notes.push(`長駐動物施肥 +${plan.residentN} 養分`);
   if (plan.heat) notes.push(plan.heat.handled ? '酷熱：做咗酷熱澆水，唔扣健康' : `酷熱：冇做酷熱澆水 −${plan.heat.base}`);
-  if (plan.rain) notes.push(plan.rain.handled ? `${WEATHER_EVENTS[plan.rain.event].label}：做咗暴雨疏水，唔扣健康` : `${WEATHER_EVENTS[plan.rain.event].label}：冇做暴雨疏水 −${plan.rain.base}`);
-  if (plan.emergencyBonus) notes.push(plan.emergencyCount > 1 ? `應急獎勵 (3 + 3) × 0.75 = +${plan.emergencyBonus}` : `應急獎勵 +${plan.emergencyBonus}`);
-  if (plan.wind?.locked) notes.push(`${WEATHER_EVENTS[plan.wind.event].label}：青年樹前唔受風災影響`);
+  if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖覆蓋，唔扣健康' : `寒冷：冇做保暖覆蓋 −${plan.cold.base}`);
+  if (plan.rain) notes.push(plan.rain.handled ? `${eventLabel(plan.rain.event)}：做咗${emergencyName('rainDrain')}，唔扣健康` : `${eventLabel(plan.rain.event)}：冇做${emergencyName('rainDrain')} −${plan.rain.base}`);
+  if (plan.emergencyBonus) notes.push(`應急獎勵 ${emergencyBonusText(plan.emergencyCount)}`);
+  if (plan.wind?.locked) notes.push(`${eventLabel(plan.wind.event)}：青年樹前唔受風災影響`);
 
   state.moisture = plan.wAfter;
   state.nutrients = plan.nAfter;
@@ -572,18 +586,18 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const beforeCm = state.heightCm;
   state.heightCm = plan.growth.grownCm;
 
-  for (const hit of [plan.heat, plan.rain]) {
+  for (const hit of [plan.heat, plan.cold, plan.rain]) {
     if (!hit || hit.handled) continue;
-    const label = WEATHER_EVENTS[hit.event].label;
-    const fix = hit.event === 'hot' ? '酷熱澆水' : '暴雨疏水';
+    const label = eventLabel(hit.event);
+    const fix = emergencyName(hit.event === 'hot' ? 'heatWater' : hit.event === 'cold' ? 'warmCover' : 'rainDrain');
     addLog(state, date, `${label}冇做${fix}，健康度 −${hit.base}。下次警告一出記得做${fix}。`, { kind: 'storm-hit', title: `${label}打中棵樹`, reward: { text: `-${hit.base} 健康度`, tone: 'red' }, time: '' });
     messages.push(`${label}令健康度 −${hit.base}。下次警告一出，記得做「${fix}」。`);
   }
   if (plan.emergencyBonus) {
-    addLog(state, date, plan.emergencyCount > 1 ? `酷熱澆水同暴雨疏水都做咗，應急獎勵 (3 + 3) × 0.75 = +${plan.emergencyBonus}。` : `應急行動做得啱時，應急獎勵 +${plan.emergencyBonus}。`, { kind: 'emergency', title: '應急獎勵', reward: { text: `+${plan.emergencyBonus} 健康度`, tone: 'green' }, time: '' });
+    addLog(state, date, plan.emergencyCount > 1 ? `${plan.emergencyCount} 樣應急行動都做咗，應急獎勵 ${emergencyBonusText(plan.emergencyCount)}。` : `應急行動做得啱時，應急獎勵 +${plan.emergencyBonus}。`, { kind: 'emergency', title: '應急獎勵', reward: { text: `+${plan.emergencyBonus} 健康度`, tone: 'green' }, time: '' });
   }
   if (w && !w.locked) {
-    const label = WEATHER_EVENTS[w.event].label;
+    const label = eventLabel(w.event);
     if (survived) {
       state.stormSurvivals += 1;
       if (state.scars > 0) state.scars -= 1;
@@ -612,7 +626,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   let collapseRevived = false;
   if (plan.collapse) {
     const c = plan.collapse;
-    const label = WEATHER_EVENTS[c.event].label;
+    const label = eventLabel(c.event);
     state.collapses = c.count;
     const hBeforeCollapse = state.heightCm;
     if (c.fatal && !(meta && meta.reviveTokens > 0)) {
@@ -742,6 +756,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     carbonKg: carbonKg(state.heightCm),
     notes,
     heat: plan.heat,
+    cold: plan.cold,
     rain: plan.rain,
     wind: plan.wind ? { event: plan.wind.event, base: plan.wind.base, locked: plan.wind.locked, score: plan.wind.score, r: plan.wind.r } : null,
     emergencyBonus: plan.emergencyBonus,
@@ -753,7 +768,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   addLog(
     state,
     date,
-    `${def.label}。水分 ${Math.round(state.moisture)}（${plan.wLabel}）${sgn(wf)}，養分 ${sgn(nf)}，天氣分 ${sgn(-dmg)}${plan.emergencyBonus ? `，應急獎勵 +${plan.emergencyBonus}` : ''}${pestDamage ? `，蟲害 −${pestDamage}` : ''}。健康 ${Math.round(hBefore)}→${Math.round(state.health)}，${tier.label} ×${mult}。`,
+    `${eventLabel(eventId)}。水分 ${Math.round(state.moisture)}（${plan.wLabel}）${sgn(wf)}，養分 ${sgn(nf)}，天氣分 ${sgn(-dmg)}${plan.emergencyBonus ? `，應急獎勵 +${plan.emergencyBonus}` : ''}${pestDamage ? `，蟲害 −${pestDamage}` : ''}。健康 ${Math.round(hBefore)}→${Math.round(state.health)}，${tier.label} ×${mult}。`,
     { kind: 'settle', title: '夜間結算', reward: { text: `${dG >= 0 ? '+' : ''}${settlement.deltaG} 厘米`, tone: dG >= 0 ? 'blue' : 'red' }, time: '' },
   );
   if (!collapseInfo) noteStage(state, beforeCm, date);
@@ -966,11 +981,11 @@ export function reinforce(state: GameState, prep: PrepId): ActionResult {
 
 /* ---------- v13 應急行動 ---------- */
 
-export type EmergencyAction = 'heatWater' | 'rainDrain';
+export type EmergencyAction = 'heatWater' | 'rainDrain' | 'warmCover';
 
-/** Which 應急行動 today's warnings allow (酷熱 → 酷熱澆水；暴雨／黑雨 → 暴雨疏水). */
-export function emergencyOptions(events: readonly WeatherEventId[]): { heatWater: boolean; rainDrain: boolean } {
-  return { heatWater: Boolean(topInCategory(events, 'heat')), rainDrain: Boolean(topInCategory(events, 'rain')) };
+/** Which 應急行動 today's warnings allow (酷熱 → 酷熱澆水；寒冷 → 保暖覆蓋；暴雨／黑雨 → 暴雨疏水). */
+export function emergencyOptions(events: readonly WeatherEventId[]): { heatWater: boolean; rainDrain: boolean; warmCover: boolean } {
+  return { heatWater: Boolean(topInCategory(events, 'heat')), rainDrain: Boolean(topInCategory(events, 'rain')), warmCover: Boolean(topInCategory(events, 'cold')) };
 }
 
 /**
@@ -981,8 +996,12 @@ export function emergencyOptions(events: readonly WeatherEventId[]): { heatWater
 export function performEmergency(state: GameState, action: EmergencyAction, events: readonly WeatherEventId[]): ActionResult {
   if (state.over) return { ok: false, message: '呢局已經完結。' };
   const opts = emergencyOptions(events);
-  const name = action === 'heatWater' ? '酷熱澆水' : '暴雨疏水';
-  if (!opts[action]) return { ok: false, message: action === 'heatWater' ? '今日冇酷熱警告，唔使做酷熱澆水。' : '今日冇暴雨／黑雨警告，唔使做暴雨疏水。' };
+  const name = emergencyName(action);
+  if (!opts[action])
+    return {
+      ok: false,
+      message: action === 'heatWater' ? '今日冇酷熱警告，唔使做酷熱澆水。' : action === 'warmCover' ? '今日冇寒冷警告，唔使做保暖覆蓋。' : regionalize('今日冇暴雨／黑雨警告，唔使做暴雨疏水。'),
+    };
   if (state.care[action]) return { ok: false, message: `今日做咗${name}喇。` };
   state.care[action] = true;
   const before = state.moisture;
@@ -991,18 +1010,20 @@ export function performEmergency(state: GameState, action: EmergencyAction, even
     state.moisture = before < W_SATURATED ? Math.min(W_SATURATED, r1(before + EMERGENCY.heatWater.amount)) : before;
     const got = r1(state.moisture - before);
     message = got > 0 ? `酷熱澆水：水分 +${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因酷熱扣健康，仲有應急獎勵。` : `酷熱澆水：泥土已經飽和，冇加水，不過都算做咗。今晚唔會因酷熱扣健康，仲有應急獎勵。`;
+  } else if (action === 'warmCover') {
+    message = '保暖覆蓋：幫棵樹蓋好保暖布、根部鋪好覆蓋物。今晚唔會因寒冷扣健康，仲有應急獎勵。';
   } else {
     const floor = EMERGENCY.rainDrain.floor;
     state.moisture = before > floor ? Math.max(floor, r1(before + EMERGENCY.rainDrain.amount)) : before;
     const got = r1(state.moisture - before);
-    message = got < 0 ? `暴雨疏水：水分 ${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因暴雨扣健康，仲有應急獎勵。` : `暴雨疏水：水分已經唔高過 ${floor}，冇疏走水，不過都算做咗。今晚唔會因暴雨扣健康，仲有應急獎勵。`;
+    message = regionalize(got < 0 ? `暴雨疏水：水分 ${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因暴雨扣健康，仲有應急獎勵。` : `暴雨疏水：水分已經唔高過 ${floor}，冇疏走水，不過都算做咗。今晚唔會因暴雨扣健康，仲有應急獎勵。`);
   }
   if (!state.care.credited) {
     state.daysCared += 1;
     state.care.credited = true;
   }
   const delta = r1(state.moisture - before);
-  addLog(state, state.care.date, message, { kind: 'emergency', title: name, reward: { text: delta ? `${sgn(delta)} 水分` : '已應對', tone: 'blue' } });
+  addLog(state, state.care.date, message, { kind: 'emergency', title: name, reward: { text: delta ? `${sgn(delta)} 水分` : '已應對', tone: action === 'warmCover' ? 'purple' : 'blue' } });
   const rescue = checkRescue(state);
   if (rescue) message = `${message} ${rescue}`;
   return { ok: true, message };
@@ -1110,7 +1131,7 @@ export function catchUp(
 
 function nightNote(s: Settlement | undefined): string {
   if (!s) return '';
-  return `昨晚結算：${WEATHER_EVENTS[s.event].label}，健康 ${Math.round(s.hBefore)} → ${Math.round(s.hAfter)}，高度 ${s.deltaG >= 0 ? '+' : ''}${s.deltaG} 厘米。`;
+  return `昨晚結算：${eventLabel(s.event)}，健康 ${Math.round(s.hBefore)} → ${Math.round(s.hAfter)}，高度 ${s.deltaG >= 0 ? '+' : ''}${s.deltaG} 厘米。`;
 }
 
 /** Developer: settle today now and move to tomorrow. */
@@ -1151,28 +1172,29 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
   if (state.dying) return `瀕死！將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就即刻救得返。`;
   if (plan.collapse) {
     const c = plan.collapse;
-    const label = WEATHER_EVENTS[c.event].label;
+    const label = eventLabel(c.event);
     if (c.fatal && !c.revive) return `危險！抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚再倒塌棵樹就會死！即刻加固。`;
     return `抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚會倒塌（高度 −20%）。快啲加固到 ${c.threshold} 或以上。`;
   }
   if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
   if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
   if (plan.heat && !plan.heat.handled) return `酷熱警告生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
-  if (plan.rain && !plan.rain.handled) return `${WEATHER_EVENTS[plan.rain.event].label}警告生效：做「暴雨疏水」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
+  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖覆蓋」（每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
+  if (plan.rain && !plan.rain.handled) return `${eventLabel(plan.rain.event)}警告生效：做「${emergencyName('rainDrain')}」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
   if (countdown && WEATHER_EVENTS[countdown.event].category === 'wind') {
-    const def = WEATHER_EVENTS[countdown.event];
+    const def = { ...WEATHER_EVENTS[countdown.event], label: eventLabel(countdown.event) };
     if (!state.windUnlocked) return `${def.label}就嚟，不過棵樹未到${STAGE_NAMES[WIND_UNLOCK_STAGE]}，風災唔會傷到佢。照顧好水分同養分就得。`;
     if (state.resist < (def.collapseBelow ?? 0)) return `${def.label}就嚟：抗風力 ${Math.round(state.resist)} 低過倒塌門檻 ${def.collapseBelow}，快啲加固！`;
     if (state.resist < 60) return `${def.label}就嚟，先加固推高抗風力（而家 ${Math.round(state.resist)}）。`;
   }
   if (countdown && countdown.hours > 0 && (countdown.event === 'rainstorm' || countdown.event === 'blackrain')) {
     const hit = rainAdd(state.moisture, WEATHER_EVENTS[countdown.event].dW, RAIN_OVER_CAP.heavy);
-    if (hit > W_SATURATED) return `${WEATHER_EVENTS[countdown.event].label}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
+    if (hit > W_SATURATED) return `${eventLabel(countdown.event)}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
   }
   if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel} ${sgn(plan.wScore)}。疏水返到 ${W_SATURATED} 以下。`;
   if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱 ${sgn(plan.wScore)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
   if (plan.nAfter < N_OPTIMAL[0]) return `養分今晚會跌到 ${Math.round(plan.nAfter)}，低過 ${N_OPTIMAL[0]}，可以施肥。`;
-  if (state.windUnlocked && state.resist < 40) return `有空可以加固：抗風力低過 40，高級颱風一嚟就會倒塌。`;
+  if (state.windUnlocked && state.resist < 40) return `有空可以加固：抗風力低過 40，${eventLabel('typhoon8')}一嚟就會倒塌。`;
   return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，今晚會健康咁長高。`;
 }
 

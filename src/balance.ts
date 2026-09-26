@@ -42,15 +42,15 @@ export const N_DAILY_USE = 10;
 export const R_DAILY_DECAY = 2;
 
 /* ---------- Weather events ---------- */
-export type WeatherEventId = 'clear' | 'hot' | 'drizzle' | 'rainstorm' | 'blackrain' | 'thunder' | 'typhoon1' | 'typhoon8';
+export type WeatherEventId = 'clear' | 'hot' | 'cold' | 'drizzle' | 'rainstorm' | 'blackrain' | 'thunder' | 'typhoon1' | 'typhoon8';
 
-/** v13 weather categories: they stack with each other; inside one category only the most severe event counts. */
-export type WeatherCategory = 'heat' | 'rain' | 'wind';
+/** v13 weather categories: they stack with each other; inside one category only the most severe event counts. v15 adds 寒. */
+export type WeatherCategory = 'heat' | 'cold' | 'rain' | 'wind';
 
 export interface WeatherEventDef {
   id: WeatherEventId;
   label: string;
-  /** v13 category (熱／雨／風); 晴天、毛毛雨 have none (water only). */
+  /** v13 category (熱／寒／雨／風); 晴天、毛毛雨 have none (water only). */
   category: WeatherCategory | null;
   /**
    * 天氣基礎傷害 to H. 酷熱／暴雨／黑雨: flat, avoided by the day's 應急行動 (酷熱澆水／暴雨疏水), NOT reduced by R.
@@ -73,14 +73,20 @@ export interface WeatherEventDef {
   tip: string;
 }
 
+/** 酷熱 growth modifier; v15 寒冷 uses the same value. */
+export const HEAT_GROWTH = 0.9;
+/** v15 寒冷: flat health damage unless 保暖覆蓋 was done that day. */
+export const COLD_DAMAGE = 10;
+
 /**
- * 天氣與災害權重表 (v13). 熱：酷熱；雨：暴雨 < 黑雨；風：初級颱風 < 狂風雷暴 < 高級颱風.
+ * 天氣與災害權重表 (v13; v15 adds 寒冷). 熱：酷熱；雨：暴雨 < 黑雨；風：初級颱風 < 狂風雷暴 < 高級颱風.
  * 初級颱風 (一號／三號風球) R consumption = half of 高級颱風 (八號或以上), rounded.
  */
 export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
   clear: { id: 'clear', label: '晴天／多雲', category: null, damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
   drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
-  hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖覆蓋」（每日一次），做咗就唔扣健康，仲有應急獎勵 +3。' },
   rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
   blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
   typhoon1: { id: 'typhoon1', label: '初級颱風', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '一號／三號風球：青年樹之後，抗風力低過 20 會倒塌，提早加固。' },
@@ -90,11 +96,12 @@ export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
 /** v13: severity order inside each category (last = most severe). */
 export const WX_CATEGORY_ORDER: Record<WeatherCategory, WeatherEventId[]> = {
   heat: ['hot'],
+  cold: ['cold'],
   rain: ['rainstorm', 'blackrain'],
   wind: ['typhoon1', 'thunder', 'typhoon8'],
 };
-export const WX_CATEGORY_LABEL: Record<WeatherCategory, string> = { heat: '熱', rain: '雨', wind: '風' };
-export const EVENT_ORDER: WeatherEventId[] = ['clear', 'drizzle', 'hot', 'rainstorm', 'blackrain', 'typhoon1', 'thunder', 'typhoon8'];
+export const WX_CATEGORY_LABEL: Record<WeatherCategory, string> = { heat: '熱', cold: '寒', rain: '雨', wind: '風' };
+export const EVENT_ORDER: WeatherEventId[] = ['clear', 'drizzle', 'hot', 'cold', 'rainstorm', 'blackrain', 'typhoon1', 'thunder', 'typhoon8'];
 
 /** Weathering a wind event (after 青年樹) with ≤ this share of its base damage (well reinforced) earns the storm bonus. */
 export const STORM_SURVIVE_SHARE = 0.25;
@@ -184,10 +191,37 @@ export const EMERGENCY = {
   heatWater: { amount: 5 },
   /** 暴雨疏水: once a day on top of the 3 drains, −10 water but never below this floor. */
   rainDrain: { amount: -10, floor: 50 },
+  /** v15 保暖覆蓋: once a day while 寒冷 is in force; no water change. */
+  warmCover: {},
   /** Bonus for each emergency action that met its warning. */
   bonus: 3,
-  /** Both on the same day: (3 + 3) × this. */
+  /** v15: n ≥ 2 on the same day: 3n × this (2 → 4.5, 3 → 6.75). One alone = 3. */
   bothMult: 0.75,
+} as const;
+
+/* ---------- v15 天氣門檻（香港以外；香港／鄰近照用天文台警告） ---------- */
+/** Open-Meteo `past_days` used for the local normals (average daily min / max). */
+export const NORMAL_PAST_DAYS = 14;
+/** 寒冷 (outside HK): day min ≤ this, always. */
+export const COLD_ABS_MIN_C = 3;
+/** 寒冷 (outside HK): or day min ≤ this AND ≤ normal min − COLD_REL_DROP_C. */
+export const COLD_REL_MAX_C = 10;
+export const COLD_REL_DROP_C = 8;
+/** 酷熱 (outside HK): day max ≥ this, always. */
+export const HOT_ABS_MAX_C = 35;
+/** 酷熱 (outside HK): or day max ≥ this AND ≥ normal max + HOT_REL_RISE_C. */
+export const HOT_REL_MIN_C = 28;
+export const HOT_REL_RISE_C = 5;
+/** Game heat threshold for model numbers in / near HK (HKO WHOT decides when HKO data is there). */
+export const HK_HOT_MAX_C = 33;
+
+/** v15 regional names outside HK (rules identical). */
+export const INTL_LABELS: Partial<Record<WeatherEventId, string>> = { typhoon1: '烈風', typhoon8: '暴風', rainstorm: '大雨', blackrain: '豪雨' };
+/** 應急行動 names: HK / outside HK. */
+export const EMERGENCY_NAMES = {
+  heatWater: { hk: '酷熱澆水', intl: '酷熱澆水' },
+  rainDrain: { hk: '暴雨疏水', intl: '大雨疏水' },
+  warmCover: { hk: '保暖覆蓋', intl: '保暖覆蓋' },
 } as const;
 /** Stage index (0-based, in STAGE_NAMES) from which 風災／加固／倒塌 apply: 2 = 青年樹. */
 export const WIND_UNLOCK_STAGE = 2;

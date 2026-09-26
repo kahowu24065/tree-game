@@ -31,6 +31,8 @@ export const ICONS = {
   locate: s('<circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/><circle cx="12" cy="12" r="7"/>'),
   drain: s('<path d="M12 3.5c2.8 3.4 5 6 5 8.8a5 5 0 0 1-10 0c0-2.8 2.2-5.4 5-8.8z" fill="currentColor" fill-opacity=".18"/><path d="M4 19.5h16M8 16.5l-1.5 3M16 16.5l1.5 3"/>'),
   wrench: s('<path d="M14.5 5.5a4 4 0 0 0 4.9 4.9l1.1 1.1-2.2 2.2-1.1-1.1-7.6 7.6a2 2 0 0 1-2.8-2.8l7.6-7.6-1.1-1.1 2.2-2.2z" fill="currentColor" fill-opacity=".18"/>'),
+  /** v15 保暖覆蓋: a cover over the soil with a snowflake above. */
+  cover: s('<path d="M3.5 20c0-4.8 3.8-8.5 8.5-8.5s8.5 3.7 8.5 8.5z" fill="currentColor" fill-opacity=".18"/><path d="M2.5 20h19M8 16.5c1.2-.9 2.5-1.3 4-1.3s2.8.4 4 1.3"/><path d="M12 2.5v6M9.4 4l5.2 3M14.6 4L9.4 7"/>'),
   more: s('<circle cx="6" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18" cy="12" r="1.3" fill="currentColor"/>'),
 };
 

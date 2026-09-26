@@ -3078,3 +3078,175 @@ button.emerg-act.done {
 .milestone-badges li {
   padding: 4px 0;
 }
+
+/* ---------- v15 寒冷、保暖覆蓋、新按鈕排位 ---------- */
+body.cold #scene {
+  filter: saturate(0.72) brightness(1.06) hue-rotate(10deg);
+}
+
+.weather-card.cold {
+  background: linear-gradient(135deg, rgba(236, 245, 255, 0.9), rgba(205, 225, 248, 0.78));
+}
+
+/* Dock: 澆水／疏水 and 施肥／除蟲 share a column (same 72 px footprint as the big buttons). */
+.dock-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 72px;
+  min-width: 0;
+}
+
+.dock-btn.short {
+  height: 42px;
+  flex: none;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  justify-content: center;
+  column-gap: 4px;
+  row-gap: 0;
+  padding: 0 4px;
+  border-radius: 16px;
+}
+
+.dock-btn.short .dock-ic {
+  grid-row: 1 / span 2;
+  align-self: center;
+  margin: 0;
+}
+
+.dock-btn.short .dock-ic svg {
+  width: 21px;
+  height: 21px;
+}
+
+.dock-btn.short .dock-label,
+.dock-btn.short:has(small) .dock-label {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dock-btn.short small {
+  position: static;
+  grid-column: 2;
+  line-height: 1.1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dock-btn.short:not(:has(small)) .dock-ic {
+  grid-row: 1;
+}
+
+.dock-sub {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 10px rgba(35, 60, 80, 0.14);
+}
+
+.dock-sub svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dock-sub.d-drain {
+  color: #6b4bb0;
+}
+
+.dock-sub.d-bug {
+  color: #b8651c;
+}
+
+.dock-sub.alert {
+  background: var(--orange-bg);
+  color: var(--orange);
+  box-shadow: inset 0 0 0 1px rgba(222, 123, 36, 0.45), 0 4px 10px rgba(35, 60, 80, 0.14);
+}
+
+.dock-sub:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dock-sub:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.dock-btn.d-warm {
+  background: linear-gradient(180deg, #eef6ff, #c9ddf6);
+  color: #2f67a6;
+}
+
+.dock-btn.d-warm .dock-label {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.dock-btn.d-warm:disabled {
+  cursor: default;
+}
+
+.dock-btn.d-warm.hot-pulse {
+  background: linear-gradient(180deg, #d9ebff, #9fc4ef);
+  animation-name: cold-pulse;
+}
+
+@keyframes cold-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(61, 120, 200, 0.55), 0 6px 16px rgba(35, 60, 80, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(61, 120, 200, 0), 0 6px 16px rgba(35, 60, 80, 0.18);
+  }
+}
+
+/* 圖鑑 now sits in the status card where 除蟲／疏水 used to be. */
+.mini-acts.album-row {
+  grid-template-columns: 1fr;
+}
+
+.mini.mini-album {
+  position: relative;
+  background: linear-gradient(180deg, #f5efff, #e2d4fa);
+  color: #7a4cc4;
+}
+
+.mini.mini-album small {
+  font-size: 10.5px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.mini.mini-album .badge {
+  top: -7px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  font-size: 11px;
+}
+
+.emerg.cold {
+  background: linear-gradient(90deg, #6aa3de, #3a6db0);
+}
+
+.emerg-act.cold {
+  background: linear-gradient(135deg, #86b8ea, #3a6db0);
+}

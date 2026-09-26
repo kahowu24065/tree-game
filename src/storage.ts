@@ -96,6 +96,7 @@ export function migrateWind(data: GameState): void {
   data.doubleRSeen ??= false;
   data.care.heatWater ??= false;
   data.care.rainDrain ??= false;
+  data.care.warmCover ??= false;
 }
 
 /**

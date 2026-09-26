@@ -13,6 +13,8 @@ export interface Care {
   /** v13 應急行動 done today (each once a day, on top of the normal limits). */
   heatWater?: boolean;
   rainDrain?: boolean;
+  /** v15 保暖覆蓋 done today. */
+  warmCover?: boolean;
 }
 
 /** Visual reinforcement shown on the 3D tree (derived from 抗風力 R). */
@@ -93,6 +95,8 @@ export interface Settlement {
   notes: string[];
   /** v13 per-category weather scores (≤ 0) and the 應急獎勵. */
   heat?: { event: WeatherEventId; base: number; handled: boolean; score: number } | null;
+  /** v15 寒. */
+  cold?: { event: WeatherEventId; base: number; handled: boolean; score: number } | null;
   rain?: { event: WeatherEventId; base: number; handled: boolean; score: number } | null;
   wind?: { event: WeatherEventId; base: number; locked: boolean; score: number; r: number } | null;
   emergencyBonus?: number;
@@ -231,6 +235,11 @@ export interface ForecastDay {
   sunset: string;
   /** HKO weather icon (50-93) when the Observatory covers this day; wins over `code` for display. */
   hkoIcon?: number;
+  /** v15: outside HK / near-HK (local-relative heat & cold rules apply). Absent = HK rules. */
+  intl?: boolean;
+  /** v15 local normals: average daily min / max over the past 14 days (Open-Meteo past_days). */
+  normMin?: number | null;
+  normMax?: number | null;
 }
 
 export interface CurrentWeather {
@@ -252,6 +261,8 @@ export interface DayCond {
   windKmh: number;
   gustKmh: number;
   hot: boolean;
+  /** v15 寒冷 in force (frosty scene tint). */
+  cold?: boolean;
   raining: boolean;
   stormKind: StormKind | null;
 }

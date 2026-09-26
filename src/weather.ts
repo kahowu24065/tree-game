@@ -1,4 +1,6 @@
+import { NORMAL_PAST_DAYS } from './balance';
 import { addDays } from './dates';
+import { isColdDay, isHotDay, type TempInput } from './events';
 import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } from './types';
 
@@ -32,6 +34,8 @@ export interface WeatherSnapshot {
   rainInHours?: number | null;
   /** Next hours from Open-Meteo (for the 12-hour severe-weather countdown). */
   hourly?: HourPoint[];
+  /** v15 local normals (average daily min / max of the past 14 days), null when unavailable. */
+  normals?: Normals | null;
   /** Location choice this snapshot was made for ('auto' or a PLACES id), so a changed choice refetches. */
   choice?: string;
 }
@@ -139,20 +143,23 @@ export interface Severity {
   gale: boolean;
   typhoon: boolean;
   heat: boolean;
+  /** v15 寒冷 (outside HK only; HK uses the HKO warning). */
+  cold: boolean;
   stormKind: StormKind | null;
 }
 
-/** Game thresholds, not official Hong Kong Observatory warnings. */
-export function classify(input: { precipMm: number; gustKmh: number; windKmh: number; tempMax: number }): Severity {
+/** Game thresholds, not official Hong Kong Observatory warnings. v15: heat / cold follow isHotDay / isColdDay. */
+export function classify(input: { precipMm: number; gustKmh: number; windKmh: number } & TempInput): Severity {
   const typhoon = input.gustKmh >= 118 || input.windKmh >= 63;
   const gale = !typhoon && (input.gustKmh >= 62 || input.windKmh >= 41);
   const heavyRain = input.precipMm >= 25;
-  const heat = input.tempMax >= 33;
+  const heat = isHotDay(input);
+  const cold = isColdDay(input);
   let stormKind: StormKind | null = null;
   if (typhoon) stormKind = 'typhoon';
   else if (gale) stormKind = 'gale';
   else if (heavyRain) stormKind = 'heavy-rain';
-  return { heavyRain, gale, typhoon, heat, stormKind };
+  return { heavyRain, gale, typhoon, heat, cold, stormKind };
 }
 
 export function stormLabel(kind: StormKind): string {
@@ -162,12 +169,7 @@ export function stormLabel(kind: StormKind): string {
 }
 
 export function condFromForecast(day: ForecastDay, tempC = day.tempMax): DayCond {
-  const severity = classify({
-    precipMm: day.precipMm,
-    gustKmh: day.gustKmh,
-    windKmh: day.windKmh,
-    tempMax: day.tempMax,
-  });
+  const severity = classify(day);
   // When HKO covers the day, trust its icon for "is it a rainy day" so the scene never
   // shows rain on a day the Observatory calls fine (the model's mm figures stay as numbers).
   const raining =
@@ -181,7 +183,8 @@ export function condFromForecast(day: ForecastDay, tempC = day.tempMax): DayCond
     precipMm: day.precipMm,
     windKmh: day.windKmh,
     gustKmh: day.gustKmh,
-    hot: severity.heat || tempC >= 33,
+    hot: severity.heat || isHotDay({ ...day, tempMax: tempC }),
+    cold: severity.cold,
     raining,
     stormKind: severity.stormKind,
   };
@@ -268,8 +271,16 @@ export interface HourPoint {
   gustKmh: number;
 }
 
+/** v15 local normals: average daily min / max over the past days Open-Meteo returned (null = no data). */
+export interface Normals {
+  min: number | null;
+  max: number | null;
+  days: number;
+}
+
 export interface ForecastResult {
   timezone: string;
+  normals?: Normals | null;
   current: CurrentWeather;
   daily: ForecastDay[];
   rainInHours: number | null;
@@ -304,7 +315,7 @@ export function parseOpenMeteo(data: unknown): ForecastResult {
   const daily = body.daily;
   const dates = daily?.time ?? [];
   if (!dates.length) throw new Error('沒有預報');
-  const days: ForecastDay[] = dates.map((date, i) => ({
+  const all: ForecastDay[] = dates.map((date, i) => ({
     date,
     code: num(daily?.weather_code?.[i], 2),
     tempMax: num(daily?.temperature_2m_max?.[i], 28),
@@ -317,8 +328,19 @@ export function parseOpenMeteo(data: unknown): ForecastResult {
     sunset: daily?.sunset?.[i] || `${date}T18:25`,
   }));
   const current = body.current ?? {};
+  // v15: past_days=14 puts the last two weeks first; they only feed the local normals.
+  const todayIso = (current.time ?? '').slice(0, 10);
+  let first = todayIso ? all.findIndex((d) => d.date >= todayIso) : -1;
+  if (first < 0) first = Math.max(0, all.length - 7);
+  const days = all.slice(first);
+  const avg = (vals: (number | undefined)[] | undefined) => {
+    const ok = (vals ?? []).slice(0, first).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    return ok.length ? Math.round((ok.reduce((a, b) => a + b, 0) / ok.length) * 10) / 10 : null;
+  };
+  const normals: Normals | null = first > 0 ? { min: avg(daily?.temperature_2m_min), max: avg(daily?.temperature_2m_max), days: first } : null;
   return {
     timezone: body.timezone || 'Asia/Hong_Kong',
+    normals: normals && (normals.min !== null || normals.max !== null) ? normals : null,
     current: {
       tempC: num(current.temperature_2m, days[0]?.tempMax ?? 26),
       humidity: num(current.relative_humidity_2m, 70),
@@ -349,6 +371,7 @@ export function forecastUrl(lat: number, lon: number): string {
   url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset');
   url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '7');
+  url.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
   url.searchParams.set('forecast_hours', '12');
   url.searchParams.set('wind_speed_unit', 'kmh');
   return url.toString();
@@ -446,6 +469,15 @@ export function districtRain(hko: HkoData | null | undefined, district: string |
   const bare = district.replace(/區$/, '');
   for (const key of [district, bare, `${bare}區`]) if (key in table) return table[key] ?? 0;
   return null;
+}
+
+/**
+ * v15: mark forecast days with the region and local normals, so dayEvent / classify / currentEvents use the
+ * outside-HK heat & cold rules. HK days are left as they are (HK rules).
+ */
+export function stampDays(days: ForecastDay[], intl: boolean, normals: Normals | null | undefined): ForecastDay[] {
+  if (!intl) return days.map(({ intl: _i, normMin: _a, normMax: _b, ...d }) => d);
+  return days.map((d) => ({ ...d, intl: true, normMin: normals?.min ?? null, normMax: normals?.max ?? null }));
 }
 
 export function activeHot(warnings: HkoWarning[] | undefined): boolean {

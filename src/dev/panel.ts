@@ -6,6 +6,7 @@ import { WEATHER_EVENTS, type WeatherEventId } from '../balance';
 import type { DevApi } from '../main';
 import { settlementCard } from '../ui';
 import { esc } from '../util';
+import { eventLabel } from '../labels';
 import { SPECIES, STAGE_NAMES, type SpeciesId } from '../data/species';
 import { ANIMALS, CATEGORY_LABEL } from '../data/animals';
 
@@ -51,8 +52,8 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     const s = api.state();
     const cd = api.countdown();
     const eventBtn = (id: WeatherEventId) =>
-      `<button type="button" class="${d.events.includes(id) ? 'on' : ''}" data-dev-event="${id}" ${d.mode === 'real' ? 'disabled' : ''}>${esc(WEATHER_EVENTS[id].label)}<small>${WEATHER_EVENTS[id].damage ? `−${WEATHER_EVENTS[id].damage}` : '0'}</small></button>`;
-    const fcBtn = (id: WeatherEventId) => `<option value="${id}" ${d.forecast?.event === id ? 'selected' : ''}>${esc(WEATHER_EVENTS[id].label)}</option>`;
+      `<button type="button" class="${d.events.includes(id) ? 'on' : ''}" data-dev-event="${id}" ${d.mode === 'real' ? 'disabled' : ''}>${esc(eventLabel(id))}<small>${WEATHER_EVENTS[id].damage ? `−${WEATHER_EVENTS[id].damage}` : '0'}</small></button>`;
+    const fcBtn = (id: WeatherEventId) => `<option value="${id}" ${d.forecast?.event === id ? 'selected' : ''}>${esc(eventLabel(id))}</option>`;
     const hoursLeft = d.forecast ? Math.max(0, (d.forecast.at - Date.now()) / 3600000) : 6;
     panel.innerHTML = `
       <header><b>開發者</b><small>只喺開發版出現</small><button type="button" data-dev="toggle" aria-label="收起">×</button></header>
@@ -60,7 +61,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" class="${d.mode === 'real' ? 'on' : ''}" data-dev="mode-real">真實天氣</button>
         <button type="button" class="${d.mode === 'manual' ? 'on' : ''}" data-dev="mode-manual">手動天氣</button>
       </div>
-      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => WEATHER_EVENTS[e].label).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣。'}</p>
+      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => eventLabel(e)).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣；揀寒冷會開「保暖覆蓋」。'}</p>
       <div class="dev-events">${api.events.map(eventBtn).join('')}</div>
       <div class="dev-row">
         <label>12 小時預報
@@ -68,7 +69,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         </label>
         <label>幾耐後 <input type="number" min="0" max="12" step="0.5" value="${hoursLeft.toFixed(1)}" data-dev-fc-hours ${d.mode === 'real' ? 'disabled' : ''}/> 小時</label>
       </div>
-      <p class="dev-note">倒數：${cd ? `${esc(WEATHER_EVENTS[cd.event].label)} · ${cd.active ? '生效中' : `${cd.hours.toFixed(1)} 小時後`}（${esc(cd.source)}）` : '冇'}</p>
+      <p class="dev-note">倒數：${cd ? `${esc(eventLabel(cd.event))} · ${cd.active ? '生效中' : `${cd.hours.toFixed(1)} 小時後`}（${esc(cd.source)}）` : '冇'}</p>
       <div class="dev-sliders">
         ${STATS.map(([k, label]) => `<label><span>${label}</span><input type="range" min="0" max="${k === 'moisture' ? 150 : 100}" step="1" value="${Math.round(s[k])}" data-dev-stat="${k}"/><b>${Math.round(s[k])}</b></label>`).join('')}
       </div>
@@ -113,7 +114,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       </div>
       <p class="dev-note" data-dev-caps>${esc(capsText())}</p>
       <p class="dev-note" data-dev-eco>${esc(ecoText())}</p>
-      <p class="dev-note">今日計算用：${esc(api.todayEvents().map((e) => WEATHER_EVENTS[e].label).join('、'))}${s.virtualToday ? `・虛擬日期 ${esc(s.virtualToday)}` : ''}${s.pest.active ? '・有蟲害' : ''}${s.dying ? '・瀕死' : ''}</p>
+      <p class="dev-note">今日計算用：${esc(api.todayEvents().map((e) => eventLabel(e)).join('、'))}${s.virtualToday ? `・虛擬日期 ${esc(s.virtualToday)}` : ''}${s.pest.active ? '・有蟲害' : ''}${s.dying ? '・瀕死' : ''}</p>
       ${s.lastSettlement ? settlementCard(s.lastSettlement) : '<p class="dev-note">未有結算紀錄。撳「跳去下一日」試下。</p>'}
     `;
   };
