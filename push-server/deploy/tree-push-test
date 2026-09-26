@@ -1,0 +1,4 @@
+#!/bin/sh
+# Send a test push to all registered devices:  sudo tree-push-test ["標題" "內容"]
+exec sudo -u treepush env GOOGLE_APPLICATION_CREDENTIALS=/etc/tree-push/service-account.json DATA_DIR=/var/lib/tree-push \
+  /opt/tree-push/node/bin/node /opt/tree-push/app/src/send-test.js "$@"

@@ -32,6 +32,7 @@ else
   echo "!! /etc/tree-push/service-account.json missing — log-only mode (no pushes) until you add it"
 fi
 cp "$SRC/deploy/tree-push.service" /etc/systemd/system/tree-push.service
+install -m 755 "$SRC/deploy/tree-push-test" /usr/local/bin/tree-push-test
 systemctl daemon-reload
 systemctl enable tree-push >/dev/null 2>&1
 systemctl restart tree-push

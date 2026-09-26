@@ -37,4 +37,6 @@ ssh ubuntu@158.101.140.210 'cd ~/tree-push-server && sudo PROXY=nginx DOMAIN=158
 Enable real pushes: copy the Firebase service-account JSON to `/etc/tree-push/service-account.json`, re-run the
 installer (fixes owner/mode) — `/health` then shows `"fcm":true`. `PROXY=caddy` is for a fresh VM with nothing on 80/443.
 
+Test push to every registered device (admin only, no HTTP endpoint): `sudo tree-push-test "標題" "內容"`.
+
 Logs: `journalctl -u tree-push -f`. Tests: `npm test`.
