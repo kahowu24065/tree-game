@@ -1,0 +1,3 @@
+{"WRAIN":{"name":"暴雨警告信號","code":"WRAINB","type":"黑色","actionCode":"EXTEND","issueTime":"2026-09-26T12:10:00+08:00"},
+ "WTCSGNL":{"name":"熱帶氣旋警告信號","code":"TC8NE","actionCode":"ISSUE","issueTime":"2026-09-26T12:20:00+08:00"},
+ "WCOLD":{"name":"寒冷天氣警告","code":"WCOLD","actionCode":"ISSUE","issueTime":"2026-09-26T12:00:00+08:00"}}

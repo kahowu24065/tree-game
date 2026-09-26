@@ -307,3 +307,5 @@ cd android && ./gradlew assembleDebug
 Install on a phone: copy the APK over and allow "install unknown apps" for the file manager/browser used to open it (or `adb install app-debug.apk`).
 
 App-only features (no-ops in browsers, guarded by `Capacitor.isNativePlatform()`): native location (`@capacitor/geolocation`, falls back to 香港), save kept in native Preferences (`@capacitor/preferences`, loaded into localStorage before boot, written through on every save), and local reminders (`@capacitor/local-notifications`, inexact; on/off in 設定).
+
+Weather-warning push (`@capacitor/push-notifications`, channel `weather-warnings`): the app registers its FCM token with `push-server/` (HKO warning relay on the Oracle VM, see `push-server/README.md`) and unregisters when 提醒通知 is off. Building with push needs `android/app/google-services.json` from the Firebase console; without it the google-services plugin is skipped.

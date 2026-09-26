@@ -1,0 +1,15 @@
+{
+  "name": "tree-push-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "世界之樹: HKO warning → FCM push relay",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

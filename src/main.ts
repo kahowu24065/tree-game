@@ -99,6 +99,7 @@ import { isNative } from './native/platform';
 import { hydrateNative } from './native/persist';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
+import { syncPush } from './native/push';
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
@@ -1030,6 +1031,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {
     localStorage.setItem(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
     scheduleReminders(false);
+    void syncPush(target.dataset.notify === 'on');
     openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
     return;
   }
@@ -1385,6 +1387,7 @@ runCatchup();
 if (isNative()) {
   void App.addListener('pause', () => scheduleReminders(true));
   scheduleReminders(false);
+  void syncPush(notifyEnabled());
 }
 if (!state.started) openStart();
 requestAnimationFrame(frame);

@@ -1,0 +1,24 @@
+[Unit]
+Description=世界之樹 push relay (HKO warnings → FCM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=treepush
+WorkingDirectory=/opt/tree-push-server
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=/var/lib/tree-push
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/tree-push/service-account.json
+ExecStart=/usr/local/bin/node src/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tree-push
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
