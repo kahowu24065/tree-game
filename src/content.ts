@@ -88,7 +88,8 @@ export const EVENTS: DailyEvent[] = [
     title: '晨霧',
     text: '薄霧濕潤咗葉面同泥土。',
     apply: (s) => {
-      s.moisture = Math.min(100, s.moisture + 6);
+      // Mist tops up to 泥土飽和 (100) at most; it never lowers a wetter soil.
+      if (s.moisture < 100) s.moisture = Math.min(100, s.moisture + 6);
     },
   },
   {

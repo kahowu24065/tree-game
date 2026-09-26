@@ -20,9 +20,12 @@ import {
   START,
   STORM_SURVIVE_GROWTH,
   STORM_SURVIVE_SHARE,
+  RAIN_OVER_CAP,
   T1_WATER_LOSS_MULT,
   T2_RAIN_TO_N_CHANCE,
+  W_MAX,
   W_OPTIMAL,
+  W_SATURATED,
   N_DAILY_USE,
   WEATHER_EVENTS,
   type PrepId,
@@ -37,6 +40,7 @@ import {
   baseDailyGrowth,
   carbonKg,
   clamp100,
+  clampW,
   deltaG,
   earnedTiers,
   finalDamage,
@@ -44,10 +48,15 @@ import {
   hMultTier,
   inBand,
   nFactor,
+  nightWater,
   pickEvent,
+  rainAdd,
   rollFor,
   seasonDef,
-  wFactor,
+  waterAdd,
+  waterDeath,
+  wTier,
+  type NightWater,
 } from './rules';
 import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, Reinforcement, Settlement } from './types';
 import { formatHeight } from './util';
@@ -97,6 +106,7 @@ export function createGame(today: string, opts: { season?: SeasonId; name?: stri
     pest: { active: false, lowNDays: 0, wetDays: 0, since: null },
     care: freshCare(today),
     dayEvents: {},
+    waterFx: {},
     animals: [],
     seenAnimals: [],
     residents: [],
@@ -136,7 +146,7 @@ export function ensureToday(state: GameState, today: string): string | null {
   event.apply(state);
   if (event.id !== 'quiet') addLog(state, today, event.text, { kind: 'event', title: `今日小事：${event.title}`, reward: event.chip });
   state.health = clamp100(state.health);
-  state.moisture = clamp100(state.moisture);
+  state.moisture = clampW(state.moisture);
   state.nutrients = clamp100(state.nutrients);
   return `${event.title}：${event.text}`;
 }
@@ -178,50 +188,216 @@ export interface SettleResult {
   completed: boolean;
 }
 
+/* ---------- v12 water: instant warnings, the night's plan (shared by settlement and the 今晚預計 preview) ---------- */
+
+export type WarningWaterEvent = 'hot' | 'rainstorm' | 'blackrain';
+
+export interface WarningHit {
+  event: WarningWaterEvent;
+  before: number;
+  after: number;
+  delta: number;
+  /** 二級徽章: water turned into 養分. */
+  toN: number;
+  message: string;
+  /** W reached 150: the tree entered 瀕死. */
+  dying: boolean;
+}
+
+const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: '酷熱天氣警告', rainstorm: '暴雨警告', blackrain: '黑雨警告' };
+
+/** Enter 24-hour 瀕死 (H goes to 0). Returns false when already dying. */
+function enterDying(state: GameState, date: string, nowMs: number, why: string, time?: string): boolean {
+  state.health = 0;
+  if (state.dying) return false;
+  state.dying = { since: date, at: nowMs };
+  addLog(state, date, `${why}，棵樹進入 24 小時瀕死狀態。將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`, {
+    kind: 'dying',
+    title: '瀕死',
+    reward: { text: '24 小時', tone: 'red' },
+    time,
+  });
+  return true;
+}
+
 /**
- * Settle one day (設計書 二、三):
- * H_new = H_old + W_factor + N_factor − 天氣基礎傷害 × (1 − R/100) − 蟲害; ΔG = 目標/日數 × H_mult × 天氣獎勵加成.
- * Several events never stack — only the one with the highest base damage applies.
+ * v12: 酷熱 −20／暴雨、黑雨 +20 hit 水分 the moment the warning is first seen, once per calendar day each
+ * (暴雨 and 黑雨 share one application; a cancelled and reissued warning is not applied again). Rain fills up to 100,
+ * then at most +10 beyond. Settlement calls this too, so a warning seen while the app was closed still counts.
+ */
+export function applyWarningWater(
+  state: GameState,
+  date: string,
+  events: readonly WeatherEventId[],
+  meta: MetaState | null,
+  nowMs: number,
+  time?: string,
+): WarningHit[] {
+  if (state.over) return [];
+  const perks = perksFrom(meta);
+  const hot = events.includes('hot');
+  const rain: WarningWaterEvent | null = events.includes('blackrain') ? 'blackrain' : events.includes('rainstorm') ? 'rainstorm' : null;
+  const fx = state.waterFx[date] ?? { hot: false, rain: false };
+  if ((!hot || fx.hot) && (!rain || fx.rain)) return [];
+  state.waterFx = { ...state.waterFx, [date]: { ...fx } };
+  const mark = state.waterFx[date]!;
+  const hits: WarningHit[] = [];
+  const push = (event: WarningWaterEvent, before: number, toN: number) => {
+    const after = state.moisture;
+    const delta = r1(after - before);
+    const hint = after > W_SATURATED ? '記得疏水' : after < W_OPTIMAL[0] ? '記得澆水' : '水分仲喺適中範圍';
+    const message = `${WARNING_NAME[event]}！水分 ${sgn(delta)}，而家 ${Math.round(after)}，${hint}${toN ? `（二級徽章：${toN} 水分轉咗做養分）` : ''}`;
+    addLog(state, date, message, { kind: 'event', title: WARNING_NAME[event], reward: { text: `${sgn(delta)} 水分`, tone: delta < 0 ? 'orange' : 'blue' }, time });
+    hits.push({ event, before, after, delta, toN, message, dying: false });
+  };
+  if (hot && !mark.hot) {
+    mark.hot = true;
+    const before = state.moisture;
+    const loss = perks.waterSaver ? r1(-WEATHER_EVENTS.hot.dW * T1_WATER_LOSS_MULT) : -WEATHER_EVENTS.hot.dW;
+    state.moisture = clampW(r1(before - loss));
+    push('hot', before, 0);
+  }
+  if (rain && !mark.rain) {
+    mark.rain = true;
+    const before = state.moisture;
+    let amount = WEATHER_EVENTS[rain].dW;
+    let toN = 0;
+    if (perks.rainToN && rollFor(`rain2n|${date}`) < T2_RAIN_TO_N_CHANCE) {
+      toN = amount / 2;
+      amount -= toN;
+      state.nutrients = clamp100(state.nutrients + toN);
+    }
+    state.moisture = rainAdd(before, amount, RAIN_OVER_CAP.heavy);
+    push(rain, before, toN);
+  }
+  const keys = Object.keys(state.waterFx).sort();
+  while (keys.length > 21) delete state.waterFx[keys.shift()!];
+  if (waterDeath(state.moisture) && hits.length) {
+    const last = hits[hits.length - 1]!;
+    last.dying = enterDying(state, date, nowMs, `水分去到 ${W_MAX}，根部浸死`, time) || Boolean(state.dying);
+    last.message = `${last.message}。水分到 ${W_MAX}，棵樹瀕死！即刻疏水同施肥救返佢。`;
+  }
+  return hits;
+}
+
+/** W ≥ 150 at any moment (e.g. the developer slider) → 瀕死 right away. */
+export function checkWaterDeath(state: GameState, date: string, nowMs: number): boolean {
+  if (state.over || !waterDeath(state.moisture)) return false;
+  return enterDying(state, date, nowMs, `水分去到 ${W_MAX}，根部浸死`);
+}
+
+/** Everything the coming night will do, computed from the state as it stands (no mutation). */
+export interface NightPlan {
+  event: WeatherEventId;
+  hBefore: number;
+  wBefore: number;
+  water: NightWater;
+  wAfter: number;
+  wScore: number;
+  wLabel: string;
+  wTone: 'dry' | 'ok' | 'rot1' | 'rot2' | 'rot3';
+  nBefore: number;
+  nAfter: number;
+  nScore: number;
+  residentN: number;
+  rBefore: number;
+  baseDamage: number;
+  damage: number;
+  pest: number;
+  /** W reaches 150 tonight → 瀕死 (H 0). */
+  waterDeath: boolean;
+  hAfter: number;
+  dH: number;
+}
+
+/**
+ * The night in order (設計書 v12): first the water change (natural loss −10 or 毛毛雨), then
+ * H_new = H_old + W_score + N_score − 最重天氣事件基礎傷害 × (1 − R/100) − 蟲害.
+ */
+export function planNight(state: GameState, events: readonly WeatherEventId[], perks: Perks): NightPlan {
+  const event = pickEvent(events);
+  const def = WEATHER_EVENTS[event];
+  const water = nightWater(state.moisture, events, perks.waterSaver);
+  const residentN = Math.min(RESIDENT_N_MAX, state.residents.length * RESIDENT_N_EACH);
+  const nAfter = clamp100(state.nutrients - N_DAILY_USE + residentN);
+  const tier = wTier(water.wAfter);
+  const nScore = nFactor(nAfter);
+  const damage = finalDamage(def.damage, state.resist);
+  const pest = state.pest.active ? PEST_DAMAGE : 0;
+  const death = waterDeath(water.wAfter);
+  const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, state.health + tier.score + nScore - damage - pest)));
+  return {
+    event,
+    hBefore: state.health,
+    wBefore: state.moisture,
+    water,
+    wAfter: water.wAfter,
+    wScore: tier.score,
+    wLabel: tier.label,
+    wTone: tier.tone,
+    nBefore: state.nutrients,
+    nAfter,
+    nScore,
+    residentN,
+    rBefore: state.resist,
+    baseDamage: def.damage,
+    damage,
+    pest,
+    waterDeath: death,
+    hAfter,
+    dH: r1(hAfter - state.health),
+  };
+}
+
+/**
+ * 今晚預計: exactly what settleDay will do tonight if nothing else changes — pending warning water first, then planNight.
+ * Works on a throwaway copy, so the real state is untouched.
+ */
+export function previewNight(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null): NightPlan {
+  const copy: GameState = { ...state, log: [], waterFx: { ...state.waterFx }, pest: { ...state.pest } };
+  applyWarningWater(copy, date, events, meta, 0, '');
+  return planNight(copy, events, perksFrom(meta));
+}
+
+/**
+ * Settle one day (設計書 二、三，v12 水分):
+ * warning water not yet applied → the night's water change → H_new = H_old + W_score + N_score − 天氣基礎傷害 × (1 − R/100) − 蟲害;
+ * ΔG = 目標/日數 × H_mult × 天氣獎勵加成. Several events never stack — only the one with the highest base damage applies.
  */
 export function settleDay(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null, nowMs: number): SettleResult {
   const perks = perksFrom(meta);
   const season = seasonDef(state.season);
-  const eventId = pickEvent(events);
-  const def = WEATHER_EVENTS[eventId];
   const notes: string[] = [];
   const messages: string[] = [];
+  // Warnings seen that day but never applied (app closed, or forecast-only days) hit first.
+  const pre = applyWarningWater(state, date, events, meta, nowMs, '');
+  for (const h of pre) {
+    notes.push(`${WARNING_NAME[h.event]}：水分 ${sgn(h.delta)}`);
+    if (h.toN) notes.push(`二級徽章：${h.toN} 水分轉咗做養分`);
+  }
+  const plan = planNight(state, events, perks);
+  const eventId = plan.event;
+  const def = WEATHER_EVENTS[eventId];
   const hBefore = state.health;
   const wBefore = state.moisture;
   const nBefore = state.nutrients;
   const rBefore = state.resist;
   if (events.filter((e) => e !== 'clear').length > 1) notes.push(`同時有${events.filter((e) => e !== 'clear').map((e) => WEATHER_EVENTS[e].label).join('、')}，只計最重嘅${def.label}`);
+  if (plan.water.kind === 'loss' && perks.waterSaver) notes.push('一級徽章：水分流失減少 10%');
+  if (plan.water.kind === 'rain') notes.push('落雨日：今晚水分冇流失');
+  if (plan.water.kind === 'drizzle') notes.push(`毛毛雨：水分 ${sgn(plan.water.delta)}，冇流失`);
+  if (plan.residentN) notes.push(`長駐動物施肥 +${plan.residentN} 養分`);
 
-  // Side effects of the chosen event.
-  let dW = def.dW;
-  let dN = 0;
-  if (dW < 0 && perks.waterSaver) {
-    dW = r1(dW * T1_WATER_LOSS_MULT);
-    notes.push('一級徽章：水分流失減少 10%');
-  }
-  if ((eventId === 'rainstorm' || eventId === 'blackrain') && perks.rainToN && rollFor(`rain2n|${date}`) < T2_RAIN_TO_N_CHANCE) {
-    dN = dW / 2;
-    dW = dW / 2;
-    notes.push(`二級徽章：${dN} 水分轉咗做養分`);
-  }
-  state.moisture = clamp100(state.moisture + dW);
-  const residentN = Math.min(RESIDENT_N_MAX, state.residents.length * RESIDENT_N_EACH);
-  if (residentN) notes.push(`長駐動物施肥 +${residentN} 養分`);
-  state.nutrients = clamp100(state.nutrients - N_DAILY_USE + dN + residentN);
-
+  state.moisture = plan.wAfter;
+  state.nutrients = plan.nAfter;
   // Damage uses the shield as it stood, then the event consumes it.
-  const dmg = finalDamage(def.damage, state.resist);
+  const dmg = plan.damage;
   state.resist = Math.max(0, Math.min(R_MAX, state.resist + def.dR - R_DAILY_DECAY));
-
-  const pestDamage = state.pest.active ? PEST_DAMAGE : 0;
+  const pestDamage = plan.pest;
   if (pestDamage) notes.push('蟲害 −15');
-  const wf = wFactor(state.moisture);
-  const nf = nFactor(state.nutrients);
-  state.health = r1(Math.max(0, Math.min(100, state.health + wf + nf - dmg - pestDamage)));
+  const wf = plan.wScore;
+  const nf = plan.nScore;
+  state.health = plan.hAfter;
 
   // Growth.
   const mult = hMult(state.health);
@@ -258,12 +434,12 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
 
   // 蟲害 triggers for the coming days.
   state.pest.lowNDays = state.nutrients < 30 ? state.pest.lowNDays + 1 : 0;
-  state.pest.wetDays = state.moisture > W_OPTIMAL[1] ? state.pest.wetDays + 1 : 0;
+  state.pest.wetDays = state.moisture > W_SATURATED ? state.pest.wetDays + 1 : 0;
   const need = state.residents.length >= 2 ? PEST_TRIGGER_DAYS_GUARDED : PEST_TRIGGER_DAYS;
   if (!state.pest.active && (state.pest.lowNDays >= need || state.pest.wetDays >= need)) {
     state.pest.active = true;
     state.pest.since = date;
-    const why = state.pest.lowNDays >= need ? `連續 ${need} 日營養不良` : `連續 ${need} 日水浸`;
+    const why = state.pest.lowNDays >= need ? `連續 ${need} 日營養不良` : `連續 ${need} 晚水分超過 ${W_SATURATED}（爛根）`;
     addLog(state, date, `${why}，葉底生咗蟲。每日會扣 15 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: '-15/日', tone: 'red' }, time: '' });
     messages.push(`${why}，生咗蟲！記得除蟲。`);
   }
@@ -301,14 +477,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   if (state.health <= 0) {
     state.health = 0;
     if (!wasDying) {
-      state.dying = { since: date, at: nowMs };
-      addLog(state, date, `健康度跌到 0，棵樹進入 24 小時瀕死狀態。將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`, {
-        kind: 'dying',
-        title: '瀕死',
-        reward: { text: '24 小時', tone: 'red' },
-        time: '',
-      });
-      messages.push('棵樹瀕死！24 小時內將水分同養分調返最佳範圍就救得返。');
+      enterDying(state, date, nowMs, plan.waterDeath ? `水分去到 ${W_MAX}，根部浸死` : '健康度跌到 0', '');
+      messages.push(`棵樹瀕死！24 小時內將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`);
     } else if (nowMs - wasDying.at >= DYING_HOURS * 3600 * 1000) {
       if (meta && meta.reviveTokens > 0) {
         meta.reviveTokens -= 1;
@@ -343,6 +513,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     rBefore,
     rAfter: state.resist,
     wFactor: wf,
+    wLabel: plan.wLabel,
+    wNight: { kind: plan.water.kind, delta: plan.water.delta },
     nFactor: nf,
     baseDamage: def.damage,
     finalDamage: dmg,
@@ -360,7 +532,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   addLog(
     state,
     date,
-    `${def.label}。水分 ${wf > 0 ? '適中' : '失衡'} ${sgn(wf)}，養分 ${sgn(nf)}，天氣損傷 ${def.damage}→${dmg}${pestDamage ? `，蟲害 −${pestDamage}` : ''}。健康 ${Math.round(hBefore)}→${Math.round(state.health)}，${tier.label} ×${mult}。`,
+    `${def.label}。水分 ${Math.round(state.moisture)}（${plan.wLabel}）${sgn(wf)}，養分 ${sgn(nf)}，天氣損傷 ${def.damage}→${dmg}${pestDamage ? `，蟲害 −${pestDamage}` : ''}。健康 ${Math.round(hBefore)}→${Math.round(state.health)}，${tier.label} ×${mult}。`,
     { kind: 'settle', title: '夜間結算', reward: { text: `${dG >= 0 ? '+' : ''}${settlement.deltaG} 厘米`, tone: dG >= 0 ? 'blue' : 'red' }, time: '' },
   );
   noteStage(state, beforeCm, date);
@@ -416,15 +588,26 @@ export function performAction(state: GameState, action: CareAction, opts: { rain
   const title = { water: '已澆水', fertilize: '已施肥', deworm: '已除蟲', drain: '已疏水' }[action];
   if (action === 'water') {
     if (opts.raining) return { ok: false, message: '落緊雨，泥土濕㗎喇，唔使澆。' };
+    // Saturated soil: watering does nothing and does not use up one of today's turns.
+    if (state.moisture >= W_SATURATED) return { ok: false, message: '泥土已經飽和，唔使再澆' };
     state.care.water += 1;
-    state.moisture = clamp100(state.moisture + CARE.water.amount);
-    message = state.moisture > W_OPTIMAL[1] ? `澆得有啲多，水分 ${Math.round(state.moisture)}，太濕會爛根，可以疏水。` : `水滲入泥度，水分 ${Math.round(state.moisture)}。`;
-    reward = { text: `+${CARE.water.amount} 水分`, tone: 'blue' };
+    const before = state.moisture;
+    state.moisture = waterAdd(before, CARE.water.amount);
+    const got = r1(state.moisture - before);
+    message = state.moisture >= W_SATURATED ? `泥土飽和喇，水分 ${Math.round(state.moisture)}。再多就會爛根。` : `水滲入泥度，水分 ${Math.round(state.moisture)}。`;
+    reward = { text: `+${got} 水分`, tone: 'blue' };
   } else if (action === 'drain') {
     state.care.drain += 1;
-    state.moisture = clamp100(state.moisture + CARE.drain.amount);
-    message = state.moisture < W_OPTIMAL[0] ? `疏走咗啲水，水分 ${Math.round(state.moisture)}，有啲乾喇。` : `開咗排水溝，泥土透返氣，水分 ${Math.round(state.moisture)}。`;
-    reward = { text: `${CARE.drain.amount} 水分`, tone: 'blue' };
+    const before = state.moisture;
+    state.moisture = Math.max(0, r1(before + CARE.drain.amount));
+    const got = r1(state.moisture - before);
+    message =
+      state.moisture > W_SATURATED
+        ? `疏走咗啲水，水分 ${Math.round(state.moisture)}，仲係爛根區，可以再疏。`
+        : state.moisture < W_OPTIMAL[0]
+          ? `疏走咗啲水，水分 ${Math.round(state.moisture)}，有啲乾喇。`
+          : `開咗排水溝，泥土透返氣，水分 ${Math.round(state.moisture)}。`;
+    reward = { text: `${got} 水分`, tone: 'blue' };
   } else if (action === 'fertilize') {
     state.care.fertilize += 1;
     state.nutrients = clamp100(state.nutrients + CARE.fertilize.amount);
@@ -612,19 +795,21 @@ export function advanceVirtualDay(state: GameState, today: string, events: Weath
 
 /* ---------- Helpers for the UI ---------- */
 
-export function advice(state: GameState, todayEvent: WeatherEventId, countdown: { event: WeatherEventId; hours: number } | null): string {
+/** One line of advice, consistent with the 今晚預計 preview (same NightPlan). */
+export function advice(state: GameState, plan: NightPlan, countdown: { event: WeatherEventId; hours: number } | null): string {
   if (state.dying) return `瀕死！將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就即刻救得返。`;
   if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
+  if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
   if (countdown && WEATHER_EVENTS[countdown.event].dR < 0 && state.resist < 60) return `${WEATHER_EVENTS[countdown.event].label}就嚟，先加固推高抗風力（而家 ${Math.round(state.resist)}）。`;
-  if (countdown && (countdown.event === 'rainstorm' || countdown.event === 'blackrain') && state.moisture > 30) return `${WEATHER_EVENTS[countdown.event].label}會令水分 +60，可以先疏水。`;
-  if (todayEvent === 'hot' && state.moisture < 90) return '酷熱：今晚水分會跌 40，可以澆多幾次。';
-  if (todayEvent === 'drizzle' && state.moisture >= 40) return '今日落雨，水分會 +20，唔使澆。';
-  const endW = state.moisture + WEATHER_EVENTS[todayEvent].dW;
-  if (endW < W_OPTIMAL[0]) return `今晚結算前水分會跌到約 ${Math.round(endW)}，記得澆水。`;
-  if (endW > W_OPTIMAL[1]) return `今晚水分會去到約 ${Math.round(endW)}，太濕，可以疏水。`;
-  if (state.nutrients - N_DAILY_USE < N_OPTIMAL[0]) return '養分今晚會跌到 60 以下，可以施肥。';
+  if (countdown && countdown.hours > 0 && (countdown.event === 'rainstorm' || countdown.event === 'blackrain')) {
+    const hit = rainAdd(state.moisture, WEATHER_EVENTS[countdown.event].dW, RAIN_OVER_CAP.heavy);
+    if (hit > W_SATURATED) return `${WEATHER_EVENTS[countdown.event].label}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
+  }
+  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel} ${sgn(plan.wScore)}。疏水返到 ${W_SATURATED} 以下。`;
+  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱 ${sgn(plan.wScore)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
+  if (plan.nAfter < N_OPTIMAL[0]) return `養分今晚會跌到 ${Math.round(plan.nAfter)}，低過 ${N_OPTIMAL[0]}，可以施肥。`;
   if (state.resist < 30) return '有空可以加固，抗風力擋到惡劣天氣嘅傷害。';
-  return '水分同養分都啱啱好，今晚會健康咁長高。';
+  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，今晚會健康咁長高。`;
 }
 
 export function dayNumber(state: GameState, today: string): number {

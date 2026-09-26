@@ -291,8 +291,8 @@ export class Scene {
   }
 
   private ground(ctx: CanvasRenderingContext2D, model: TreeModel, input: SceneInput): void {
-    const wet = input.moisture > 65 || input.cond.raining;
-    const dry = input.moisture < 28 && !input.cond.raining;
+    const wet = input.moisture > 100 || input.cond.raining;
+    const dry = input.moisture < 40 && !input.cond.raining;
     const grass = dry ? [150, 132, 78] : wet ? [62, 110, 68] : [96, 140, 78];
     const soil = wet ? [74, 58, 42] : dry ? [138, 112, 74] : [104, 74, 48];
     ctx.fillStyle = rgb(grass as RGB);

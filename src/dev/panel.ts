@@ -60,7 +60,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" class="${d.mode === 'real' ? 'on' : ''}" data-dev="mode-real">真實天氣</button>
         <button type="button" class="${d.mode === 'manual' ? 'on' : ''}" data-dev="mode-manual">手動天氣</button>
       </div>
-      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => WEATHER_EVENTS[e].label).join('、') || '晴天／多雲')}` : '可以揀多個警告，測試「唔疊加，只計最重」。'}</p>
+      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => WEATHER_EVENTS[e].label).join('、') || '晴天／多雲')}` : '可以揀多個警告，測試「唔疊加，只計最重」。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次）。'}</p>
       <div class="dev-events">${api.events.map(eventBtn).join('')}</div>
       <div class="dev-row">
         <label>12 小時預報
@@ -70,7 +70,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       </div>
       <p class="dev-note">倒數：${cd ? `${esc(WEATHER_EVENTS[cd.event].label)} · ${cd.active ? '生效中' : `${cd.hours.toFixed(1)} 小時後`}（${esc(cd.source)}）` : '冇'}</p>
       <div class="dev-sliders">
-        ${STATS.map(([k, label]) => `<label><span>${label}</span><input type="range" min="0" max="100" step="1" value="${Math.round(s[k])}" data-dev-stat="${k}"/><b>${Math.round(s[k])}</b></label>`).join('')}
+        ${STATS.map(([k, label]) => `<label><span>${label}</span><input type="range" min="0" max="${k === 'moisture' ? 150 : 100}" step="1" value="${Math.round(s[k])}" data-dev-stat="${k}"/><b>${Math.round(s[k])}</b></label>`).join('')}
       </div>
       <div class="dev-actions">
         <button type="button" data-dev="advance">跳去下一日（即刻結算）</button>

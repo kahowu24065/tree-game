@@ -14,7 +14,10 @@ import { mountAnimalHud, type AnimalHud } from './animalHud';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
+  applyWarningWater,
   catchUp,
+  checkWaterDeath,
+  previewNight,
   checkRescue,
   createGame,
   eventsForDate,
@@ -46,6 +49,8 @@ import {
   startModal,
   stormModal,
   toast,
+  flashWater,
+  togglePreview,
   updateModal,
   setAlbumMode,
   type Pick,
@@ -296,6 +301,7 @@ function view(input: SceneInput): View {
     night: input.daylight < 0.45,
     todayEvents: todayEvents(),
     todayEvent: pickEvent(todayEvents()),
+    preview: previewNight(state, today(), todayEvents(), meta),
     countdown: countdown(),
     manual: manual(),
     minutesToSettle: 24 * 60 - clockMinutes(timezone),
@@ -373,6 +379,26 @@ function runCatchup(): void {
   reconcileClock();
   const report = catchUp(state, today(), eventsFor, meta, Date.now());
   showReport(report);
+  syncWarningWater();
+}
+
+/**
+ * v12: apply today's 酷熱／暴雨／黑雨 water the moment they are seen (HKO warning on refresh, reopening the app, or
+ * developer manual weather). Each applies once per day (flags in the save); returns true when something changed.
+ */
+function syncWarningWater(): boolean {
+  if (!state.started || state.over) return false;
+  // Real weather: only what was actually seen today (HKO warnings / live detection), not forecast guesses — those
+  // still count at the nightly settlement (and already show in 今晚預計). Manual developer weather counts at once.
+  const seen = manual() ? todayEvents() : (state.dayEvents[today()]?.events ?? []);
+  const hits = applyWarningWater(state, today(), seen, meta, Date.now());
+  if (!hits.length) return false;
+  const last = hits[hits.length - 1]!;
+  flashWater(last.delta >= 0 ? 'up' : 'down');
+  persist();
+  render();
+  toast(hits.map((h) => h.message).join(' '));
+  return true;
 }
 
 function applyWeather(snapshot: WeatherSnapshot): void {
@@ -392,7 +418,8 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     const had = state.dayEvents[today()]?.events ?? [];
     recordEvents(state, today(), events, hkActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
-    if (fresh.length && state.started && !manual()) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => WEATHER_EVENTS[e].label).join('、')}生效，今晚結算前仲可以準備。`);
+    const watered = today() === before && syncWarningWater();
+    if (fresh.length && state.started && !manual() && !watered) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => WEATHER_EVENTS[e].label).join('、')}生效，今晚結算前仲可以準備。`);
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
@@ -401,6 +428,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   if (today() !== before) {
     const report = catchUp(state, today(), eventsFor, meta, Date.now());
     showReport(report);
+    syncWarningWater();
     return;
   }
   persist();
@@ -543,6 +571,7 @@ function startGame(season: SeasonId, species?: SpeciesId): void {
   closeModal();
   render();
   if (!wasStarted) toast(`${state.treeName}種好喇。今日先澆水、施肥。`);
+  syncWarningWater();
   if (pendingNote) {
     const message = pendingNote;
     pendingNote = '';
@@ -656,6 +685,10 @@ function doAction(action: string, target: HTMLElement): void {
     return;
   }
   switch (action) {
+    case 'preview':
+      togglePreview();
+      render();
+      return;
     case 'dismiss-note':
       state.morningNote = null;
       persist();
@@ -826,6 +859,8 @@ if (DEV_PANEL) {
       dev = next;
       saveDev(dev);
       render();
+      // Manual weather behaves like a warning just issued: its instant water effect applies now.
+      if (manual()) syncWarningWater();
     },
     events: EVENT_ORDER,
     liveEvents,
@@ -835,10 +870,12 @@ if (DEV_PANEL) {
       if (state.over) return;
       const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now());
       showReport(report);
+      syncWarningWater();
     },
     setStat: (key, value) => {
-      state[key] = Math.max(0, Math.min(100, value));
+      state[key] = Math.max(0, Math.min(key === 'moisture' ? 150 : 100, value));
       if (key === 'health' && value > 0) state.dying = null;
+      if (key === 'moisture') checkWaterDeath(state, today(), Date.now());
       checkRescue(state);
       persist();
       render();

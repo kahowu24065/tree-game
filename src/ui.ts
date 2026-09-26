@@ -1,4 +1,4 @@
-import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_OPTIMAL, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
+import { BADGES, CARE, N_OPTIMAL, PREPS, R_MAX, SEASONS, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
@@ -10,7 +10,7 @@ import { dayEvent, hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import type { HkoWarning } from './hko';
 import { carbonKg, hMultTier, seasonDef } from './rules';
-import { actionLimit, advice, dayNumber, eventTitle } from './sim';
+import { actionLimit, advice, dayNumber, eventTitle, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, TabId } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -30,6 +30,8 @@ export interface View {
   night: boolean;
   todayEvents: WeatherEventId[];
   todayEvent: WeatherEventId;
+  /** v12 今晚預計: the same NightPlan the nightly settlement will use. */
+  preview: NightPlan;
   countdown: Countdown | null;
   manual: boolean;
   minutesToSettle: number;
@@ -76,12 +78,107 @@ export function dyingLeftMs(state: GameState): number {
   return state.dying ? state.dying.at + 24 * 3600 * 1000 - Date.now() : 0;
 }
 
+/** v12 water side effect of an event, in words. */
+function waterText(id: WeatherEventId, short = false): string {
+  if (id === 'hot') return short ? 'W 即時 −20' : '警告一出水分即時 −20';
+  if (id === 'rainstorm') return short ? 'W 即時 +20' : '警告一出水分即時 +20（過 100 最多 +10），當晚冇流失';
+  if (id === 'blackrain') return short ? 'W 即時 +20（同暴雨共用）' : '水分即時 +20（同暴雨一日只計一次，過 100 最多 +10），當晚冇流失';
+  if (id === 'drizzle') return short ? 'W 晚上 +10' : '晚上水分 +10（過 100 最多 +5），當晚冇流失';
+  if (id === 'clear') return short ? 'W 晚上 −10' : '晚上水分自然流失 −10';
+  return short ? 'W 晚上 −10' : '水分照常每晚 −10';
+}
+
 function effectText(id: WeatherEventId): string {
   const d = ev(id);
   const parts = [d.damage ? `健康 −${d.damage}（抗風力可減免）` : '冇傷害'];
-  if (d.dW) parts.push(`水分 ${d.dW > 0 ? '+' : ''}${d.dW}`);
+  parts.push(waterText(id));
   if (d.dR) parts.push(`抗風力 ${d.dR}`);
   return parts.join('・');
+}
+
+const M = '−';
+const signed = (v: number) => (v > 0 ? `+${fmt(v)}` : v < 0 ? `${M}${fmt(-v)}` : '±0');
+const fmt = (v: number) => String(Math.round(v * 10) / 10);
+
+let previewOpen = false;
+/** Tap 今晚預計 to open / close its breakdown. */
+export function togglePreview(): void {
+  previewOpen = !previewOpen;
+}
+
+let flashDir: 'up' | 'down' = 'up';
+let flashUntil = 0;
+/** Animate the 水分 bar after an instant warning. */
+export function flashWater(dir: 'up' | 'down'): void {
+  flashDir = dir;
+  flashUntil = Date.now() + 2600;
+}
+
+function nLabel(score: number): string {
+  return score > 0 ? '充足' : score < 0 ? '營養不良' : '一般';
+}
+
+/** The lines of the 今晚預計 breakdown (same NightPlan as settlement). */
+export function previewLines(p: NightPlan): { text: string; value: string; tone: string; sub?: string }[] {
+  const tone = (v: number) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
+  const waterSub =
+    p.water.kind === 'loss' ? `而家 ${fmt(p.wBefore)}，今晚流失 ${signed(p.water.delta)}` : p.water.kind === 'drizzle' ? `而家 ${fmt(p.wBefore)}，毛毛雨 ${signed(p.water.delta)}，冇流失` : `而家 ${fmt(p.wBefore)}，落雨日冇流失`;
+  const lines = [
+    { text: `水分 ${fmt(p.wAfter)}｜${p.waterDeath ? '根部浸死' : p.wLabel}`, value: p.waterDeath ? '瀕死' : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: waterSub },
+    { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: `每晚用 10${p.residentN ? `，長駐動物 +${p.residentN}` : ''}` },
+    p.baseDamage
+      ? { text: `${ev(p.event).label}傷害（抗風力 ${Math.round(p.rBefore)}）`, value: signed(-p.damage), tone: tone(-p.damage), sub: `基礎 ${p.baseDamage} × (1 − ${Math.round(p.rBefore)}/100)，只計當日最重事件` }
+      : { text: `天氣：${ev(p.event).label}`, value: '0', tone: 'flat' },
+  ];
+  if (p.pest) lines.push({ text: '蟲害', value: signed(-p.pest), tone: 'down' });
+  return lines;
+}
+
+function previewChip(p: NightPlan, dying: boolean): { chip: string; pop: string } {
+  const t = p.waterDeath ? 'down' : p.dH > 0 ? 'up' : p.dH < 0 ? 'down' : 'flat';
+  const val = p.waterDeath ? '瀕死' : signed(p.dH);
+  const lines = previewLines(p)
+    .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span><b>${esc(l.value)}</b></li>`)
+    .join('');
+  const pop = previewOpen
+    ? `<div class="night-pop glass" role="dialog" aria-label="今晚預計明細">
+        <p class="eyebrow">今晚結算預計</p>
+        <ul>${lines}</ul>
+        <p class="night-total ${t}">健康 ${Math.round(p.hBefore)} → ${Math.round(p.hAfter)}<b>${esc(val)}</b></p>
+        <p class="fine">${dying ? '瀕死中：水分 50–100、養分 60 以上即刻救返。' : '照而家狀態計；澆水、疏水、加固或者天氣變咗會即刻更新。'}</p>
+      </div>`
+    : '';
+  return { chip: `<button type="button" class="night-chip ${t}" data-action="preview" aria-expanded="${previewOpen}">今晚預計 <b>${esc(val)}</b>${icon(previewOpen ? 'chevronDown' : 'chevronRight')}</button>`, pop };
+}
+
+/** 水分 bar on a 0-150 scale: 最佳 50-100, 飽和線 at 100, 爛根區 shaded darker per tier, line at 150. */
+function waterTrack(w: number, trackClass: string, fillClass: string): string {
+  const pct = (v: number) => ((v / W_MAX) * 100).toFixed(2);
+  const rot = W_TIERS.filter((t) => t.tone.startsWith('rot'));
+  let from = W_SATURATED;
+  const zones = rot
+    .map((t) => {
+      const to = Math.min(W_MAX, t.max);
+      const html = `<span class="rot ${t.tone}" style="left:${pct(from)}%;width:${pct(to - from)}%" title="${esc(t.label)}"></span>`;
+      from = to;
+      return html;
+    })
+    .join('');
+  const v = Math.max(0, Math.min(W_MAX, w));
+  const tone = v > W_SATURATED ? 'rotfill' : '';
+  return `<span class="${trackClass} wtrack"><span class="${trackClass === 'track' ? 'band' : 'bar-band'}" style="left:${pct(W_OPTIMAL[0])}%;width:${pct(W_OPTIMAL[1] - W_OPTIMAL[0])}%"></span>${zones}<span class="${fillClass} ${tone}" style="width:${pct(v)}%"></span><span class="sat-line" style="left:${pct(W_SATURATED)}%"></span><span class="max-line"></span></span>`;
+}
+
+function waterBar(w: number): string {
+  const v = Math.round(Math.max(0, Math.min(W_MAX, w)));
+  const ok = v >= W_OPTIMAL[0] && v <= W_OPTIMAL[1];
+  const flash = Date.now() < flashUntil ? `flash-${flashDir}` : '';
+  const zone = v > W_SATURATED ? 'rotzone' : '';
+  return `<div class="bar water wbar ${ok ? 'ok' : 'off'} ${zone} ${flash}" title="水分 0–150：最佳 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}，100 以上爛根，150 瀕死">
+    <span class="bar-key">W</span><span class="bar-label">水分</span>
+    ${waterTrack(v, 'bar-track', 'bar-fill')}
+    <b class="bar-val">${v}</b>
+  </div>`;
 }
 
 /** Top-left weather card, top-right place pill, status card, height rail and dock. */
@@ -101,19 +198,22 @@ export function renderChrome(view: View): void {
     const season = seasonDef(state.season);
     const stage = stageFor(state.heightCm, speciesTargetCm(state.species));
     const drains = actionLimit(state, 'drain');
+    const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying)) : null;
+    status.classList.toggle('pop-open', Boolean(night?.pop));
     status.innerHTML = `
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
       <p class="status-sub">${esc(state.treeName)} · ${esc(speciesDef(state.species).name)}${esc(stage.name)} · ${dayNumber(state, view.today) > season.days ? `賽季完成・加時第 ${dayNumber(state, view.today) - season.days} 日` : `第 ${dayNumber(state, view.today)}/${season.days} 日`}</p>
       <div class="bars">
         ${statBar('H', '健康', state.health, [50, 100], 'health', state.dying ? '瀕死' : '')}
-        ${statBar('W', '水分', state.moisture, W_OPTIMAL, 'water')}
+        <div class="night-row">${night?.chip ?? ''}</div>
+        ${waterBar(state.moisture)}
         ${statBar('N', '養分', state.nutrients, N_OPTIMAL, 'food')}
         ${statBar('R', '抗風', state.resist, [60, 100], 'shield')}
       </div>
       <div class="mini-acts">
         <button type="button" class="mini ${state.pest.active ? 'alert' : ''}" data-action="deworm" ${state.care.dewormed ? 'disabled' : ''}>${icon('bug')}<span>${state.care.dewormed ? '除過喇' : state.pest.active ? '有蟲！' : '除蟲'}</span></button>
-        <button type="button" class="mini ${state.moisture > W_OPTIMAL[1] ? 'alert' : ''}" data-action="drain" ${drains.used >= drains.max ? 'disabled' : ''}>${icon('drain')}<span>${drains.used >= drains.max ? '疏過喇' : '疏水'}</span></button>
-      </div>`;
+        <button type="button" class="mini ${state.moisture > W_SATURATED ? 'alert' : ''}" data-action="drain" ${drains.used >= drains.max ? 'disabled' : ''}>${icon('drain')}<span>${drains.used >= drains.max ? '疏過喇' : `疏水 ${drains.max - drains.used}`}</span></button>
+      </div>${night?.pop ?? ''}`;
   }
 
   const rail = document.getElementById('rail');
@@ -128,7 +228,7 @@ export function renderChrome(view: View): void {
     const prepShort = Boolean(cd && ev(cd.event).damage > 0 && state.resist < 60);
     const freshAnimals = state.animals.filter((id) => !state.seenAnimals.includes(id)).length;
     dock.innerHTML = `
-      ${dockBtn('d-water', 'data-action="water"', 'drop', '澆水', rainBlocks ? '落緊雨' : `${water.used}/${water.max}`, water.used >= water.max || rainBlocks)}
+      ${dockBtn('d-water', 'data-action="water"', 'drop', '澆水', rainBlocks ? '落緊雨' : state.moisture >= W_SATURATED ? '飽和' : `${water.used}/${water.max}`, water.used >= water.max || rainBlocks)}
       ${dockBtn('d-feed', 'data-action="fertilize"', 'sprout', '施肥', feed.used >= feed.max ? '施過喇' : '', feed.used >= feed.max)}
       ${dockBtn('d-guard', 'data-open="forecast"', 'shield', '加固', prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, false, prepShort ? '!' : '')}
       ${dockBtn('d-album', 'data-open="album"', 'book', '圖鑑', `${state.animals.length}/${ANIMALS.length}`, false, freshAnimals ? String(freshAnimals) : '')}`;
@@ -359,14 +459,15 @@ function careTab(view: View): string {
     </article>
     <div class="meters">
       ${meter('健康 H', state.health, 'health', [50, 100])}
-      ${meter('水分 W', state.moisture, 'water', W_OPTIMAL)}
+      ${waterMeter(state.moisture)}
       ${meter('養分 N', state.nutrients, 'food', N_OPTIMAL)}
       ${meter('抗風力 R', state.resist, 'shield', [60, 100])}
     </div>
-    <p class="fine">最佳：水分 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}，養分 ${N_OPTIMAL[0]}–100。而家${esc(tier.label)}（×${tier.mult}）${state.health >= 80 ? '，有綠光' : ''}。${state.pest.active ? '<b class="bad">有蟲害：每晚 −15 健康。</b>' : ''}</p>
-    <p class="advice">${esc(advice(state, view.todayEvent, view.countdown))}</p>
+    ${nightCard(view.preview)}
+    <p class="fine">最佳：水分 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}（0–150；100 以上爛根，150 瀕死），養分 ${N_OPTIMAL[0]}–100。而家${esc(tier.label)}（×${tier.mult}）${state.health >= 80 ? '，有綠光' : ''}。${state.pest.active ? '<b class="bad">有蟲害：每晚 −15 健康。</b>' : ''}</p>
+    <p class="advice">${esc(advice(state, view.preview, view.countdown))}</p>
     <div class="actions">
-      ${actionBtn('water', 'drop', 'blue', '澆水', cond.raining ? '落緊雨' : `+${CARE.water.amount} 水分 · ${water.used}/${water.max}`, water.used >= water.max || cond.raining)}
+      ${actionBtn('water', 'drop', 'blue', '澆水', cond.raining ? '落緊雨' : state.moisture >= W_SATURATED ? `泥土飽和 · ${water.used}/${water.max}` : `+${CARE.water.amount}（最多到 100）· ${water.used}/${water.max}`, water.used >= water.max || cond.raining)}
       ${actionBtn('fertilize', 'sprout', 'green', '施肥', `+${CARE.fertilize.amount} 養分 · ${feed.used}/${feed.max}`, feed.used >= feed.max)}
       ${actionBtn('deworm', 'bug', 'orange', '除蟲', state.care.dewormed ? '用過喇' : state.pest.active ? '有蟲！' : '預防', state.care.dewormed)}
       ${actionBtn('drain', 'drain', 'purple', '疏水', `${CARE.drain.amount} 水分 · ${drain.used}/${drain.max}`, drain.used >= drain.max)}
@@ -386,7 +487,7 @@ export function settlementCard(s: NonNullable<GameState['lastSettlement']>): str
       <p class="eyebrow">上次夜間結算 · ${esc(formatShort(s.date))}</p>
       <h2>${esc(ev(s.event).label)}：健康 ${Math.round(s.hBefore)} → ${Math.round(s.hAfter)}</h2>
       <ul class="breakdown">
-        <li><span>水分因素</span><b>${s.wFactor > 0 ? '+' : ''}${s.wFactor}</b><small>W ${Math.round(s.wBefore)}→${Math.round(s.wAfter)}</small></li>
+        <li><span>水分${s.wLabel ? `・${esc(s.wLabel)}` : '因素'}</span><b>${s.wFactor > 0 ? '+' : ''}${s.wFactor}</b><small>W ${Math.round(s.wBefore)}→${Math.round(s.wAfter)}${s.wNight ? (s.wNight.kind === 'loss' ? '（流失）' : s.wNight.kind === 'drizzle' ? '（毛毛雨）' : '（落雨日）') : ''}</small></li>
         <li><span>養分因素</span><b>${s.nFactor > 0 ? '+' : ''}${s.nFactor}</b><small>N ${Math.round(s.nBefore)}→${Math.round(s.nAfter)}</small></li>
         <li><span>天氣損傷</span><b>−${s.finalDamage}</b><small>基礎 ${s.baseDamage} × (1 − ${Math.round(s.rBefore)}/100)</small></li>
         ${s.pestDamage ? `<li><span>蟲害</span><b>−${s.pestDamage}</b><small></small></li>` : ''}
@@ -400,6 +501,28 @@ function actionBtn(action: string, ic: IconName, tone: string, label: string, su
   return `<button type="button" class="act ${tone} ${disabled ? 'done' : ''}" data-action="${action}" ${disabled ? 'disabled' : ''}>
     <span class="act-ic">${icon(ic)}</span><span>${label}</span><small>${esc(sub)}</small>
   </button>`;
+}
+
+function waterMeter(w: number): string {
+  const shown = Math.round(Math.max(0, Math.min(W_MAX, w)));
+  const ok = shown >= W_OPTIMAL[0] && shown <= W_OPTIMAL[1];
+  return `<div class="meter ${ok ? 'ok' : 'off'}">
+    <div class="meter-top"><span>水分 W <small>0–150</small></span><span>${shown}</span></div>
+    ${waterTrack(shown, 'track', 'fill water')}
+  </div>`;
+}
+
+/** 今晚預計 card in the 照顧 tab (same breakdown as the status-card popover). */
+function nightCard(p: NightPlan): string {
+  const t = p.waterDeath ? 'down' : p.dH > 0 ? 'up' : p.dH < 0 ? 'down' : 'flat';
+  const rows = previewLines(p)
+    .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}</span><b>${esc(l.value)}</b><small>${esc(l.sub ?? '')}</small></li>`)
+    .join('');
+  return `<article class="card night-card">
+      <p class="eyebrow">今晚預計</p>
+      <h2 class="${t}">健康 ${Math.round(p.hBefore)} → ${Math.round(p.hAfter)}（${p.waterDeath ? '瀕死' : signed(p.dH)}）</h2>
+      <ul class="breakdown">${rows}</ul>
+    </article>`;
 }
 
 function meter(label: string, value: number, kind: string, band: readonly [number, number]): string {
@@ -466,7 +589,7 @@ function forecastTab(view: View): string {
       </article>`
     : '';
   const table = (Object.values(WEATHER_EVENTS))
-    .map((d) => `<tr><td>${esc(d.label)}</td><td>${d.damage ? `−${d.damage}` : '0'}</td><td>${esc([d.dW ? `W ${d.dW > 0 ? '+' : ''}${d.dW}` : '', d.dR ? `R ${d.dR}` : ''].filter(Boolean).join(' ') || '—')}</td></tr>`)
+    .map((d) => `<tr><td>${esc(d.label)}</td><td>${d.damage ? `−${d.damage}` : '0'}</td><td>${esc([waterText(d.id, true), d.dR ? `R ${d.dR}` : ''].filter(Boolean).join(' '))}</td></tr>`)
     .join('');
   return `
     ${alert}
@@ -811,9 +934,11 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
       </div>
     </div>
     <div class="howto">
-      <p><b>點玩：</b>每晚 12 點結算：健康 = 舊健康 + 水分因素 + 養分因素 − 天氣損傷。水分保持 40–80、養分 60 以上各 +5，唔啱就 −10。</p>
+      <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 − 天氣損傷 − 蟲害。</p>
+      <p>水分 0–150：50–100 +5；低過 50 乾旱 −10；101–115 輕度爛根 −10；116–135 嚴重爛根 −20；136–149 根部壞死 −30；去到 150 即刻瀕死。養分 60 以上 +5、30–59 為 0、低過 30 −10。</p>
+      <p>澆水每日 3 次、每次 +15，最多澆到 100（泥土飽和就唔使澆，唔會用咗次數）；疏水每日 3 次、每次 −10。酷熱警告一出水分即時 −20；暴雨／黑雨即時 +20（過咗 100 最多再加 10，同一日只計一次）。狀態卡「今晚預計」會話你今晚健康會點變。</p>
       <p>天氣跟住現實（香港用天文台警告）。惡劣天氣前 12 小時會倒數，記得加固推高抗風力 R：傷害 × (1 − R/100)。</p>
-      <p>健康 80 以上長得最快（×1.5，有綠光）；跌到 0 會瀕死 24 小時，將水分同養分調返最佳就救得返。</p>
+      <p>健康 80 以上長得最快（×1.5，有綠光）；健康跌到 0 或者水分去到 150 會瀕死 24 小時，將水分調返 50–100、養分 60 以上就救得返。</p>
     </div>
     <button type="button" class="primary" data-action="close-modal">好</button>
   `;

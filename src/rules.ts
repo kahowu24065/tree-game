@@ -8,8 +8,11 @@ import {
   N_OPTIMAL,
   SEASONS,
   TIER_DAYS,
-  W_FACTOR,
-  W_OPTIMAL,
+  RAIN_OVER_CAP,
+  W_MAX,
+  W_NIGHT_LOSS,
+  W_SATURATED,
+  W_TIERS,
   WEATHER_EVENTS,
   type SeasonDef,
   type SeasonId,
@@ -17,15 +20,74 @@ import {
 } from './balance';
 
 export const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
+/** v12: 水分 W runs 0-150. */
+export const clampW = (v: number) => Math.max(0, Math.min(W_MAX, v));
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 export function inBand(v: number, band: readonly [number, number]): boolean {
   return v >= band[0] && v <= band[1];
 }
 
-/** 水分適中 +5，缺水或水浸 −10. */
+/** v12 水分 tier: <50 乾旱 −10、50-100 適中 +5、101-115 輕度爛根 −10、116-135 嚴重爛根 −20、136+ 根部壞死 −30. */
+export function wTier(w: number): (typeof W_TIERS)[number] {
+  return W_TIERS.find((t) => w <= t.max) ?? W_TIERS[W_TIERS.length - 1]!;
+}
+
+/** Nightly 水分分數 (W after the night's water change). Kept under the old name. */
 export function wFactor(w: number): number {
-  return inBand(w, W_OPTIMAL) ? W_FACTOR.good : W_FACTOR.bad;
+  return wTier(w).score;
+}
+
+/** W ≥ 150 at any moment = roots drowned → 瀕死. */
+export function waterDeath(w: number): boolean {
+  return w >= W_MAX;
+}
+
+/**
+ * Rain on the soil: fills normally up to 泥土飽和 (100); what is left adds at most `overCap` beyond 100
+ * (already above 100: at most `overCap`). Never above 150.
+ */
+export function rainAdd(w: number, amount: number, overCap: number): number {
+  if (amount <= 0) return w;
+  const fill = Math.max(0, Math.min(amount, W_SATURATED - w));
+  const rest = amount - fill;
+  return clampW(round1(w + fill + Math.min(rest, overCap)));
+}
+
+/** 澆水: +amount but never past 泥土飽和 (100). */
+export function waterAdd(w: number, amount: number): number {
+  return w >= W_SATURATED ? w : Math.min(W_SATURATED, round1(w + amount));
+}
+
+export const RAIN_DAY_EVENTS: readonly WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain'];
+
+/** A rain day (毛毛雨、暴雨或黑雨) has no natural water loss that night. */
+export function isRainDay(events: readonly WeatherEventId[]): boolean {
+  return events.some((e) => RAIN_DAY_EVENTS.includes(e));
+}
+
+export interface NightWater {
+  wAfter: number;
+  /** What happened: natural loss, drizzle or nothing (rain day covered by 暴雨／黑雨). */
+  kind: 'loss' | 'drizzle' | 'rain';
+  delta: number;
+}
+
+/**
+ * The night's water change (before the health score): −10 natural loss (×0.9 with the 一級徽章), none on a rain day;
+ * 毛毛雨 adds +10 (at most +5 above 100) unless 暴雨／黑雨 already watered the day.
+ */
+export function nightWater(w: number, events: readonly WeatherEventId[], waterSaver: boolean): NightWater {
+  if (!isRainDay(events)) {
+    const loss = waterSaver ? W_NIGHT_LOSS * 0.9 : W_NIGHT_LOSS;
+    const wAfter = clampW(round1(w - loss));
+    return { wAfter, kind: 'loss', delta: round1(wAfter - w) };
+  }
+  if (events.includes('drizzle') && !events.includes('rainstorm') && !events.includes('blackrain')) {
+    const wAfter = rainAdd(w, WEATHER_EVENTS.drizzle.dW, RAIN_OVER_CAP.drizzle);
+    return { wAfter, kind: 'drizzle', delta: round1(wAfter - w) };
+  }
+  return { wAfter: w, kind: 'rain', delta: 0 };
 }
 
 /** 養分充足 (≥60) +5，營養不良 (<30) −10，中間 0. */

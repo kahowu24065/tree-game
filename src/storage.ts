@@ -24,6 +24,18 @@ export function migrateTarget(data: GameState): void {
   }
 }
 
+/**
+ * v12 水分 0-150: old saves keep their W (it was 0-100, still valid); new per-date warning flags start empty (so a
+ * warning already recorded today is applied once on next open); care counters get defaults (疏水 now 3 a day).
+ */
+export function migrateWater(data: GameState): void {
+  data.waterFx ??= {};
+  data.moisture = Math.max(0, Math.min(150, Number.isFinite(data.moisture) ? data.moisture : 60));
+  data.care.water = Number(data.care.water) || 0;
+  data.care.drain = Number(data.care.drain) || 0;
+  data.care.fertilize = Number(data.care.fertilize) || 0;
+}
+
 /** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
 export const SAVE_KEY = 'sekai-tree-v2';
 export const WEATHER_KEY = 'yiri-yisyu-weather';
@@ -32,6 +44,15 @@ export function loadGame(): GameState | null {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
+    return parseSave(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Parse and migrate a `sekai-tree-v2` save (pure, testable). */
+export function parseSave(raw: string): GameState | null {
+  try {
     const data = JSON.parse(raw) as GameState;
     if (!data || data.version !== 2 || typeof data.heightCm !== 'number' || !data.care || !data.pest) return null;
     data.dayEvents ??= {};
@@ -44,6 +65,7 @@ export function loadGame(): GameState | null {
       data.over = null;
     }
     data.completed ??= null;
+    migrateWater(data);
     data.passedTargetOn ??= null;
     migrateTarget(data);
     return data;

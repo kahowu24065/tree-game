@@ -69,7 +69,11 @@ export interface Settlement {
   nAfter: number;
   rBefore: number;
   rAfter: number;
+  /** v12 水分分數 (by W after the night's water change) and its tier label. */
   wFactor: number;
+  wLabel?: string;
+  /** v12: the night's water change (natural loss, drizzle, or none on a rain day). */
+  wNight?: { kind: 'loss' | 'drizzle' | 'rain'; delta: number };
   nFactor: number;
   baseDamage: number;
   finalDamage: number;
@@ -87,6 +91,13 @@ export interface DayRecord {
   events: WeatherEventId[];
   /** True once real HKO data was seen for this date (then HKO decides the severe events). */
   hko: boolean;
+}
+
+/** v12: instant weather-warning water effects already applied on a date (each at most once a day). */
+export interface WaterFx {
+  hot: boolean;
+  /** 暴雨 and 黑雨 share one application. */
+  rain: boolean;
 }
 
 export interface GameState {
@@ -108,6 +119,8 @@ export interface GameState {
   pest: { active: boolean; lowNDays: number; wetDays: number; since: string | null };
   care: Care;
   dayEvents: Record<string, DayRecord>;
+  /** v12: per date, which instant warning effects (酷熱 −20, 暴雨／黑雨 +20) have been applied. */
+  waterFx: Record<string, WaterFx>;
   animals: string[];
   seenAnimals: string[];
   residents: string[];

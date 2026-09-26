@@ -17,7 +17,7 @@ function game(over: Partial<GameState> = {}): GameState {
 
 describe('公式', () => {
   it('水分同養分因素', () => {
-    expect([39, 40, 80, 81].map(wFactor)).toEqual([-10, 5, 5, -10]);
+    expect([49, 50, 100, 101].map(wFactor)).toEqual([-10, 5, 5, -10]);
     expect([29, 30, 59, 60, 100].map(nFactor)).toEqual([-10, 0, 0, 5, 5]);
   });
 
@@ -73,7 +73,7 @@ describe('夜間結算', () => {
     const s = game({ resist: 50 });
     const { settlement } = settleDay(s, '2026-09-25', ['typhoon8'], null, NOW);
     expect(settlement).toMatchObject({ event: 'typhoon8', wFactor: 5, nFactor: 5, baseDamage: 60, finalDamage: 30, hAfter: 50, rAfter: 0, hMult: 1 });
-    expect(settlement.wAfter).toBe(60);
+    expect(settlement.wAfter).toBe(50);
     expect(settlement.nAfter).toBe(60);
     // 樟樹目標 50 米 / 90 日 = 55.6 厘米一日。
     expect(settlement.baseGrowth).toBe(55.6);
@@ -82,12 +82,12 @@ describe('夜間結算', () => {
     expect(s.heightCm).toBeCloseTo(51.4, 5);
   });
 
-  it('暴雨同颱風一齊：唔疊加，暴雨嘅 +60 水分都唔計', () => {
+  it('暴雨同颱風一齊：傷害唔疊加（只計颱風）；暴雨水分係即時 +20，落雨日冇流失', () => {
     const s = game({ resist: 50 });
     const { settlement } = settleDay(s, '2026-09-25', ['rainstorm', 'typhoon8'], null, NOW);
     expect(settlement.event).toBe('typhoon8');
     expect(settlement.finalDamage).toBe(30);
-    expect(s.moisture).toBe(60);
+    expect(s.moisture).toBe(80);
     expect(settlement.notes.join()).toContain('只計最重');
   });
 
@@ -98,11 +98,11 @@ describe('夜間結算', () => {
     expect(s.resist).toBe(8);
   });
 
-  it('晴天水分 −15、毛毛雨 +20、酷熱 −40', () => {
-    expect(settleDay(game(), 'd', ['clear'], null, NOW).settlement.wAfter).toBe(45);
-    expect(settleDay(game(), 'd', ['drizzle'], null, NOW).settlement.wAfter).toBe(80);
+  it('v12：晴天每晚 −10、毛毛雨 +10 冇流失、酷熱（未即時計過）−20 再 −10', () => {
+    expect(settleDay(game(), 'd', ['clear'], null, NOW).settlement.wAfter).toBe(50);
+    expect(settleDay(game(), 'd', ['drizzle'], null, NOW).settlement.wAfter).toBe(70);
     const hot = settleDay(game(), 'd', ['hot'], null, NOW).settlement;
-    expect(hot.wAfter).toBe(20);
+    expect(hot.wAfter).toBe(30);
     expect(hot.wFactor).toBe(-10);
     expect(hot.finalDamage).toBe(10);
   });
@@ -118,7 +118,7 @@ describe('夜間結算', () => {
   it('一級徽章：水分流失少 10%', () => {
     const meta = freshMeta();
     meta.badges['1'] = 1;
-    expect(settleDay(game(), 'd', ['clear'], meta, NOW).settlement.wAfter).toBe(46.5);
+    expect(settleDay(game(), 'd', ['clear'], meta, NOW).settlement.wAfter).toBe(51);
   });
 
   it('蟲害：連續 3 晚營養不良觸發，每晚 −15，除蟲清走', () => {
@@ -155,7 +155,7 @@ describe('瀕死、枯死、遺產', () => {
     const s = doomed();
     settleDay(s, '2026-09-25', ['clear'], null, NOW);
     s.care.date = '2026-09-26';
-    s.moisture = 25;
+    s.moisture = 40;
     s.nutrients = 45;
     performAction(s, 'water', { raining: false });
     expect(s.dying).not.toBeNull();
@@ -216,7 +216,7 @@ describe('照顧同動物', () => {
     expect(performAction(s, 'water', { raining: true }).ok).toBe(false);
     for (let i = 0; i < 3; i++) expect(performAction(s, 'water', { raining: false }).ok).toBe(true);
     expect(performAction(s, 'water', { raining: false }).ok).toBe(false);
-    expect(s.moisture).toBe(90);
+    expect(s.moisture).toBe(75);
     performAction(s, 'drain', { raining: false });
     expect(s.moisture).toBe(65);
     expect(reinforce(s, 'stakes').ok).toBe(true);

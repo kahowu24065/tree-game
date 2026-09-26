@@ -3,16 +3,34 @@
  * Formulas that use them are in rules.ts; see README「遊戲規則」for the plain-language version.
  */
 
-/* ---------- Core stats (all 0-100) ---------- */
-/** 水分 W optimal band: below = 乾旱, above = 水浸爛根. */
-export const W_OPTIMAL: readonly [number, number] = [40, 80];
+/* ---------- Core stats (H, N, R: 0-100; W: 0-150) ---------- */
+/** v12: 水分 W runs 0-150. 150 = 根部完全浸死 → 即刻瀕死. */
+export const W_MAX = 150;
+/** 泥土飽和: watering stops here; above it the roots start to rot. */
+export const W_SATURATED = 100;
+/** 水分 W optimal band (inclusive): below = 乾旱, above = 爛根. */
+export const W_OPTIMAL: readonly [number, number] = [50, 100];
+/**
+ * v12 nightly W score by the W after the night's water change (first tier whose `max` ≥ W).
+ * 50-100 +5; <50 乾旱 −10; 101-115 輕度爛根 −10; 116-135 嚴重爛根 −20; 136-149 根部壞死 −30 (150 = 瀕死).
+ */
+export const W_TIERS: readonly { max: number; score: number; label: string; tone: 'dry' | 'ok' | 'rot1' | 'rot2' | 'rot3' }[] = [
+  { max: 49.999, score: -10, label: '乾旱', tone: 'dry' },
+  { max: 100, score: 5, label: '適中', tone: 'ok' },
+  { max: 115, score: -10, label: '輕度爛根', tone: 'rot1' },
+  { max: 135, score: -20, label: '嚴重爛根', tone: 'rot2' },
+  { max: Infinity, score: -30, label: '根部壞死', tone: 'rot3' },
+];
+/** Water that leaves the soil every night (none on a rain day). */
+export const W_NIGHT_LOSS = 10;
+/** Rain above 泥土飽和 (100) only adds this much more: 暴雨／黑雨 +10, 毛毛雨 +5. */
+export const RAIN_OVER_CAP = { heavy: 10, drizzle: 5 } as const;
 /** 養分 N optimal band ("充足"). */
 export const N_OPTIMAL: readonly [number, number] = [60, 100];
 /** 養分 below this = 營養不良. 30-59 counts as neither (N_factor 0). */
 export const N_MALNOURISHED = 30;
 
-/** Daily H formula: H_new = H_old + W_factor + N_factor − final weather damage − pest damage. */
-export const W_FACTOR = { good: 5, bad: -10 } as const;
+/** Daily H formula: H_new = H_old + W_score + N_factor − final weather damage − pest damage. */
 export const N_FACTOR = { good: 5, mid: 0, bad: -10 } as const;
 
 /** The tree uses up this much 養分 every night. */
@@ -28,7 +46,10 @@ export interface WeatherEventDef {
   label: string;
   /** 天氣基礎傷害 to H (before 抗風力 reduction). */
   damage: number;
-  /** Side effect on 水分 W. */
+  /**
+   * Effect on 水分 W. v12: 酷熱／暴雨／黑雨 apply the moment the warning is first seen (once per day);
+   * 毛毛雨 applies at the nightly settlement. Others: 0.
+   */
   dW: number;
   /** Side effect on 抗風力 R (consumption, ≤ 0). */
   dR: number;
@@ -44,11 +65,11 @@ export interface WeatherEventDef {
  * 初級颱風 (一號／三號風球) is exactly half of 高級颱風 (八號或以上).
  */
 export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
-  clear: { id: 'clear', label: '晴天／多雲', damage: 0, dW: -15, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
-  drizzle: { id: 'drizzle', label: '毛毛雨', damage: 0, dW: 20, dR: 0, growth: 1.15, severe: false, tip: '暫停澆水，節省操作。' },
-  hot: { id: 'hot', label: '酷熱', damage: 10, dW: -40, dR: 0, growth: 0.9, severe: true, tip: '需頻繁澆水防乾旱。' },
-  rainstorm: { id: 'rainstorm', label: '暴雨', damage: 20, dW: 60, dR: 0, growth: 0.9, severe: true, tip: '視情況疏水，輕度加固。' },
-  blackrain: { id: 'blackrain', label: '黑雨', damage: 20, dW: 60, dR: 0, growth: 0.85, severe: true, tip: '預早疏水，輕度加固。' },
+  clear: { id: 'clear', label: '晴天／多雲', damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
+  drizzle: { id: 'drizzle', label: '毛毛雨', damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
+  hot: { id: 'hot', label: '酷熱', damage: 10, dW: -20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 −20，記得澆水防乾旱。' },
+  rainstorm: { id: 'rainstorm', label: '暴雨', damage: 20, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10），記得疏水，輕度加固。' },
+  blackrain: { id: 'blackrain', label: '黑雨', damage: 20, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；預早疏水，輕度加固。' },
   typhoon1: { id: 'typhoon1', label: '初級颱風', damage: 30, dW: 0, dR: -40, growth: 0.8, severe: true, tip: '一號／三號風球：提早加固。' },
   thunder: { id: 'thunder', label: '狂風雷暴', damage: 35, dW: 0, dR: -30, growth: 0.8, severe: true, tip: '需提前加固樹幹。' },
   typhoon8: { id: 'typhoon8', label: '高級颱風', damage: 60, dW: 0, dR: -80, growth: 0.6, severe: true, tip: '八號或以上：終極考驗，需推高 R 值。' },
@@ -61,7 +82,7 @@ export const STORM_SURVIVE_GROWTH = 1.3;
 
 /* ---------- 蟲害 (hidden) ---------- */
 export const PEST_DAMAGE = 15;
-/** Consecutive nights of N < 30, or of 水浸 (W > 80), that trigger 蟲害. */
+/** Consecutive nights of N < 30, or of 爛根 (W > 100), that trigger 蟲害. */
 export const PEST_TRIGGER_DAYS = 3;
 /** With ≥ 2 resident animals the trigger needs this many nights instead. */
 export const PEST_TRIGGER_DAYS_GUARDED = 5;
@@ -107,8 +128,9 @@ export const REVIVE_HEALTH = 30;
 
 /* ---------- Care actions ---------- */
 export const CARE = {
-  water: { amount: 20, perDay: 3 },
-  drain: { amount: -25, perDay: 2 },
+  /** 澆水 fills up to 泥土飽和 (100) only; at ≥ 100 it does nothing and does not use up a turn. */
+  water: { amount: 15, perDay: 3 },
+  drain: { amount: -10, perDay: 3 },
   fertilize: { amount: 25, perDay: 1 },
 } as const;
 /** 加固: each item once a day, adds to R up to the current cap. */
