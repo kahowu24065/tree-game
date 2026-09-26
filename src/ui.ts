@@ -1274,7 +1274,8 @@ export function locationModal(current: string): string {
   `;
 }
 
-export function settingsModal(treeName: string, quality: 'low' | 'high', threeD: boolean): string {
+/** `notify`: Android app reminder switch (null in browsers = row hidden). */
+export function settingsModal(treeName: string, quality: 'low' | 'high', threeD: boolean, notify: boolean | null = null): string {
   return `
     <p class="eyebrow">設定</p>
     <h2>${esc(treeName)}</h2>
@@ -1289,6 +1290,17 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
         <button type="button" class="${quality === 'high' ? 'on' : ''}" data-quality="high" ${threeD ? '' : 'disabled'}>精緻</button>
       </div>
     </div>
+    ${
+      notify === null
+        ? ''
+        : `<div class="setting-row">
+      <span>提醒通知</span>
+      <div class="seg">
+        <button type="button" class="${notify ? 'on' : ''}" data-notify="on">開</button>
+        <button type="button" class="${notify ? '' : 'on'}" data-notify="off">關</button>
+      </div>
+    </div>`
+    }
     <div class="howto">
       <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 + 熱／雨／風三類天氣分 + 應急獎勵 − 蟲害。</p>
       <p>水分 0–150：50–100 +5；低過 50 乾旱 −10；101–115 輕度爛根 −10；116–135 嚴重爛根 −20；136–149 根部壞死 −30；去到 150 即刻瀕死。養分 60 以上 +5、30–59 為 0、低過 30 −10。</p>

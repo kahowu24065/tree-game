@@ -20,6 +20,7 @@ import {
   brokenTop,
   catchUp,
   DYING_MS,
+  emergencyOptions,
   fallenLogDay,
   resolveDyingExpiry,
   checkWaterDeath,
@@ -94,9 +95,16 @@ import {
 import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
+import { isNative } from './native/platform';
+import { hydrateNative } from './native/persist';
+import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
+import { App } from '@capacitor/app';
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
+
+// Android app: load the save from native Preferences into localStorage before anything reads it (web: no-op).
+await hydrateNative();
 
 let timezone = 'Asia/Hong_Kong';
 setLogClock(() => {
@@ -396,6 +404,36 @@ function drawScene(input: SceneInput, time: number): void {
 function persist(): void {
   saveGame(state);
   saveMeta(meta);
+  scheduleReminders(false);
+}
+
+/** Android app: reschedule the local reminders from the current state (web: nothing). */
+function scheduleReminders(background: boolean): void {
+  if (!isNative()) return;
+  const events = todayEvents();
+  const opts = emergencyOptions(events);
+  const careToday = state.care.date === today();
+  const done = (k: 'heatWater' | 'rainDrain' | 'warmCover') => careToday && Boolean(state.care[k]);
+  const pending: string[] = [];
+  if (opts.heatWater && !done('heatWater')) pending.push('酷熱澆水');
+  if (opts.rainDrain && !done('rainDrain')) pending.push('暴雨疏水');
+  if (opts.warmCover && !done('warmCover')) pending.push('保暖');
+  const windy = state.windUnlocked && events.some((e) => WEATHER_EVENTS[e].category === 'wind');
+  if (windy && !(careToday && Object.values(state.care.preps).some(Boolean))) pending.push('加固');
+  const offset = virtualNow() - Date.now();
+  applyNotifications(
+    planNotifications({
+      now: Date.now(),
+      msToSettlement: (24 * 60 - clockMinutes(timezone)) * 60_000,
+      started: state.started,
+      over: Boolean(state.over),
+      wateredToday: careToday && state.care.water > 0,
+      fertilizedToday: careToday && state.care.fertilize > 0,
+      dyingEndsAt: state.dying ? state.dying.at + DYING_MS - offset : null,
+      pendingEmergencies: pending,
+      background,
+    }),
+  );
 }
 
 /**
@@ -880,7 +918,7 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
     case 'settings':
-      openModal(settingsModal(state.treeName, quality, Boolean(scene3d)));
+      openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
       return;
     case 'close-drawer':
       closeDrawer();
@@ -989,11 +1027,17 @@ document.addEventListener('click', (event) => {
     void refreshWeather(placeChoice === 'geo');
     return;
   }
+  if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {
+    localStorage.setItem(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
+    scheduleReminders(false);
+    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+    return;
+  }
   if (target.dataset.quality === 'low' || target.dataset.quality === 'high') {
     quality = target.dataset.quality;
     localStorage.setItem(QUALITY_KEY, quality);
     scene3d?.setQuality(quality);
-    openModal(settingsModal(state.treeName, quality, Boolean(scene3d)));
+    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
     return;
   }
   if (target.dataset.action) doAction(target.dataset.action, target);
@@ -1319,7 +1363,10 @@ function frame(time: number): void {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+  if (document.hidden) {
+    scheduleReminders(true);
+    return;
+  }
   requestAnimationFrame(frame);
   runCatchup();
   const age = Date.now() - weather.fetchedAt;
@@ -1335,6 +1382,10 @@ resize();
 
 bindSheetDrag();
 runCatchup();
+if (isNative()) {
+  void App.addListener('pause', () => scheduleReminders(true));
+  scheduleReminders(false);
+}
 if (!state.started) openStart();
 requestAnimationFrame(frame);
 if (weather.origin === 'live' && !weatherLoading) {

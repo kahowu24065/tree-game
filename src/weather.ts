@@ -3,6 +3,8 @@ import { addDays } from './dates';
 import { isColdDay, isHotDay, type TempInput } from './events';
 import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } from './types';
+import { isNative } from './native/platform';
+import { nativePosition } from './native/location';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
@@ -486,6 +488,8 @@ export function activeHot(warnings: HkoWarning[] | undefined): boolean {
 
 export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; source: LocationSource }> {
   const fallback = { lat: HK_LAT, lon: HK_LON, source: 'fallback' as const };
+  // Android app: native location plugin (asks for permission); refused / failed → 香港 as before.
+  if (isNative()) return nativePosition(timeoutMs).then((p) => (p ? { ...p, source: 'geo' as const } : fallback));
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(fallback);
   const ask = () => new Promise<{ lat: number; lon: number; source: LocationSource }>((resolve) => {
     const timer = setTimeout(() => resolve(fallback), timeoutMs);
