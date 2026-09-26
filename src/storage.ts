@@ -97,6 +97,19 @@ export function migrateWind(data: GameState): void {
   data.care.heatWater ??= false;
   data.care.rainDrain ??= false;
   data.care.warmCover ??= false;
+  renameWarmCover(data);
+}
+
+/** v15.1: 「保暖覆蓋」 is now just 「保暖」 — also in log lines / notes an older save already holds (ids unchanged). */
+export function renameWarmCover(data: GameState): void {
+  const fix = (s: string) => (s.includes('保暖覆蓋') ? s.split('保暖覆蓋').join('保暖') : s);
+  for (const e of data.log ?? []) {
+    if (typeof e.text === 'string') e.text = fix(e.text);
+    if (typeof e.title === 'string') e.title = fix(e.title);
+  }
+  if (typeof data.morningNote === 'string') data.morningNote = fix(data.morningNote);
+  const notes = (data.lastSettlement as { notes?: unknown } | null | undefined)?.notes;
+  if (Array.isArray(notes)) for (let i = 0; i < notes.length; i++) if (typeof notes[i] === 'string') notes[i] = fix(notes[i] as string);
 }
 
 /**

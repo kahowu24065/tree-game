@@ -3079,7 +3079,7 @@ button.emerg-act.done {
   padding: 4px 0;
 }
 
-/* ---------- v15 寒冷、保暖覆蓋、新按鈕排位 ---------- */
+/* ---------- v15 寒冷、保暖、新按鈕排位 ---------- */
 body.cold #scene {
   filter: saturate(0.72) brightness(1.06) hue-rotate(10deg);
 }
@@ -3205,6 +3205,12 @@ body.cold #scene {
 .dock-btn.d-warm.hot-pulse {
   background: linear-gradient(180deg, #d9ebff, #9fc4ef);
   animation-name: cold-pulse;
+}
+
+/* v15.1: 保暖 done → the campfire is lit, so the button turns warm. */
+.dock-btn.d-warm.lit {
+  background: linear-gradient(180deg, #fff4e4, #ffd8a8);
+  color: #c2621c;
 }
 
 @keyframes cold-pulse {

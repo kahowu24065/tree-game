@@ -11,6 +11,9 @@ import { buildTree, treeKey, windUniforms, type TreeBuild } from './tree3d';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
 import { jitterGeometry, merge, paint } from './util3d';
+import { CareFx, type CareFxKind } from './careFx';
+import { Campfire3D } from './campfire3d';
+import { campfireRadiusUnits, campfireSpot, type CampfireSpot } from '../campfire';
 
 export type Quality = 'low' | 'high';
 
@@ -148,6 +151,10 @@ export class Scene3D {
   private raycaster = new THREE.Raycaster();
 
   private canvas: HTMLCanvasElement;
+  /** v15.1 澆水／施肥 effects and the 保暖 campfire. */
+  private careFx = new CareFx();
+  private campfire: Campfire3D | null = null;
+  private fireSpot: (CampfireSpot & { rU: number; key: string }) | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality = 'low') {
     this.canvas = canvas;
@@ -284,6 +291,8 @@ export class Scene3D {
     this.rain.visible = false;
     this.scene.add(this.rain);
 
+    this.scene.add(this.careFx.root);
+
     this.rays = this.buildRays();
     this.bindDrag();
     this.resize();
@@ -349,6 +358,24 @@ export class Scene3D {
   }
 
   /** Developer trigger: a gentle swell of the warm light (works even outside 酷熱). */
+  /** v15.1: play the 澆水 / 施肥 effect at the tree base (next frame). */
+  playCare(kind: CareFxKind): void {
+    this.careFx.play(kind);
+  }
+
+  /** v15.1 checks: slow the care effects down (1 = normal) so a headless browser can screenshot them mid-way. */
+  setCareFxSpeed(k: number): void {
+    this.careFx.timeScale = Math.max(0.01, k);
+  }
+
+  /** v15.1: campfire state for checks: lit, world position / ring radius (metres) and distance from the trunk. */
+  campfireInfo(): { lit: boolean; x: number; z: number; radiusM: number; trunkM: number; distM: number; fx: number } {
+    const K = this.islandK;
+    const s = this.fireSpot;
+    const trunkM = (this.tree?.trunkRadius ?? 0) * (this.tree?.group.scale.x ?? 1);
+    return { lit: Boolean(this.campfire?.isLit()), x: (s?.x ?? 0) * K, z: (s?.z ?? 0) * K, radiusM: (s?.rU ?? 0) * K, trunkM, distM: (s?.dist ?? 0) * K, fx: this.careFx.count() };
+  }
+
   triggerGlare(): void {
     this.swellT = this.lastTime;
   }
@@ -931,9 +958,9 @@ export class Scene3D {
    * cliffs, and the footprints of solid props (rocks, bushes, tree ferns, small trees, buildings, the trunk) at the
    * current prop scale. Rebuilt when the habitat changes or props / trunk rescale by more than a few percent.
    */
-  private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean): void {
+  private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean, fire: CampfireSpot & { rU: number; key: string } | null): void {
     const trunkU = Math.max(0.05, (tree.trunkRadius * 1.3) / Math.max(1e-3, K));
-    const key = `${this.habitatKey}|${landmark ? 1 : 0}`;
+    const key = `${this.habitatKey}|${landmark ? 1 : 0}|${fire ? fire.key : ''}`;
     if (this.nav && key === this.navKey && Math.abs(propK - this.navPk) / this.navPk < 0.04 && Math.abs(trunkU - this.navTrunk) / this.navTrunk < 0.08) return;
     this.navKey = key;
     this.navPk = propK;
@@ -944,6 +971,7 @@ export class Scene3D {
     for (const o of this.island.obstacles()) obstacles.push({ x: o.x, z: o.z, r: o.r * propK, fixed: true, kind: o.kind });
     if (hab && hab.stage > 0) for (const o of resolveObstacles(hab.obstacles, propK)) obstacles.push({ ...o, fixed: true });
     if (landmark) obstacles.push({ x: 2.8, z: 2.2, r: 0.55, fixed: true, kind: 'landmark' });
+    if (fire) obstacles.push({ x: fire.x, z: fire.z, r: fire.rU * 1.15, fixed: true, kind: 'campfire' });
     this.nav = new WalkNav({
       R,
       limit: (a) => shoreRadius(R, a) - FENCE_INSET_UNITS - 0.15,
@@ -1108,7 +1136,8 @@ export class Scene3D {
       (this.glow.material as THREE.PointsMaterial).opacity = 0.35 + 0.35 * Math.sin(t * 2);
     }
     this.pivot.updateMatrixWorld(true);
-    this.ensureNav(tree, K, propK, Boolean(input.landmark));
+    const fire = this.ensureCampfire(input, tree, K, propK);
+    this.ensureNav(tree, K, propK, Boolean(input.landmark), fire);
     this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
     this.animals.update(t, dt, night);
 
@@ -1269,9 +1298,70 @@ export class Scene3D {
     sc.updateProjectionMatrix();
     this.fill.position.set(6, 4, 8);
 
+    this.updateCareFx(input, tree, t, dt, night, camAz);
     this.updateRain(rain, wind, dt, target);
     this.renderer.render(this.scene, this.camera);
     this.drawRays(input, t);
+  }
+
+  /**
+   * v15.1 保暖 campfire spot (island units): beside the trunk, front-left in the default view (clear of the height rail on phones), clear of the trunk,
+   * water, props and the 養分地標. Re-picked only when the trunk / fire size or the habitat changes.
+   */
+  private ensureCampfire(input: SceneInput, tree: TreeBuild, K: number, propK: number): (CampfireSpot & { rU: number; key: string }) | null {
+    if (!input.campfire) {
+      this.campfire?.setLit(false);
+      return null;
+    }
+    const trunkU = (tree.trunkRadius * tree.group.scale.x) / Math.max(1e-3, K);
+    const rU = campfireRadiusUnits(animalFactor(tree.height), islandScaleFor(tree.metricScale), tree.height / Math.max(1e-3, islandScaleFor(tree.metricScale)));
+    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${input.landmark ? 1 : 0}`;
+    if (!this.fireSpot || this.fireSpot.key !== key) {
+      const hab = this.habitat;
+      const props = [...this.island.obstacles().map((o) => ({ x: o.x, z: o.z, r: o.r * propK })), ...(hab && hab.stage > 0 ? resolveObstacles(hab.obstacles, propK) : [])];
+      if (input.landmark) props.push({ x: 2.8, z: 2.2, r: 0.55 });
+      const spot = campfireSpot({
+        trunkU: trunkU * 2.2,
+        fireU: rU,
+        prefer: 2.2,
+        blocked: (x, z, r) => this.wetOrBlocked(x, z, r + 0.05) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.04),
+      });
+      this.fireSpot = { ...spot, rU, key };
+    }
+    if (!this.campfire) {
+      this.campfire = new Campfire3D();
+      this.scene.add(this.campfire.group);
+    }
+    this.campfire.setLit(true);
+    return this.fireSpot;
+  }
+
+  private updateCareFx(input: SceneInput, tree: TreeBuild, t: number, dt: number, night: number, camAz: number): void {
+    const K = this.islandK;
+    const s = tree.group.scale.x;
+    if (this.campfire) {
+      const f = this.fireSpot;
+      if (f && this.campfire.isLit()) {
+        this.campfire.group.position.set(f.x * K, this.groundFast(f.x, f.z) * K + 0.004 * K, f.z * K);
+        this.campfire.group.rotation.y = 0.6;
+      }
+      this.campfire.update(t, dt, ((f?.rU ?? 0.25) * K) / 0.4, clamp(night * 1.2 - 0.1, 0, 1), input.reducedMotion);
+    }
+    if (!this.careFx.count()) return;
+    const dirtR = 1.1 * this.island.dirt.scale.x * K;
+    const trunkR = tree.trunkRadius * s;
+    const unit = clamp(Math.max(dirtR * 0.95, trunkR * 3.5, this.camDist * 0.07), 0.001, this.camDist * 0.1);
+    this.careFx.update({
+      t,
+      base: new THREE.Vector3(0, 0.185 * K, 0),
+      trunkR,
+      dirtR,
+      treeH: tree.height * s,
+      crownY: tree.crownY * s,
+      unit,
+      camAz,
+      reduced: input.reducedMotion,
+    });
   }
 
   /** 酷熱: soft warm corner glow + slow light shafts, breathing gently; no flashes. */

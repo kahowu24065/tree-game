@@ -90,7 +90,7 @@ describe('v15 寒冷：香港以外（絕對 + 相對）', () => {
   });
 });
 
-describe('v15 保暖覆蓋', () => {
+describe('v15 保暖（v15.1 前叫保暖覆蓋）', () => {
   it('只喺寒冷日開放，每日一次，唔改水分', () => {
     const s = game({ moisture: 70 });
     expect(emergencyOptions(['cold'])).toEqual({ heatWater: false, rainDrain: false, warmCover: true });
@@ -100,7 +100,7 @@ describe('v15 保暖覆蓋', () => {
     expect(no.message).toContain('今日冇寒冷警告');
     const r = performEmergency(s, 'warmCover', ['cold']);
     expect(r.ok).toBe(true);
-    expect(r.message).toContain('保暖覆蓋');
+    expect(r.message).toContain('保暖');
     expect(s.care.warmCover).toBe(true);
     expect(s.moisture).toBe(70);
     expect(performEmergency(s, 'warmCover', ['cold']).ok).toBe(false);

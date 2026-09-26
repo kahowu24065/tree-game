@@ -13,7 +13,7 @@ export interface Care {
   /** v13 應急行動 done today (each once a day, on top of the normal limits). */
   heatWater?: boolean;
   rainDrain?: boolean;
-  /** v15 保暖覆蓋 done today. */
+  /** v15 保暖 done today. */
   warmCover?: boolean;
 }
 

@@ -38,6 +38,8 @@ export interface SceneInput {
   landmark?: boolean;
   /** Tier-3 「星空浮島」 look. */
   starry?: boolean;
+  /** v15.1: 保暖 done today → campfire beside the tree. */
+  campfire?: boolean;
 }
 
 interface Pt {

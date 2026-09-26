@@ -61,7 +61,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" class="${d.mode === 'real' ? 'on' : ''}" data-dev="mode-real">真實天氣</button>
         <button type="button" class="${d.mode === 'manual' ? 'on' : ''}" data-dev="mode-manual">手動天氣</button>
       </div>
-      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => eventLabel(e)).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣；揀寒冷會開「保暖覆蓋」。'}</p>
+      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => eventLabel(e)).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣；揀寒冷會開「保暖」。'}</p>
       <div class="dev-events">${api.events.map(eventBtn).join('')}</div>
       <div class="dev-row">
         <label>12 小時預報

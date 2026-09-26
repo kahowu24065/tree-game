@@ -8,6 +8,7 @@ import { esc } from './util';
 import { bookGameEnd, bookMilestones, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
+import { campfireLit } from './campfire';
 import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
@@ -303,6 +304,7 @@ function sceneInput(): SceneInput {
     thriving: state.health >= 80 && !state.over,
     landmark: Boolean(meta.landmark) && state.legacyBonus > 0,
     starry: meta.starry,
+    campfire: campfireLit(state, today()),
   };
 }
 
@@ -717,12 +719,14 @@ function doAction(action: string, target: HTMLElement): void {
     render();
     toast(result.message);
     if (result.ok) target.classList.add('pop');
+    if (result.ok && (action === 'water' || action === 'fertilize')) scene3d?.playCare(action);
     return;
   }
   if (action === 'heat-water' || action === 'rain-drain' || action === 'warm-cover') {
     const result = performEmergency(state, action === 'heat-water' ? 'heatWater' : action === 'warm-cover' ? 'warmCover' : 'rainDrain', todayEvents());
     if (result.ok && action !== 'warm-cover') flashWater(action === 'heat-water' ? 'up' : 'down');
     if (result.ok && action === 'warm-cover') target.classList.add('pop');
+    if (result.ok && action === 'heat-water') scene3d?.playCare('water');
     persist();
     render();
     toast(result.message);
@@ -1050,6 +1054,10 @@ if (DEV_PANEL) {
     rotate: () => scene3d?.rotateAnimals(),
     rotation: () => scene3d?.rotationInfo() ?? null,
     caps: () => scene3d?.animalCaps() ?? null,
+    campfire: () => scene3d?.campfireInfo() ?? null,
+    playCare: (kind: 'water' | 'fertilize') => scene3d?.playCare(kind),
+    careFxSpeed: (k: number) => scene3d?.setCareFxSpeed(k),
+    advanceDay: () => api.advanceDay(),
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');

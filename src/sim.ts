@@ -416,7 +416,7 @@ function careOn(state: GameState, date: string | null): Care | null {
 /**
  * The night in order (設計書 v13): first the water change (natural loss −10 or 毛毛雨), then
  * H_new = H_old + W_score + N_score + 天氣分(熱) + 天氣分(雨) + 天氣分(風) + 應急獎勵 − 蟲害.
- * 熱／寒／雨: flat −10／−10／−10 (黑雨 −15) unless 酷熱澆水／保暖覆蓋／暴雨疏水 was done that day (then 0 and +3 each;
+ * 熱／寒／雨: flat −10／−10／−10 (黑雨 −15) unless 酷熱澆水／保暖／暴雨疏水 was done that day (then 0 and +3 each;
  * n ≥ 2 actions = 3n × 0.75).
  * 風 (after 青年樹 only): base × (1 − R/100); R below the event's threshold = 倒塌.
  * `date` is the day being settled: that day's care flags count (null = trust state.care).
@@ -563,7 +563,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   if (plan.water.kind === 'drizzle') notes.push(`毛毛雨：水分 ${sgn(plan.water.delta)}，冇流失`);
   if (plan.residentN) notes.push(`長駐動物施肥 +${plan.residentN} 養分`);
   if (plan.heat) notes.push(plan.heat.handled ? '酷熱：做咗酷熱澆水，唔扣健康' : `酷熱：冇做酷熱澆水 −${plan.heat.base}`);
-  if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖覆蓋，唔扣健康' : `寒冷：冇做保暖覆蓋 −${plan.cold.base}`);
+  if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖，唔扣健康' : `寒冷：冇做保暖 −${plan.cold.base}`);
   if (plan.rain) notes.push(plan.rain.handled ? `${eventLabel(plan.rain.event)}：做咗${emergencyName('rainDrain')}，唔扣健康` : `${eventLabel(plan.rain.event)}：冇做${emergencyName('rainDrain')} −${plan.rain.base}`);
   if (plan.emergencyBonus) notes.push(`應急獎勵 ${emergencyBonusText(plan.emergencyCount)}`);
   if (plan.wind?.locked) notes.push(`${eventLabel(plan.wind.event)}：青年樹前唔受風災影響`);
@@ -983,7 +983,7 @@ export function reinforce(state: GameState, prep: PrepId): ActionResult {
 
 export type EmergencyAction = 'heatWater' | 'rainDrain' | 'warmCover';
 
-/** Which 應急行動 today's warnings allow (酷熱 → 酷熱澆水；寒冷 → 保暖覆蓋；暴雨／黑雨 → 暴雨疏水). */
+/** Which 應急行動 today's warnings allow (酷熱 → 酷熱澆水；寒冷 → 保暖；暴雨／黑雨 → 暴雨疏水). */
 export function emergencyOptions(events: readonly WeatherEventId[]): { heatWater: boolean; rainDrain: boolean; warmCover: boolean } {
   return { heatWater: Boolean(topInCategory(events, 'heat')), rainDrain: Boolean(topInCategory(events, 'rain')), warmCover: Boolean(topInCategory(events, 'cold')) };
 }
@@ -1000,7 +1000,7 @@ export function performEmergency(state: GameState, action: EmergencyAction, even
   if (!opts[action])
     return {
       ok: false,
-      message: action === 'heatWater' ? '今日冇酷熱警告，唔使做酷熱澆水。' : action === 'warmCover' ? '今日冇寒冷警告，唔使做保暖覆蓋。' : regionalize('今日冇暴雨／黑雨警告，唔使做暴雨疏水。'),
+      message: action === 'heatWater' ? '今日冇酷熱警告，唔使做酷熱澆水。' : action === 'warmCover' ? '今日冇寒冷警告，唔使做保暖。' : regionalize('今日冇暴雨／黑雨警告，唔使做暴雨疏水。'),
     };
   if (state.care[action]) return { ok: false, message: `今日做咗${name}喇。` };
   state.care[action] = true;
@@ -1011,7 +1011,7 @@ export function performEmergency(state: GameState, action: EmergencyAction, even
     const got = r1(state.moisture - before);
     message = got > 0 ? `酷熱澆水：水分 +${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因酷熱扣健康，仲有應急獎勵。` : `酷熱澆水：泥土已經飽和，冇加水，不過都算做咗。今晚唔會因酷熱扣健康，仲有應急獎勵。`;
   } else if (action === 'warmCover') {
-    message = '保暖覆蓋：幫棵樹蓋好保暖布、根部鋪好覆蓋物。今晚唔會因寒冷扣健康，仲有應急獎勵。';
+    message = '保暖：喺樹旁邊生起營火，幫棵樹暖住過夜。今晚唔會因寒冷扣健康，仲有應急獎勵。';
   } else {
     const floor = EMERGENCY.rainDrain.floor;
     state.moisture = before > floor ? Math.max(floor, r1(before + EMERGENCY.rainDrain.amount)) : before;
@@ -1179,7 +1179,7 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
   if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
   if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
   if (plan.heat && !plan.heat.handled) return `酷熱警告生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
-  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖覆蓋」（每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
+  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
   if (plan.rain && !plan.rain.handled) return `${eventLabel(plan.rain.event)}警告生效：做「${emergencyName('rainDrain')}」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
   if (countdown && WEATHER_EVENTS[countdown.event].category === 'wind') {
     const def = { ...WEATHER_EVENTS[countdown.event], label: eventLabel(countdown.event) };

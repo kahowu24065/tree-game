@@ -75,7 +75,7 @@ export interface WeatherEventDef {
 
 /** 酷熱 growth modifier; v15 寒冷 uses the same value. */
 export const HEAT_GROWTH = 0.9;
-/** v15 寒冷: flat health damage unless 保暖覆蓋 was done that day. */
+/** v15 寒冷: flat health damage unless 保暖 was done that day. */
 export const COLD_DAMAGE = 10;
 
 /**
@@ -86,7 +86,7 @@ export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
   clear: { id: 'clear', label: '晴天／多雲', category: null, damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
   drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
   hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
-  cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖覆蓋」（每日一次），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖」（每日一次），做咗就唔扣健康，仲有應急獎勵 +3。' },
   rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
   blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
   typhoon1: { id: 'typhoon1', label: '初級颱風', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '一號／三號風球：青年樹之後，抗風力低過 20 會倒塌，提早加固。' },
@@ -191,7 +191,7 @@ export const EMERGENCY = {
   heatWater: { amount: 5 },
   /** 暴雨疏水: once a day on top of the 3 drains, −10 water but never below this floor. */
   rainDrain: { amount: -10, floor: 50 },
-  /** v15 保暖覆蓋: once a day while 寒冷 is in force; no water change. */
+  /** v15 保暖: once a day while 寒冷 is in force; no water change. */
   warmCover: {},
   /** Bonus for each emergency action that met its warning. */
   bonus: 3,
@@ -221,7 +221,7 @@ export const INTL_LABELS: Partial<Record<WeatherEventId, string>> = { typhoon1: 
 export const EMERGENCY_NAMES = {
   heatWater: { hk: '酷熱澆水', intl: '酷熱澆水' },
   rainDrain: { hk: '暴雨疏水', intl: '大雨疏水' },
-  warmCover: { hk: '保暖覆蓋', intl: '保暖覆蓋' },
+  warmCover: { hk: '保暖', intl: '保暖' },
 } as const;
 /** Stage index (0-based, in STAGE_NAMES) from which 風災／加固／倒塌 apply: 2 = 青年樹. */
 export const WIND_UNLOCK_STAGE = 2;
