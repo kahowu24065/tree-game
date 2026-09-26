@@ -1,9 +1,49 @@
-import { defaultSpecies, speciesDef, speciesTargetCm } from './data/species';
+import { speciesDef, speciesTargetCm } from './data/species';
+import { daysBetween } from './dates';
 import { START } from './balance';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
-import { addLog, windStageCm } from './sim';
+import { addLog, checkMilestones, RULES_VERSION, windStageCm } from './sim';
 import { formatHeight } from './util';
+
+/** Fields of saves made before v14 (seasons). */
+type LegacySave = GameState & { season?: string; completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean } };
+
+/**
+ * v14 (rules 14): no seasons. Species, height, stats and log are kept; season fields are dropped; R (targetCm) comes from
+ * the species. 樹齡 = nights already settled (createdOn → lastSeenDate). Age milestones the tree has already passed are
+ * awarded now (tier from the CURRENT height vs e(milestone day)); 超越世界紀錄 too if h > R. The old perk badge a
+ * milestone carries (3個月／半年／1年 → 一級／二級／三級) is granted unless a finished, booked season already gave it.
+ * A dead tree (over) gets no retro milestones (the player replants).
+ */
+export function migrateV14(data: GameState): void {
+  const legacy = data as LegacySave;
+  data.species = speciesDef(data.species).id;
+  data.milestones ??= {};
+  if ((data.rules ?? 0) >= RULES_VERSION) {
+    data.ageDays = Number(data.ageDays) || 0;
+    return;
+  }
+  const done = legacy.completed;
+  const given = done?.booked ? done.tiers : [];
+  delete legacy.season;
+  delete legacy.completed;
+  // The word 賽季 is gone from the game; old log lines say 挑戰 instead.
+  for (const l of data.log ?? []) {
+    if (l.title) l.title = l.title.replace(/賽季/g, '挑戰');
+    l.text = String(l.text ?? '').replace(/賽季/g, '挑戰');
+  }
+  data.targetCm = speciesTargetCm(data.species);
+  if (typeof data.ageDays !== 'number') data.ageDays = Math.max(0, daysBetween(data.createdOn, data.lastSeenDate ?? data.createdOn));
+  if (data.over) {
+    data.over.tiers = [];
+  } else if (data.started !== false) {
+    const date = data.lastSeenDate ?? data.createdOn;
+    const got = checkMilestones(data, date, { retro: true, perks: ([1, 2, 3] as const).filter((t) => !given.includes(t)) });
+    if (got.length === 0 && data.ageDays > 0) addLog(data, date, '新規則：棵樹冇完結日，會一直陪住你。生長會慢慢接近紀錄高度，樹齡里程碑會發徽章。', { kind: 'badge', title: 'v14 新規則', time: '' });
+  }
+  data.rules = RULES_VERSION;
+}
 
 /** Season targets before v8 (one per season), used to recognise saves made before per-species targets. */
 const V7_TARGET_CM = { s3: 2000, s6: 5000, s12: 10000 } as const;
@@ -14,14 +54,15 @@ const V7_TARGET_CM = { s3: 2000, s6: 5000, s12: 10000 } as const;
  */
 export function migrateTarget(data: GameState): void {
   const t = speciesTargetCm(data.species);
-  const old = data.targetCm ?? V7_TARGET_CM[data.season ?? 's3'];
+  const season = (data as LegacySave).season as keyof typeof V7_TARGET_CM | undefined;
+  const old = data.targetCm ?? V7_TARGET_CM[season ?? 's3'] ?? t;
   if (data.targetCm === t) return;
   data.targetCm = t;
   if (data.heightCm < t) data.passedTargetOn = null;
   else data.passedTargetOn ??= data.log?.[0]?.date ?? data.createdOn;
   if (old !== t && data.started !== false) {
     const sp = speciesDef(data.species);
-    addLog(data, data.lastSeenDate ?? data.createdOn, `目標更新：${sp.name}嘅目標由 ${formatHeight(old)} 改為 ${formatHeight(t)}（真實最高紀錄 ${sp.maxM} 米，取最接近嘅 10 米）。高度照舊，冇上限。`, { kind: 'badge', title: '目標更新', reward: { text: formatHeight(t), tone: 'purple' }, time: '' });
+    addLog(data, data.lastSeenDate ?? data.createdOn, `紀錄高度更新：${sp.name}由 ${formatHeight(old)} 改為 ${formatHeight(t)}（真實最高紀錄 ${sp.maxM} 米，取最接近嘅 10 米）。高度照舊，冇上限。`, { kind: 'badge', title: '紀錄高度更新', reward: { text: formatHeight(t), tone: 'purple' }, time: '' });
   }
 }
 
@@ -57,7 +98,10 @@ export function migrateWind(data: GameState): void {
   data.care.rainDrain ??= false;
 }
 
-/** v2 = 《世界之樹》rules. No migration: older saves (yiri-yisyu-v1) are ignored and everyone starts fresh. */
+/**
+ * v2 = 《世界之樹》rules. No migration from older keys (yiri-yisyu-v1). Rule changes inside v2 migrate by field
+ * presence; v14 adds `rules: 14` (see migrateV14).
+ */
 export const SAVE_KEY = 'sekai-tree-v2';
 export const WEATHER_KEY = 'yiri-yisyu-weather';
 
@@ -78,18 +122,20 @@ export function parseSave(raw: string): GameState | null {
     if (!data || data.version !== 2 || typeof data.heightCm !== 'number' || !data.care || !data.pest) return null;
     data.dayEvents ??= {};
     data.residents ??= [];
-    if (!data.species || speciesDef(data.species).season !== data.season) data.species = defaultSpecies(data.season ?? 's3');
+    data.species = speciesDef(data.species).id;
     data.log ??= [];
     // v7: finishing a season no longer ends the game — the tree keeps growing.
-    if (data.over?.kind === 'complete') {
-      data.completed = { date: data.over.date, tiers: data.over.tiers, days: data.over.days, heightCm: data.heightCm, booked: data.over.booked };
+    const legacy = data as LegacySave;
+    const over = data.over as { kind: string; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean } | null;
+    if (over?.kind === 'complete') {
+      legacy.completed = { date: over.date, tiers: over.tiers, days: over.days, heightCm: data.heightCm, booked: over.booked };
       data.over = null;
     }
-    data.completed ??= null;
     migrateWater(data);
     data.passedTargetOn ??= null;
     migrateTarget(data);
     migrateWind(data);
+    migrateV14(data);
     return data;
   } catch {
     return null;

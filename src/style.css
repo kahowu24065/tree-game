@@ -556,7 +556,7 @@ body.sheet-open .hud > .sheet-backdrop {
   font-size: 10px;
 }
 
-/* Beyond-target: a 目標 tick on the rail; the fill turns gold past it. */
+/* Beyond R: a 紀錄 tick on the rail; the fill turns gold past it. */
 .rail-target {
   position: absolute;
   left: -6px;
@@ -3051,4 +3051,30 @@ button.emerg-act.done {
 .evtable td small {
   font-size: 10.5px;
   color: var(--ink-soft);
+}
+
+/* ---------- v14: 樹齡 line, 9-species picker, milestone card ---------- */
+.status-sub.status-age {
+  margin-top: -4px;
+  white-space: normal;
+  line-height: 1.35;
+  color: var(--green);
+  font-weight: 600;
+}
+
+.species-pick .sthumb {
+  max-width: 72px;
+}
+
+.species-pick .species i {
+  display: none;
+}
+
+.milestone-badges {
+  list-style: none;
+  padding-left: 0;
+}
+
+.milestone-badges li {
+  padding: 4px 0;
 }

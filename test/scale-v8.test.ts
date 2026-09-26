@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { ANIMALS } from '../src/data/animals';
 import { ISLAND_RADII } from '../src/data/habitat';
-import { bookSeasonComplete, freshMeta } from '../src/meta';
+import { bookMilestones, freshMeta } from '../src/meta';
 import {
   ANIMAL_FACTOR_MAX,
   animalFactor,
@@ -69,8 +69,8 @@ describe('v8 比例：v6 樹形比例，樹頂 = 遊戲高度 G', () => {
 });
 
 describe('冇高度上限', () => {
-  it('過咗目標同賽季完都照同一條公式長高', () => {
-    const s = createGame('2026-01-01', { season: 's3', species: 'banyan' });
+  it('過咗紀錄高度都照同一條公式長高（v14：最低 0.0002R × 係數）', () => {
+    const s = createGame('2026-01-01', { species: 'banyan' });
     s.started = true;
     const target = speciesTargetCm('banyan');
     Object.assign(s, { health: 95, moisture: 60, nutrients: 80, heightCm: target - 10 });
@@ -83,28 +83,31 @@ describe('冇高度上限', () => {
       expect(s.heightCm).toBeGreaterThan(last);
       last = s.heightCm;
     }
-    expect(s.heightCm).toBeGreaterThan(target * 1.5);
+    // Past R the base is the floor 0.0002 × 3000 = 0.6 cm, × 1.5 (健康 95) = 0.9 cm a night.
+    expect(s.heightCm).toBeGreaterThan(target + 100);
     expect(s.passedTargetOn).toBeTruthy();
-    expect(s.completed).toBeTruthy();
+    expect(s.milestones.record).toBeTruthy();
     s.care.date = d(200);
     expect(performAction(s, 'fertilize', { raining: false }).ok).toBe(true);
   });
 
-  it('賽季完成徽章只發一次', () => {
+  it('樹齡 3個月里程碑（連一級能力徽章）只入收藏一次', () => {
     const meta = freshMeta();
-    const s = createGame('2026-01-01', { season: 's3' });
-    Object.assign(s, { moisture: 60, nutrients: 90 });
+    const s = createGame('2026-01-01');
+    Object.assign(s, { moisture: 60, nutrients: 90, ageDays: 89 });
     settleDay(s, '2026-03-31', ['clear'], null, NOW);
-    expect(bookSeasonComplete(meta, s).length).toBe(1);
-    expect(bookSeasonComplete(meta, s)).toEqual([]);
+    expect(bookMilestones(meta, s).length).toBe(1);
+    expect(bookMilestones(meta, s)).toEqual([]);
     expect(meta.badges['1']).toBe(1);
+    expect(meta.milestones.map((m) => m.id)).toEqual(['m30', 'm90']);
   });
 
-  it('高度尺突破樹種目標後延長刻度（紅杉目標 120 米）', () => {
-    const s = createGame('2026-01-01', { season: 's12', species: 'redwood' });
+  it('高度尺超越紀錄高度後延長刻度（紅杉紀錄 120 米），顯示 % 紀錄高度', () => {
+    const s = createGame('2026-01-01', { species: 'redwood' });
     s.heightCm = 13000;
     const html = railHtml(s);
-    expect(html).toContain('已突破目標');
+    expect(html).toContain('超越紀錄');
+    expect(html).toContain('紀錄 108%');
     expect(html).toContain('rail-target');
     expect(html).toContain('130.0 米');
     const top = Number(/<b>([\d.]+) 米<\/b><small>冇上限/.exec(html)?.[1]);
@@ -197,7 +200,8 @@ describe('圍欄貼住島嘅真實邊緣', () => {
 describe('舊存檔（sekai-tree-v2）轉換到樹種目標', () => {
   it('樟樹 3 個月局：舊目標 20 米 → 50 米，高度照舊，「已突破」重新計', async () => {
     const { migrateTarget } = await import('../src/storage');
-    const s = createGame('2026-01-01', { season: 's3', species: 'camphor' });
+    const s = createGame('2026-01-01', { species: 'camphor' });
+    (s as { season?: string }).season = 's3';
     s.started = true;
     s.heightCm = 2500;
     s.passedTargetOn = '2026-02-20';
@@ -214,13 +218,15 @@ describe('舊存檔（sekai-tree-v2）轉換到樹種目標', () => {
 
   it('細葉榕：舊目標 20 米 → 30 米；紅杉 100 → 120；已經高過新目標就保留「已突破」', async () => {
     const { migrateTarget } = await import('../src/storage');
-    const b = createGame('2026-01-01', { season: 's3', species: 'banyan' });
+    const b = createGame('2026-01-01', { species: 'banyan' });
+    (b as { season?: string }).season = 's3';
     b.heightCm = 3500;
     delete (b as { targetCm?: number }).targetCm;
     migrateTarget(b);
     expect(b.targetCm).toBe(3000);
     expect(b.passedTargetOn).toBeTruthy();
-    const r = createGame('2026-01-01', { season: 's12', species: 'redwood' });
+    const r = createGame('2026-01-01', { species: 'redwood' });
+    (r as { season?: string }).season = 's12';
     delete (r as { targetCm?: number }).targetCm;
     migrateTarget(r);
     expect(r.targetCm).toBe(12000);

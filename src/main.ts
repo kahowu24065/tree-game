@@ -1,11 +1,11 @@
 import './style.css';
-import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type SeasonId, type WeatherEventId } from './balance';
+import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { addDays, clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
 import { condForEvent, currentEvents, severeCountdown, type Countdown } from './events';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
-import { bookGameEnd, bookSeasonComplete, loadMeta, newGame, saveMeta } from './meta';
+import { bookGameEnd, bookMilestones, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { Scene3D, type Quality } from './three/scene3d';
@@ -42,7 +42,7 @@ import {
   locationModal,
   openModal,
   overModal,
-  completeModal,
+  milestoneModal,
   renderChrome,
   renderPanel,
   renderSheet,
@@ -60,7 +60,7 @@ import {
   type View,
 } from './ui';
 import { ANIMALS } from './data/animals';
-import { defaultSpecies, speciesTargetCm, speciesForSeason, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
+import { defaultSpecies, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import {
   WEATHER_STALE_MS,
   WEATHER_TTL_MS,
@@ -103,7 +103,7 @@ let weatherLoading = weather.provider === 'sim';
 let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
-let pick: Pick = { season: 's3', species: defaultSpecies('s3') };
+let pick: Pick = { species: defaultSpecies() };
 let quality: Quality = localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'low';
 
 const canvas = document.getElementById('scene');
@@ -349,17 +349,20 @@ function persist(): void {
   saveMeta(meta);
 }
 
-/** When a game ends: book badges / landmark once, then show the result. */
+/**
+ * v14: new milestones (tonight's, or the save migration's retro ones) go into the collection once and get a
+ * celebratory card. When the tree dies: book the landmark once, then show the result.
+ */
 function handleOver(): boolean {
-  if (!state.over && state.completed && !state.completed.booked) {
-    // Season finished: badges now, but the tree keeps growing.
-    const lines = bookSeasonComplete(meta, state);
+  if (!state.over) {
+    const awards = Object.values(state.milestones ?? {}).filter((m) => m && !m.booked);
+    if (!awards.length || !state.started) return false;
+    const lines = bookMilestones(meta, state);
     persist();
-    if (state.started) openModal(completeModal(state, meta, lines));
+    openModal(milestoneModal(state, meta, awards, lines));
     return true;
   }
-  if (!state.over) return false;
-  const lines = bookGameEnd(meta, state);
+  const lines = [...bookMilestones(meta, state), ...bookGameEnd(meta, state)];
   persist();
   if (state.started) openModal(overModal(state, meta, lines));
   return true;
@@ -569,14 +572,14 @@ function openStart(): void {
   openModal(startModal('世界之樹', meta, false, pick));
 }
 
-function startGame(season: SeasonId, species?: SpeciesId): void {
+function startGame(species?: SpeciesId): void {
   const input = document.getElementById('tree-name');
   const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '世界之樹';
   const wasStarted = state.started && !state.over;
   if (wasStarted) {
     state.treeName = name;
   } else {
-    state = newGame(meta, realToday(), season, name, species);
+    state = newGame(meta, realToday(), name, species);
     tab = 'care';
   }
   persist();
@@ -745,10 +748,10 @@ function doAction(action: string, target: HTMLElement): void {
       setSheet(false);
       return;
     case 'save-name':
-      startGame(state.season);
+      startGame();
       return;
     case 'start-game':
-      startGame(pick.season, pick.species);
+      startGame(pick.species);
       return;
     case 'close-modal':
       closeModal();
@@ -772,19 +775,14 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-pick-season], [data-species], [data-album-mode]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-species], [data-album-mode]');
   if (!target) return;
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;
-  if (target.dataset.pickSeason || target.dataset.species) {
+  if (target.dataset.species) {
     const nameEl = document.getElementById('tree-name');
     const name = nameEl instanceof HTMLInputElement ? nameEl.value : '世界之樹';
-    if (target.dataset.pickSeason) {
-      const season = target.dataset.pickSeason as SeasonId;
-      pick = { season, species: speciesForSeason(season)[0]!.id };
-    } else {
-      pick = { ...pick, species: target.dataset.species as SpeciesId };
-    }
+    pick = { species: target.dataset.species as SpeciesId };
     updateModal(startModal(name, meta, false, pick));
     return;
   }
@@ -841,7 +839,7 @@ document.addEventListener('click', (event) => {
 });
 
 document.getElementById('modal')?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && document.activeElement === document.getElementById('tree-name') && state.started && !state.over) startGame(state.season);
+  if (event.key === 'Enter' && document.activeElement === document.getElementById('tree-name') && state.started && !state.over) startGame();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -864,6 +862,8 @@ export interface DevApi {
   todayEvents: () => WeatherEventId[];
   countdown: () => Countdown | null;
   advanceDay: () => void;
+  /** v14: settle `n` nights in a row (樹齡 / milestone testing). */
+  advanceDays: (n: number) => void;
   setStat: (key: 'health' | 'moisture' | 'nutrients' | 'resist', value: number) => void;
   triggerPest: () => void;
   /** v13: 倒塌 count and the 青年樹 wind unlock. */
@@ -907,6 +907,15 @@ if (DEV_PANEL) {
       if (state.over) return;
       const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now());
       showReport(report);
+      syncWarningWater();
+    },
+    advanceDays: (n) => {
+      if (state.over) return;
+      const all: CatchupReport[] = [];
+      for (let i = 0; i < n && !state.over; i++) all.push(advanceVirtualDay(state, today(), eventsFor(today()), meta, Date.now()));
+      const last = all[all.length - 1];
+      if (!last) return;
+      showReport({ ...last, daysPassed: all.length, messages: all.flatMap((r) => r.messages), animals: all.flatMap((r) => r.animals), settlements: all.flatMap((r) => r.settlements), milestones: all.flatMap((r) => r.milestones) });
       syncWarningWater();
     },
     setStat: (key, value) => {

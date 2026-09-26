@@ -1,8 +1,6 @@
-import type { SeasonId } from '../balance';
-
 /**
- * 9 tree species, 3 per season. v8: each species has its own season target = its real-world record height
- * rounded to the nearest 10 m (see `targetM`). Records checked 2026-09 against the sources listed.
+ * 9 tree species. Each has its own 紀錄高度 R = its real-world record height rounded to the nearest 10 m (see
+ * `targetM`); v14 growth approaches R (no seasons). Records checked 2026-09 against the sources listed.
  */
 export type SpeciesId = 'camphor' | 'cotton' | 'banyan' | 'metasequoia' | 'ginkgo' | 'deodar' | 'redwood' | 'eucalyptus' | 'douglas';
 
@@ -11,7 +9,6 @@ export type TreeForm = 'round' | 'tiered' | 'banyan' | 'narrowCone' | 'fan' | 'd
 
 export interface SpeciesDef {
   id: SpeciesId;
-  season: SeasonId;
   name: string;
   english: string;
   scientific: string;
@@ -19,7 +16,7 @@ export interface SpeciesDef {
   typicalM: string;
   /** Tallest reliably recorded height (m) — the species' real-world record. */
   maxM: number;
-  /** Season target (m) = record height rounded to the nearest 10 m. */
+  /** 紀錄高度 R (m) = record height rounded to the nearest 10 m (v14 growth curve target). */
   targetM: number;
   /** Note on the record (where / which tree). */
   record: string;
@@ -31,13 +28,12 @@ export interface SpeciesDef {
 }
 
 export const STAGE_NAMES = ['幼苗', '小樹', '青年樹', '成年樹', '巨樹'] as const;
-/** Stage thresholds as a share of the season's target height. */
+/** Stage thresholds as a share of the species' 紀錄高度 R. */
 export const STAGE_SHARES = [0, 0.025, 0.1, 0.4, 0.85] as const;
 
 export const SPECIES: SpeciesDef[] = [
   {
     id: 'camphor',
-    season: 's3',
     name: '樟樹',
     english: 'Camphor tree',
     scientific: 'Camphora officinarum（Cinnamomum camphora）',
@@ -52,7 +48,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'cotton',
-    season: 's3',
     name: '木棉',
     english: 'Red silk-cotton tree',
     scientific: 'Bombax ceiba',
@@ -67,7 +62,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'banyan',
-    season: 's3',
     name: '細葉榕',
     english: 'Chinese banyan',
     scientific: 'Ficus microcarpa',
@@ -82,7 +76,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'metasequoia',
-    season: 's6',
     name: '水杉',
     english: 'Dawn redwood',
     scientific: 'Metasequoia glyptostroboides',
@@ -97,7 +90,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'ginkgo',
-    season: 's6',
     name: '銀杏',
     english: 'Ginkgo',
     scientific: 'Ginkgo biloba',
@@ -112,7 +104,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'deodar',
-    season: 's6',
     name: '雪松',
     english: 'Deodar cedar',
     scientific: 'Cedrus deodara',
@@ -127,7 +118,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'redwood',
-    season: 's12',
     name: '北美紅杉',
     english: 'Coast redwood',
     scientific: 'Sequoia sempervirens',
@@ -142,7 +132,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'eucalyptus',
-    season: 's12',
     name: '杏仁桉',
     english: 'Mountain ash',
     scientific: 'Eucalyptus regnans',
@@ -157,7 +146,6 @@ export const SPECIES: SpeciesDef[] = [
   },
   {
     id: 'douglas',
-    season: 's12',
     name: '花旗松',
     english: 'Coast Douglas-fir',
     scientific: 'Pseudotsuga menziesii',
@@ -176,15 +164,12 @@ export function speciesDef(id: SpeciesId | string | undefined): SpeciesDef {
   return SPECIES.find((s) => s.id === id) ?? SPECIES[0]!;
 }
 
-export function speciesForSeason(season: SeasonId): SpeciesDef[] {
-  return SPECIES.filter((s) => s.season === season);
+/** Default pick in the planting screen. */
+export function defaultSpecies(): SpeciesId {
+  return SPECIES[0]!.id;
 }
 
-export function defaultSpecies(season: SeasonId): SpeciesId {
-  return speciesForSeason(season)[0]!.id;
-}
-
-/** Season target (cm) for a species: its record height rounded to the nearest 10 m. */
+/** 紀錄高度 R (cm) for a species: its record height rounded to the nearest 10 m. */
 export function speciesTargetCm(id: SpeciesId | string | undefined): number {
   return speciesDef(id).targetM * 100;
 }
@@ -194,7 +179,7 @@ export function roundTo10(m: number): number {
   return Math.round(m / 10) * 10;
 }
 
-/** Growth stage index 0–4 for a height, relative to the season target. */
+/** Growth stage index 0–4 for a height, relative to R. */
 export function stageIndexFor(heightCm: number, targetCm: number): number {
   let idx = 0;
   STAGE_SHARES.forEach((share, i) => {

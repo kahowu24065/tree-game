@@ -120,23 +120,34 @@ export const MIN_HEIGHT_CM = 5;
 /** 碳吸收量 (公斤 CO₂／年) = CARBON_K × (高度 G, 米)^1.5. 20 米 ≈ 31 kg, 100 米 ≈ 350 kg. */
 export const CARBON_K = 0.35;
 
-/* ---------- Seasons & badges ---------- */
-/** v8: the target height is per species (record height rounded to 10 m) — see speciesTargetCm in data/species.ts. */
-export type SeasonId = 's3' | 's6' | 's12';
-export interface SeasonDef {
-  id: SeasonId;
-  label: string;
-  sub: string;
-  days: number;
-  tier: 1 | 2 | 3;
-}
-export const SEASONS: SeasonDef[] = [
-  { id: 's3', label: '3 個月・速成局', sub: '目標＝樹種真實紀錄（細葉榕 30、樟樹 50、木棉 60 米），解鎖一級徽章', days: 90, tier: 1 },
-  { id: 's6', label: '6 個月・標準局', sub: '目標＝樹種真實紀錄（水杉 50、銀杏 60、雪松 60 米），解鎖二級徽章', days: 180, tier: 2 },
-  { id: 's12', label: '1 年・史詩局', sub: '目標＝樹種真實紀錄（杏仁桉 100、花旗松 100、紅杉 120 米），解鎖三級徽章', days: 365, tier: 3 },
+/* ---------- v14 生長曲線、樹齡里程碑、徽章 ---------- */
+/**
+ * v14 (no seasons): every species grows towards its 紀錄高度 R (= speciesTargetCm: the real-world record height rounded
+ * to 10 m). base = max((R − h) × (1 − e^(−1/τ)), GROWTH_FLOOR_SHARE × R) per night, then × H_mult × 天氣加成 as before.
+ * With ×1 every night: ~26% of R at 30 days, ~59% at 90, ~84% at 182, ~97% at 365, then ~7% of R a year.
+ */
+export const GROWTH_TAU_DAYS = 100;
+/** Minimum base growth per night as a share of R (also × H_mult × 天氣加成). No hard cap. */
+export const GROWTH_FLOOR_SHARE = 0.0002;
+
+export type AgeMilestoneId = 'm30' | 'm90' | 'm182' | 'm365' | 'm730' | 'm1095';
+export type MilestoneId = AgeMilestoneId | 'record';
+export type MilestoneTier = 'gold' | 'silver' | 'bronze';
+/** 樹齡里程碑 (age = nights settled since planting). `perk`: the old perk badge (一級／二級／三級) it also grants. */
+export const AGE_MILESTONES: readonly { id: AgeMilestoneId; days: number; label: string; perk?: 1 | 2 | 3 }[] = [
+  { id: 'm30', days: 30, label: '1個月' },
+  { id: 'm90', days: 90, label: '3個月', perk: 1 },
+  { id: 'm182', days: 182, label: '半年', perk: 2 },
+  { id: 'm365', days: 365, label: '1年', perk: 3 },
+  { id: 'm730', days: 730, label: '2年' },
+  { id: 'm1095', days: 1095, label: '3年' },
 ];
-/** Tier N badge needs this many days survived (used for completion and the fail-safe). */
-export const TIER_DAYS: Record<1 | 2 | 3, number> = { 1: 90, 2: 180, 3: 365 };
+export const RECORD_MILESTONE = { id: 'record' as const, label: '超越世界紀錄' };
+/** Tier by p = h/R against the expected e(t) = 1 − e^(−t/τ): 金 ≥ 0.98·e(t), 銀 ≥ 0.88·e(t), else 銅. */
+export const MILESTONE_TIER_SHARE = { gold: 0.98, silver: 0.88 } as const;
+export const MILESTONE_TIER_LABEL: Record<MilestoneTier, string> = { gold: '金', silver: '銀', bronze: '銅' };
+
+/** Perk badges (kept from the season era): v14 grants them at the 3個月／半年／1年 age milestones. */
 export const BADGES: Record<1 | 2 | 3, { name: string; perk: string }> = {
   1: { name: '一級徽章・新芽', perk: '以後每局：每日水分流失減少 10%' },
   2: { name: '二級徽章・雨林', perk: '以後每局：暴雨時有 30% 機率將一半水分轉為養分' },
@@ -162,7 +173,7 @@ export const PREPS = {
 export type PrepId = keyof typeof PREPS;
 
 /* ---------- 抗風力 ---------- */
-/** 加固 raises R up to this cap (no resource spending: each season already has a fixed target height). */
+/** 加固 raises R up to this cap (no resource spending). */
 export const R_MAX = 100;
 /** v13: the day after a collapse every 加固 item gives this many times its R. */
 export const COLLAPSE_REINFORCE_MULT = 2;

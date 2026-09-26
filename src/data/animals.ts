@@ -1,4 +1,3 @@
-import type { SeasonId } from '../balance';
 
 /**
  * 圖鑑動物：香港／亞洲常見或有代表性嘅雀鳥、哺乳類、昆蟲、爬蟲同兩棲類。
@@ -71,8 +70,8 @@ export interface AnimalDef {
   weather?: WeatherNeed;
   /** Real calendar months (1-12) it can first be found. */
   months?: number[];
-  /** Minimum season length (e.g. only in 6-month or 1-year games). */
-  season?: SeasonId;
+  /** v14: minimum tree age in nights (replaces the old 6-month / 1-year season gates: 90 / 182). */
+  minAgeDays?: number;
   /** Only out at night. */
   night?: boolean;
   /** Where crawlers/climbers sit. */
@@ -121,8 +120,8 @@ export const ANIMALS: AnimalDef[] = [
   { id: 'cockatoo', name: '小葵花鳳頭鸚鵡', category: 'bird', motion: 'flock', group: [2, 5], epithet: '黃冠白鸚', about: '極度瀕危，但香港市區有穩定野生群，比原生地仲多。', minM: 18, minHealth: 72, real: { len: 0.33, span: 0.7 }, look: { kind: 'bird', c: ['#fbfbf4', '#f6f2e0', '#fbfbf4', '#2a2a2a', '#f2eee0', '#f6d23a'], size: 1.4, f: ['crest', 'bigCrest', 'hooked'] } },
   { id: 'spoonbill', name: '黑臉琵鷺', category: 'bird', motion: 'wade', group: [2, 4], epithet: '黑臉飯匙嘴', about: '瀕危候鳥，每年秋冬嚟后海灣過冬，嘴似飯匙。', minM: 20, minHealth: 70, months: WINTER, real: { len: 0.75, span: 1.15 }, look: { kind: 'bird', c: ['#fbfbf6', '#ffffff', '#fbfbf6', '#1a1a1a', '#f2f2ec'], size: 1.6, f: ['longLegs', 'longNeck', 'spoon'] } },
   { id: 'kite', name: '黑鳶', category: 'bird', motion: 'soar', group: [1, 2], epithet: '維港上空盤旋', about: '俗稱「麻鷹」，張開翼喺海港上空慢慢盤旋。', minM: 25, minHealth: 60, real: { len: 0.6, span: 1.5 }, look: { kind: 'bird', c: ['#6a4a32', '#8a6a4a', '#7a5a40', '#2a2a2a', '#5a3e2a'], size: 2.2, f: ['hooked', 'forkTail', 'soar'] } },
-  { id: 'serpenteagle', name: '蛇鵰', category: 'bird', motion: 'soar', group: [1, 1], epithet: '郊野之王', about: '喺郊野上空盤旋，一邊叫一邊搵蛇食。', minM: 40, minHealth: 70, season: 's6', real: { len: 0.7, span: 1.6 }, look: { kind: 'bird', c: ['#4a3a2a', '#c8a878', '#3a2e24', '#e8c040', '#3e3024'], size: 2.6, f: ['hooked', 'soar', 'crest'] } },
-  { id: 'seaeagle', name: '白腹海鵰', category: 'bird', motion: 'soar', group: [1, 1], epithet: '海岸霸主', about: '香港最大嘅猛禽，喺海岸高樹同懸崖築巢。', minM: 60, minHealth: 75, season: 's12', real: { len: 0.8, span: 2 }, look: { kind: 'bird', c: ['#f4f4f0', '#ffffff', '#f4f4f0', '#8a8a92', '#5a5e66'], size: 3, f: ['hooked', 'soar'] } },
+  { id: 'serpenteagle', name: '蛇鵰', category: 'bird', motion: 'soar', group: [1, 1], epithet: '郊野之王', about: '喺郊野上空盤旋，一邊叫一邊搵蛇食。', minM: 40, minHealth: 70, minAgeDays: 90, real: { len: 0.7, span: 1.6 }, look: { kind: 'bird', c: ['#4a3a2a', '#c8a878', '#3a2e24', '#e8c040', '#3e3024'], size: 2.6, f: ['hooked', 'soar', 'crest'] } },
+  { id: 'seaeagle', name: '白腹海鵰', category: 'bird', motion: 'soar', group: [1, 1], epithet: '海岸霸主', about: '香港最大嘅猛禽，喺海岸高樹同懸崖築巢。', minM: 60, minHealth: 75, minAgeDays: 182, real: { len: 0.8, span: 2 }, look: { kind: 'bird', c: ['#f4f4f0', '#ffffff', '#f4f4f0', '#8a8a92', '#5a5e66'], size: 3, f: ['hooked', 'soar'] } },
 
   /* ---------- 哺乳類 ---------- */
   { id: 'squirrel', name: '赤腹松鼠', category: 'mammal', motion: 'climb', group: [1, 2], epithet: '赤腹一閃', about: '郊野同公園都有，尾巴比身體還靈活。', minM: 2, minHealth: 55, spot: 'trunk', real: { len: 0.4 }, look: { kind: 'squirrel', c: ['#8e4f2c', '#c4623a', '#7d4526'], size: 1 } },
@@ -135,17 +134,17 @@ export const ANIMALS: AnimalDef[] = [
   { id: 'macaque', name: '獼猴', category: 'mammal', motion: 'walk', group: [3, 6], epithet: '猴群出沒', about: '金山一帶成群生活，有猴王帶隊，千祈唔好餵食。', minM: 16, minHealth: 65, real: { len: 0.75 }, look: { kind: 'monkey', c: ['#a88a62', '#c8aa82', '#e8a898'], size: 1.2 } },
   { id: 'leopardcat', name: '豹貓', category: 'mammal', motion: 'walk', group: [1, 1], epithet: '郊野細花豹', about: '同家貓差唔多大，身上有豹紋，夜間捕獵。', minM: 20, minHealth: 72, night: true, real: { len: 0.9 }, look: { kind: 'quad', c: ['#c8a060', '#f0e0c0', '#c8a060', '#2a2218'], size: 0.8, f: ['spots', 'longTail', 'catEars'] } },
   { id: 'cattle', name: '黃牛', category: 'mammal', motion: 'walk', group: [2, 4], epithet: '西貢牛群', about: '昔日農耕牛嘅後代，而家喺郊野自由自在咁食草。', minM: 22, minHealth: 62, real: { len: 2.3 }, look: { kind: 'quad', c: ['#b8783a', '#d8a870', '#a86a30', '#e8e0cc'], size: 2.2, f: ['horns', 'stocky', 'longLegs', 'cowTail'] } },
-  { id: 'buffalo', name: '水牛', category: 'mammal', motion: 'walk', group: [2, 3], epithet: '大嶼山泥浴', about: '大嶼山濕地嘅水牛群，鍾意浸泥漿消暑。', minM: 30, minHealth: 65, season: 's6', real: { len: 2.8 }, look: { kind: 'quad', c: ['#3a3634', '#4a4644', '#2e2a28', '#8a8478'], size: 2.5, f: ['bigHorns', 'stocky', 'longLegs', 'cowTail'] } },
-  { id: 'smallcivet', name: '小靈貓', category: 'mammal', motion: 'walk', group: [1, 1], epithet: '環紋長尾', about: '尾巴有一圈圈黑環，夜間喺地面覓食。', minM: 35, minHealth: 70, night: true, season: 's6', real: { len: 0.9 }, look: { kind: 'quad', c: ['#b8a078', '#e0d0b0', '#b8a078', '#2a2622'], size: 0.8, f: ['spots', 'ringTail', 'longTail', 'snout'] } },
-  { id: 'pangolin', name: '穿山甲', category: 'mammal', motion: 'walk', group: [1, 1], epithet: '一身鱗甲', about: '極度瀕危，全身鱗片，受驚會捲成一個球。', minM: 45, minHealth: 85, night: true, season: 's6', real: { len: 0.8 }, look: { kind: 'quad', c: ['#8a6a4a', '#b89a78', '#6a4e36', '#5a4432'], size: 0.9, f: ['scales', 'longTail', 'snout', 'short'] } },
-  { id: 'otter', name: '歐亞水獺', category: 'mammal', motion: 'walk', group: [1, 2], epithet: '米埔稀客', about: '香港極罕見，只喺后海灣一帶有少量紀錄。', minM: 70, minHealth: 85, season: 's12', real: { len: 1.1 }, look: { kind: 'quad', c: ['#5a4232', '#c8b8a0', '#5a4232', '#2a2a2a'], size: 1, f: ['short', 'longTail', 'snout'] } },
+  { id: 'buffalo', name: '水牛', category: 'mammal', motion: 'walk', group: [2, 3], epithet: '大嶼山泥浴', about: '大嶼山濕地嘅水牛群，鍾意浸泥漿消暑。', minM: 30, minHealth: 65, minAgeDays: 90, real: { len: 2.8 }, look: { kind: 'quad', c: ['#3a3634', '#4a4644', '#2e2a28', '#8a8478'], size: 2.5, f: ['bigHorns', 'stocky', 'longLegs', 'cowTail'] } },
+  { id: 'smallcivet', name: '小靈貓', category: 'mammal', motion: 'walk', group: [1, 1], epithet: '環紋長尾', about: '尾巴有一圈圈黑環，夜間喺地面覓食。', minM: 35, minHealth: 70, night: true, minAgeDays: 90, real: { len: 0.9 }, look: { kind: 'quad', c: ['#b8a078', '#e0d0b0', '#b8a078', '#2a2622'], size: 0.8, f: ['spots', 'ringTail', 'longTail', 'snout'] } },
+  { id: 'pangolin', name: '穿山甲', category: 'mammal', motion: 'walk', group: [1, 1], epithet: '一身鱗甲', about: '極度瀕危，全身鱗片，受驚會捲成一個球。', minM: 45, minHealth: 85, night: true, minAgeDays: 90, real: { len: 0.8 }, look: { kind: 'quad', c: ['#8a6a4a', '#b89a78', '#6a4e36', '#5a4432'], size: 0.9, f: ['scales', 'longTail', 'snout', 'short'] } },
+  { id: 'otter', name: '歐亞水獺', category: 'mammal', motion: 'walk', group: [1, 2], epithet: '米埔稀客', about: '香港極罕見，只喺后海灣一帶有少量紀錄。', minM: 70, minHealth: 85, minAgeDays: 182, real: { len: 1.1 }, look: { kind: 'quad', c: ['#5a4232', '#c8b8a0', '#5a4232', '#2a2a2a'], size: 1, f: ['short', 'longTail', 'snout'] } },
 
   /* ---------- 蝴蝶 ---------- */
   { id: 'butterfly', name: '菜粉蝶', category: 'butterfly', motion: 'flutter', group: [1, 3], epithet: '白翼點綠', about: '園圃常見的白蝴蝶，喜歡停在新葉上。', minM: 0.15, minHealth: 40, real: { len: 0.025, span: 0.05 }, look: { kind: 'butterfly', c: ['#fbfbf2', '#9ccf6a', '#333333'], size: 0.8 } },
   { id: 'plaintiger', name: '金斑蝶', category: 'butterfly', motion: 'flutter', group: [2, 4], epithet: '橙翼黑邊', about: '橙色翅膀帶黑邊白點，身體有毒，雀鳥唔敢食。', minM: 2, minHealth: 50, real: { len: 0.035, span: 0.07 }, look: { kind: 'butterfly', c: ['#f08a2a', '#1a1a1a', '#222222', '#ffffff'], size: 1 } },
   { id: 'bluebottle', name: '青鳳蝶', category: 'butterfly', motion: 'flutter', group: [1, 2], epithet: '青藍一條帶', about: '黑翅中間有一條半透明青藍色帶，飛得好快。', minM: 4, minHealth: 55, real: { len: 0.035, span: 0.08 }, look: { kind: 'butterfly', c: ['#1a1a1e', '#3ac0d8', '#222222'], size: 1.05, f: ['tails'] } },
   { id: 'birdwing', name: '裳鳳蝶', category: 'butterfly', motion: 'flutter', group: [1, 1], epithet: '金裳大蝶', about: '香港最大嘅蝴蝶，受保護，後翅金黃色。', minM: 18, minHealth: 75, months: SPRING_SUMMER, real: { len: 0.06, span: 0.15 }, look: { kind: 'butterfly', c: ['#141414', '#f2c81a', '#1a1a1a'], size: 1.7 } },
-  { id: 'atlasmoth', name: '皇蛾', category: 'butterfly', motion: 'flutter', group: [1, 1], epithet: '蛇頭翅尖', about: '世界最大嘅蛾之一，翅尖似蛇頭，夜晚先出現。', minM: 28, minHealth: 72, night: true, season: 's6', real: { len: 0.08, span: 0.25 }, look: { kind: 'butterfly', c: ['#a8502a', '#f2dcb0', '#6a3a22', '#ffffff'], size: 2, f: ['moth'] } },
+  { id: 'atlasmoth', name: '皇蛾', category: 'butterfly', motion: 'flutter', group: [1, 1], epithet: '蛇頭翅尖', about: '世界最大嘅蛾之一，翅尖似蛇頭，夜晚先出現。', minM: 28, minHealth: 72, night: true, minAgeDays: 90, real: { len: 0.08, span: 0.25 }, look: { kind: 'butterfly', c: ['#a8502a', '#f2dcb0', '#6a3a22', '#ffffff'], size: 2, f: ['moth'] } },
 
   /* ---------- 昆蟲 ---------- */
   { id: 'ladybug', name: '七星瓢蟲', category: 'insect', motion: 'crawl', group: [1, 2], epithet: '葉上紅點', about: '紅殼黑點，會幫樹食蚜蟲。', minM: 0.3, minHealth: 45, spot: 'leaf', real: { len: 0.007 }, look: { kind: 'beetle', c: ['#d8322b', '#1a1a1a'], size: 0.7, f: ['dots'] } },
@@ -161,8 +160,8 @@ export const ANIMALS: AnimalDef[] = [
   { id: 'lizard', name: '變色樹蜥', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '曬太陽變紅頭', about: '天氣熱就喺樹幹曬太陽，雄性繁殖期頭頸會變紅。', minM: 1.5, minHealth: 50, weather: 'hot', spot: 'trunk', real: { len: 0.35 }, look: { kind: 'lizard', c: ['#9a8a5a', '#c84a2a', '#6a5e3e'], size: 1 } },
   { id: 'gecko', name: '壁虎', category: 'reptile', motion: 'crawl', group: [1, 2], epithet: '夜燈下的獵手', about: '夜晚喺燈光附近捉飛蟲，腳底有吸盤。', minM: 7, minHealth: 55, night: true, spot: 'trunk', real: { len: 0.12 }, look: { kind: 'lizard', c: ['#c8b89a', '#e8dcc8', '#a89878'], size: 0.7, f: ['gecko'] } },
   { id: 'pitviper', name: '竹葉青', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '綠色伏擊者', about: '全身翠綠、尾巴紅色，有毒，喺枝上靜靜等獵物。', minM: 11, minHealth: 62, spot: 'leaf', real: { len: 0.7 }, look: { kind: 'snake', c: ['#5ac03a', '#d8402a', '#f0e070'], size: 0.8 } },
-  { id: 'python', name: '緬甸蟒', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '郊野巨蟒', about: '香港最大嘅蛇，受保護，無毒但力大無窮。', minM: 38, minHealth: 75, season: 's6', spot: 'ground', real: { len: 3.5 }, look: { kind: 'snake', c: ['#a8905a', '#5a4430', '#d8c898'], size: 2.2, f: ['blotch'] } },
-  { id: 'turtle', name: '三線閉殼龜', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '金錢龜', about: '極度瀕危，殼上有三條黑線，喺山溪附近生活。', minM: 50, minHealth: 80, season: 's12', spot: 'ground', real: { len: 0.2 }, look: { kind: 'turtle', c: ['#6a4a2a', '#1a1a1a', '#e8c040'], size: 1 } },
+  { id: 'python', name: '緬甸蟒', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '郊野巨蟒', about: '香港最大嘅蛇，受保護，無毒但力大無窮。', minM: 38, minHealth: 75, minAgeDays: 90, spot: 'ground', real: { len: 3.5 }, look: { kind: 'snake', c: ['#a8905a', '#5a4430', '#d8c898'], size: 2.2, f: ['blotch'] } },
+  { id: 'turtle', name: '三線閉殼龜', category: 'reptile', motion: 'crawl', group: [1, 1], epithet: '金錢龜', about: '極度瀕危，殼上有三條黑線，喺山溪附近生活。', minM: 50, minHealth: 80, minAgeDays: 182, spot: 'ground', real: { len: 0.2 }, look: { kind: 'turtle', c: ['#6a4a2a', '#1a1a1a', '#e8c040'], size: 1 } },
 
   /* ---------- 兩棲類 ---------- */
   { id: 'toad', name: '黑眶蟾蜍', category: 'amphibian', motion: 'hop', group: [1, 3], epithet: '雨夜咯咯', about: '落雨時喺草地跳出嚟，眼睛周圍有黑框。', minM: 2, minHealth: 52, weather: 'rain', real: { len: 0.08 }, look: { kind: 'frog', c: ['#8a6a42', '#c8a878', '#2a2018'], size: 0.8, f: ['warty'] } },
@@ -192,7 +191,6 @@ const MONTH_TEXT = (months: number[]): string => {
   return `${Math.min(...months)}–${Math.max(...months)} 月`;
 };
 
-const SEASON_TEXT: Record<SeasonId, string> = { s3: '', s6: '6 個月或以上賽季', s12: '1 年賽季' };
 
 /** Human-readable unlock conditions, e.g. 「12 米・健康 70・雨天」. */
 export function unlockHint(a: AnimalDef): string {
@@ -201,7 +199,7 @@ export function unlockHint(a: AnimalDef): string {
   if (a.weather === 'rain') parts.push('落雨日');
   if (a.needStorms) parts.push(`捱過 ${a.needStorms} 場風暴`);
   if (a.months) parts.push(MONTH_TEXT(a.months));
-  if (a.season && a.season !== 's3') parts.push(SEASON_TEXT[a.season]);
+  if (a.minAgeDays) parts.push(`樹齡 ${a.minAgeDays === 182 ? '半年' : a.minAgeDays === 90 ? '3 個月' : `${a.minAgeDays} 日`}`);
   if (a.night) parts.push('夜行');
   return parts.join('・');
 }

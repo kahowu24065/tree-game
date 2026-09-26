@@ -1,4 +1,4 @@
-/** Game state changes: care actions, nightly settlement, catch-up, dying, season end. */
+/** Game state changes: care actions, nightly settlement, catch-up, dying, age milestones (v14: no seasons). */
 import {
   CARE,
   COLLAPSE_HEIGHT_LOSS,
@@ -33,8 +33,11 @@ import {
   W_SATURATED,
   N_DAILY_USE,
   WEATHER_EVENTS,
+  AGE_MILESTONES,
+  GROWTH_FLOOR_SHARE,
+  MILESTONE_TIER_LABEL,
+  RECORD_MILESTONE,
   type PrepId,
-  type SeasonId,
   type WeatherEventId,
 } from './balance';
 import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
@@ -47,7 +50,6 @@ import {
   clamp100,
   clampW,
   deltaG,
-  earnedTiers,
   emergencyBonus,
   finalDamage,
   hMult,
@@ -57,15 +59,15 @@ import {
   nightWater,
   pickEvent,
   rainAdd,
+  milestoneTier,
   rollFor,
-  seasonDef,
   topInCategory,
   waterAdd,
   waterDeath,
   wTier,
   type NightWater,
 } from './rules';
-import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, Reinforcement, Settlement } from './types';
+import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement } from './types';
 import { formatHeight } from './util';
 
 export function freshCare(date: string): Care {
@@ -94,14 +96,19 @@ export function addLog(state: GameState, date: string, text: string, meta: LogMe
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const sgn = (v: number) => `${v >= 0 ? '+' : ''}${r1(v)}`;
 
-export function createGame(today: string, opts: { season?: SeasonId; name?: string; legacyBonus?: number; species?: SpeciesId } = {}): GameState {
+/** Current save schema (rules version); see storage.migrateV14. */
+export const RULES_VERSION = 14;
+
+export function createGame(today: string, opts: { name?: string; legacyBonus?: number; species?: SpeciesId } = {}): GameState {
   const legacyBonus = opts.legacyBonus ?? 0;
   const state: GameState = {
     version: 2,
+    rules: RULES_VERSION,
     started: false,
     treeName: opts.name ?? '世界之樹',
-    season: opts.season ?? 's3',
-    species: opts.species && speciesDef(opts.species).season === (opts.season ?? 's3') ? opts.species : defaultSpecies(opts.season ?? 's3'),
+    species: opts.species ? speciesDef(opts.species).id : defaultSpecies(),
+    ageDays: 0,
+    milestones: {},
     createdOn: today,
     lastSeenDate: today,
     virtualToday: null,
@@ -128,7 +135,6 @@ export function createGame(today: string, opts: { season?: SeasonId; name?: stri
     morningNote: null,
     dying: null,
     over: null,
-    completed: null,
     passedTargetOn: null,
     targetCm: 0,
     lastSettlement: null,
@@ -200,7 +206,8 @@ export interface SettleResult {
   messages: string[];
   died: boolean;
   revived: boolean;
-  completed: boolean;
+  /** v14 milestones reached tonight (樹齡／超越世界紀錄). */
+  milestones: MilestoneAward[];
 }
 
 /* ---------- v12 water: instant warnings, the night's plan (shared by settlement and the 今晚預計 preview) ---------- */
@@ -368,6 +375,28 @@ export interface NightPlan {
   waterDeath: boolean;
   hAfter: number;
   dH: number;
+  /** v14 tonight's growth (the same numbers settleDay applies). */
+  growth: GrowthPlan;
+}
+
+/** v14 生長: base from the current height (curve towards R + floor) × H_mult (after tonight's H) × 天氣加成. */
+export interface GrowthPlan {
+  heightBefore: number;
+  /** 紀錄高度 R (cm). */
+  recordCm: number;
+  /** 每日基本生長 (cm, rounded to 0.1) before multipliers. */
+  base: number;
+  /** The 0.0002 × R floor decided tonight's base. */
+  floor: boolean;
+  mult: number;
+  bonus: number;
+  /** 捱過風暴 ×1.3 applies tonight. */
+  survived: boolean;
+  dG: number;
+  /** Height after growth (min 5 cm), before any 倒塌. */
+  grownCm: number;
+  /** Height after the night including a non-fatal 倒塌 (−20%). */
+  heightAfter: number;
 }
 
 /** Stage index needed for 風災 (青年樹). */
@@ -433,6 +462,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const pest = state.pest.active ? PEST_DAMAGE : 0;
   const death = waterDeath(water.wAfter);
   const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, state.health + tier.score + nScore + weather + bonus - pest)));
+  const growth = planGrowth(state, event, wind, hAfter, collapse);
   return {
     event,
     hBefore: state.health,
@@ -460,7 +490,23 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
     waterDeath: death,
     hAfter,
     dH: r1(hAfter - state.health),
+    growth,
   };
+}
+
+/** v14: tonight's growth from the CURRENT height (after earlier nights and collapses). 捱過風暴 ×1.3 only for wind, only after 青年樹. */
+function planGrowth(state: GameState, event: WeatherEventId, wind: WindHit | null, hAfter: number, collapse: CollapsePlan | null): GrowthPlan {
+  const mult = hMult(hAfter);
+  const windDmg = wind ? -wind.score : 0;
+  const survived = Boolean(wind && !wind.locked && windDmg <= wind.base * STORM_SURVIVE_SHARE);
+  const bonus = Math.round(WEATHER_EVENTS[event].growth * (survived ? STORM_SURVIVE_GROWTH : 1) * (state.eventBonus || 1) * 100) / 100;
+  const recordCm = speciesTargetCm(state.species);
+  const raw = baseDailyGrowth(recordCm, state.heightCm);
+  const base = r1(raw);
+  const dG = deltaG(base, mult, bonus);
+  const grownCm = Math.max(5, r1(state.heightCm + dG));
+  const heightAfter = collapse && (!collapse.fatal || collapse.revive) ? Math.max(5, r1(grownCm * (1 - COLLAPSE_HEIGHT_LOSS))) : grownCm;
+  return { heightBefore: state.heightCm, recordCm, base, floor: raw <= GROWTH_FLOOR_SHARE * recordCm + 1e-9, mult, bonus, survived, dG, grownCm, heightAfter };
 }
 
 /**
@@ -476,11 +522,10 @@ export function previewNight(state: GameState, date: string, events: readonly We
 /**
  * Settle one day (設計書 二、三，v12 水分):
  * warning water not yet applied → the night's water change → H_new = H_old + W_score + N_score − 天氣基礎傷害 × (1 − R/100) − 蟲害;
- * ΔG = 目標/日數 × H_mult × 天氣獎勵加成. Several events never stack — only the one with the highest base damage applies.
+ * ΔG = v14 基本生長 max((R − h) × (1 − e^(−1/100)), 0.0002R) × H_mult × 天氣獎勵加成 (planGrowth, shared with 今晚預計).
  */
 export function settleDay(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null, nowMs: number): SettleResult {
   const perks = perksFrom(meta);
-  const season = seasonDef(state.season);
   const notes: string[] = [];
   const messages: string[] = [];
   // Warnings seen that day but never applied (app closed, or forecast-only days) hit first.
@@ -520,17 +565,12 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const nf = plan.nScore;
   state.health = plan.hAfter;
 
-  // Growth. 捱過風暴 ×1.3 only for wind, only after 青年樹.
-  const mult = hMult(state.health);
+  // Growth (v14 curve towards R + floor), computed by planNight so 今晚預計 shows the same numbers.
+  const { mult, bonus, base, dG, survived } = plan.growth;
   const w = plan.wind;
   const windDmg = w ? -w.score : 0;
-  const survived = Boolean(w && !w.locked && windDmg <= w.base * STORM_SURVIVE_SHARE);
-  const bonus = Math.round(def.growth * (survived ? STORM_SURVIVE_GROWTH : 1) * (state.eventBonus || 1) * 100) / 100;
-  const target = speciesTargetCm(state.species);
-  const base = r1(baseDailyGrowth(season, target));
-  const dG = deltaG(base, mult, bonus);
   const beforeCm = state.heightCm;
-  state.heightCm = Math.max(5, r1(state.heightCm + dG));
+  state.heightCm = plan.growth.grownCm;
 
   for (const hit of [plan.heat, plan.rain]) {
     if (!hit || hit.handled) continue;
@@ -647,7 +687,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     state.health = 0;
     state.dying = null;
     const days = daysBetween(state.createdOn, date) + 1;
-    state.over = { kind: 'dead', date, tiers: state.completed ? [] : earnedTiers(season.days, days, false), days };
+    state.over = { kind: 'dead', date, tiers: [], days };
     addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time: '' });
   } else if (state.health <= 0) {
     state.health = 0;
@@ -665,8 +705,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
       } else {
         died = true;
         const days = daysBetween(state.createdOn, date) + 1;
-        // Badges already booked at season completion are not awarded twice.
-        state.over = { kind: 'dead', date, tiers: state.completed ? [] : earnedTiers(season.days, days, false), days };
+        // v14: perk badges come with the age milestones (booked while alive), not at death.
+        state.over = { kind: 'dead', date, tiers: [], days };
         addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time: '' });
       }
     }
@@ -719,21 +759,60 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   if (!collapseInfo) noteStage(state, beforeCm, date);
   checkWindUnlock(state, date);
 
-  // The season target is a goal, not a cap: growth carries on by the same formula after it.
-  if (!state.over && !state.passedTargetOn && state.heightCm >= speciesTargetCm(state.species)) {
-    state.passedTargetOn = date;
-    addLog(state, date, `${state.treeName}突破咗 ${formatHeight(speciesTargetCm(state.species))} 嘅目標，繼續長高！`, { kind: 'badge', title: '已突破目標', reward: { text: formatHeight(state.heightCm), tone: 'purple' }, time: '' });
+  // v14 樹齡 and milestones (a tree that died tonight gets none).
+  state.ageDays = (state.ageDays || 0) + 1;
+  const milestones = state.over ? [] : checkMilestones(state, date);
+  return { settlement, messages, died, revived, milestones };
+}
+
+/** v14: the next age milestone not reached yet (null after 3年). */
+export function nextMilestone(state: GameState): (typeof AGE_MILESTONES)[number] | null {
+  return AGE_MILESTONES.find((m) => !state.milestones?.[m.id] && m.days > (state.ageDays || 0)) ?? AGE_MILESTONES.find((m) => !state.milestones?.[m.id]) ?? null;
+}
+
+/** v14 h / R. */
+export function recordShare(state: GameState): number {
+  return state.heightCm / speciesTargetCm(state.species);
+}
+
+/**
+ * v14: award every age milestone the tree has reached (age ≥ days) and 超越世界紀錄 (first time h > R).
+ * Tier from the current h / R against e(milestone day). Idempotent; returns the new awards (they also go to the log).
+ * `retro` = awarded by the save migration.
+ */
+export function checkMilestones(state: GameState, date: string, opts: { retro?: boolean; time?: string; perks?: (1 | 2 | 3)[] } = {}): MilestoneAward[] {
+  state.milestones ??= {};
+  const got: MilestoneAward[] = [];
+  const R = speciesTargetCm(state.species);
+  const share = state.heightCm / R;
+  const time = opts.time ?? '';
+  for (const m of AGE_MILESTONES) {
+    if (state.milestones[m.id] || (state.ageDays || 0) < m.days) continue;
+    const tier = milestoneTier(share, m.days);
+    const perk = m.perk && (!opts.perks || opts.perks.includes(m.perk)) ? m.perk : undefined;
+    const award: MilestoneAward = { id: m.id, tier, date, ageDays: opts.retro ? state.ageDays : m.days, heightCm: state.heightCm, share: r1(share * 1000) / 1000, ...(opts.retro ? { retro: true } : {}), ...(perk ? { perk } : {}) };
+    state.milestones[m.id] = award;
+    got.push(award);
+    addLog(state, date, `${state.treeName}樹齡${m.label}！高 ${formatHeight(state.heightCm)}，係紀錄高度嘅 ${Math.round(share * 100)}%，攞到${MILESTONE_TIER_LABEL[tier]}章。${opts.retro ? '（v14 補發）' : ''}`, {
+      kind: 'badge',
+      title: `樹齡${m.label}`,
+      reward: { text: `${MILESTONE_TIER_LABEL[tier]}章`, tone: 'purple' },
+      time,
+    });
   }
-  let completed = false;
-  if (!state.over && !state.completed) {
-    const days = daysBetween(state.createdOn, date) + 1;
-    if (days >= season.days) {
-      completed = true;
-      state.completed = { date, tiers: earnedTiers(season.days, days, true), days, heightCm: state.heightCm };
-      addLog(state, date, `${season.label}完成！${state.treeName}長到 ${formatHeight(state.heightCm)}，徽章到手。棵樹會繼續長落去。`, { kind: 'badge', title: '賽季完成', reward: { text: '徽章', tone: 'purple' }, time: '' });
-    }
+  if (!state.milestones.record && state.heightCm > R) {
+    const award: MilestoneAward = { id: 'record', tier: null, date, ageDays: state.ageDays || 0, heightCm: state.heightCm, share: r1(share * 1000) / 1000, ...(opts.retro ? { retro: true } : {}) };
+    state.milestones.record = award;
+    state.passedTargetOn ??= date;
+    got.push(award);
+    addLog(state, date, `${state.treeName}長到 ${formatHeight(state.heightCm)}，超越咗${speciesDef(state.species).name}嘅世界紀錄（${formatHeight(R)}）！冇上限，繼續長。`, {
+      kind: 'badge',
+      title: RECORD_MILESTONE.label,
+      reward: { text: formatHeight(state.heightCm), tone: 'purple' },
+      time,
+    });
   }
-  return { settlement, messages, died, revived, completed };
+  return got;
 }
 
 function noteStage(state: GameState, beforeCm: number, date: string, time = ''): string | null {
@@ -936,9 +1015,8 @@ export function visualReinforcement(resist: number, unlocked = true): Reinforcem
 }
 
 const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain', 'thunder', 'typhoon1', 'typhoon8'];
-const SEASON_RANK: Record<SeasonId, number> = { s3: 1, s6: 2, s12: 3 };
 
-/** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and season length. */
+/** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and tree age. */
 export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[] }): string[] {
   const got: string[] = [];
   const meters = state.heightCm / 100;
@@ -955,7 +1033,7 @@ export function refreshUnlocks(state: GameState, opts: { date: string; events?: 
     if (animal.weather === 'rain' && !rain) continue;
     if (animal.weather === 'storm' && state.stormSurvivals < 1) continue;
     if (animal.months && !animal.months.includes(month)) continue;
-    if (animal.season && SEASON_RANK[state.season] < SEASON_RANK[animal.season]) continue;
+    if (animal.minAgeDays && (state.ageDays || 0) < animal.minAgeDays) continue;
     state.animals.push(animal.id);
     got.push(animal.id);
     addLog(state, opts.date, `${animal.name}嚟咗，${animal.about}`, { kind: 'animal', title: '新朋友來訪', reward: { text: '+1 圖鑑', tone: 'purple' } });
@@ -981,6 +1059,8 @@ export interface CatchupReport {
   animals: string[];
   settlements: Settlement[];
   over: boolean;
+  /** v14 milestones reached during these nights. */
+  milestones: MilestoneAward[];
 }
 
 /** Settle every day between the last visit and today. Stops if the game ends. */
@@ -995,6 +1075,7 @@ export function catchUp(
   const heightBefore = state.heightCm;
   const messages: string[] = [];
   const settlements: Settlement[] = [];
+  const milestones: MilestoneAward[] = [];
   let gap = daysBetween(state.lastSeenDate, today);
   if (gap < 0) {
     state.lastSeenDate = today;
@@ -1006,6 +1087,7 @@ export function catchUp(
       const date = addDays(state.lastSeenDate, i);
       const res = settleDay(state, date, eventsFor(date), meta, nowMs);
       settlements.push(res.settlement);
+      milestones.push(...res.milestones);
       messages.push(...res.messages);
       if (state.over) break;
     }
@@ -1023,7 +1105,7 @@ export function catchUp(
     else if (gap > 1) state.morningNote = `你離開咗 ${gap} 日。健康 ${Math.round(healthBefore)} → ${Math.round(state.health)}，高度 ${growthCm >= 0 ? '+' : ''}${growthCm.toFixed(1)} 厘米。`;
     if (messages.length && gap > 0) state.morningNote = `${state.morningNote ?? ''} ${messages.join(' ')}`.trim();
   }
-  return { daysPassed: Math.max(0, gap), growthCm, healthBefore, healthAfter: state.health, messages, eventText, animals, settlements, over: Boolean(state.over) };
+  return { daysPassed: Math.max(0, gap), growthCm, healthBefore, healthAfter: state.health, messages, eventText, animals, settlements, over: Boolean(state.over), milestones };
 }
 
 function nightNote(s: Settlement | undefined): string {
@@ -1058,6 +1140,7 @@ export function advanceVirtualDay(state: GameState, today: string, events: Weath
     animals,
     settlements: [res.settlement],
     over: Boolean(state.over),
+    milestones: res.milestones,
   };
 }
 

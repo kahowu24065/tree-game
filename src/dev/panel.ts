@@ -74,6 +74,8 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       </div>
       <div class="dev-actions">
         <button type="button" data-dev="advance">跳去下一日（即刻結算）</button>
+        <button type="button" data-dev="advance7">跳 7 日</button>
+        <button type="button" data-dev="advance30">跳 30 日</button>
         <button type="button" data-dev="pest">觸發蟲害</button>
         <button type="button" data-dev="time">時間：${d.time === 'auto' ? '真實' : d.time === 'day' ? '日間' : '夜間'}</button>
         <button type="button" data-dev="real-date">回到真日期</button>
@@ -85,10 +87,10 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="grow-young">長到青年樹</button>
         ${[0, 1, 2, 3].map((n) => `<button type="button" class="${(s.collapses || 0) === n ? 'on' : ''}" data-dev-collapses="${n}">倒塌 ${n}</button>`).join('')}
       </div>
-      <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米</p>
+      <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米・樹齡 ${s.ageDays || 0} 日・里程碑 ${Object.keys(s.milestones ?? {}).join('、') || '冇'}</p>
       <h4 class="dev-h">樹種・生長階段預覽</h4>
       <div class="dev-row">
-        <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（${x.season}）</option>`).join('')}</select></label>
+        <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（紀錄 ${x.targetM} 米）</option>`).join('')}</select></label>
         <label>階段 <select data-dev-stage><option value="">（跟高度）</option>${STAGE_NAMES.map((n, i) => `<option value="${i}" ${d.preview.stage === i ? 'selected' : ''}>${i + 1}. ${n}</option>`).join('')}</select></label>
         <label>島嶼 <select data-dev-island><option value="">（跟樹）</option>${STAGE_NAMES.map((n, i) => `<option value="${i}" ${d.preview.island === i ? 'selected' : ''}>${i + 1}. ${n}島</option>`).join('')}</select></label>
       </div>
@@ -146,6 +148,8 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     if (cmd === 'mode-manual') api.setDev({ ...d, mode: 'manual' });
     if (cmd === 'time') api.setDev({ ...d, time: d.time === 'auto' ? 'day' : d.time === 'day' ? 'night' : 'auto' });
     if (cmd === 'advance') api.advanceDay();
+    if (cmd === 'advance7') api.advanceDays(7);
+    if (cmd === 'advance30') api.advanceDays(30);
     if (cmd === 'pest') api.triggerPest();
     if (cmd === 'real-date') api.realDate();
     if (cmd === 'glare') api.triggerGlare();

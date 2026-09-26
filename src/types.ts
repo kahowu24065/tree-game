@@ -1,4 +1,4 @@
-import type { PrepId, SeasonId, WeatherEventId } from './balance';
+import type { MilestoneId, MilestoneTier, PrepId, WeatherEventId } from './balance';
 import type { SpeciesId } from './data/species';
 
 export interface Care {
@@ -118,9 +118,14 @@ export interface GameState {
   version: 2;
   started: boolean;
   treeName: string;
-  season: SeasonId;
-  /** Tree species (3 per season). */
+  /** v14 save schema (rules version): 14 once migrated to the no-season rules. Missing = older save. */
+  rules?: number;
+  /** Tree species (any of the 9; its 紀錄高度 R drives growth). */
   species: SpeciesId;
+  /** v14 樹齡: nights settled since planting (restarts with a new tree). */
+  ageDays: number;
+  /** v14 milestones this tree reached (樹齡 1個月…3年 and 超越世界紀錄). */
+  milestones: Partial<Record<MilestoneId, MilestoneAward>>;
   createdOn: string;
   lastSeenDate: string;
   virtualToday: string | null;
@@ -148,12 +153,11 @@ export interface GameState {
   eventBonus: number;
   morningNote: string | null;
   dying: { since: string; at: number } | null;
-  over: null | { kind: 'dead' | 'complete'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean };
-  /** Season finished (badges earned) — the tree keeps growing afterwards; there is no height cap. */
-  completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean };
-  /** Date the tree first passed the season's target height (the target is a goal, not a cap). */
+  /** The tree died (v14: the only way a game ends). `tiers` is kept for old saves; v14 books perks at milestones. */
+  over: null | { kind: 'dead'; date: string; tiers: (1 | 2 | 3)[]; days: number; booked?: boolean };
+  /** Date the tree first went above its 紀錄高度 R (R is a milestone, not a cap). */
   passedTargetOn?: string | null;
-  /** v8: the target (cm) this save was last checked against — the species' record height rounded to 10 m. */
+  /** 紀錄高度 R (cm) this save uses — the species' record height rounded to 10 m. */
   targetCm?: number;
   lastSettlement: Settlement | null;
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
@@ -172,6 +176,35 @@ export interface GameState {
   doubleRSeen: boolean;
 }
 
+/** v14: one milestone reached by one tree. */
+export interface MilestoneAward {
+  id: MilestoneId;
+  /** 金／銀／銅 for age milestones; null for 超越世界紀錄. */
+  tier: MilestoneTier | null;
+  date: string;
+  ageDays: number;
+  heightCm: number;
+  /** h / R when reached. */
+  share: number;
+  /** Awarded by the v14 save migration (the tree had already passed that age). */
+  retro?: boolean;
+  /** Old perk badge (一級／二級／三級) this award grants when booked (none if the old season already gave it). */
+  perk?: 1 | 2 | 3;
+  /** Copied into meta (collection, perks) already. */
+  booked?: boolean;
+}
+
+/** v14 collection entry (kept across trees). */
+export interface MetaMilestone {
+  id: MilestoneId;
+  tier: MilestoneTier | null;
+  treeName: string;
+  species: SpeciesId;
+  date: string;
+  heightCm: number;
+  ageDays: number;
+}
+
 /** Progress kept across games (badges, legacy). */
 export interface MetaState {
   version: 1;
@@ -180,7 +213,9 @@ export interface MetaState {
   starry: boolean;
   landmark: { name: string; heightCm: number; date: string } | null;
   pendingLegacy: boolean;
-  history: { name: string; season: SeasonId; days: number; heightCm: number; result: 'dead' | 'complete'; date: string }[];
+  history: { name: string; season?: string; species?: SpeciesId; days: number; heightCm: number; result: 'dead' | 'complete'; date: string }[];
+  /** v14 milestone badges from every tree (樹齡里程碑 and 超越世界紀錄). */
+  milestones: MetaMilestone[];
 }
 
 export interface ForecastDay {

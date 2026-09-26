@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WEATHER_EVENTS } from '../src/balance';
 import { bookGameEnd, freshMeta, newGame } from '../src/meta';
-import { carbonKg, deltaG, earnedTiers, finalDamage, hMult, nFactor, pickEvent, wFactor } from '../src/rules';
+import { carbonKg, deltaG, finalDamage, hMult, nFactor, pickEvent, wFactor } from '../src/rules';
 import { catchUp, createGame, performAction, reinforce, settleDay } from '../src/sim';
 import { visualHeight } from '../src/three/tree3d';
 import type { GameState } from '../src/types';
@@ -47,7 +47,7 @@ describe('公式', () => {
     expect([100, 80, 79, 50, 49, 20, 19, 0].map(hMult)).toEqual([1.5, 1.5, 1, 1, 0.2, 0.2, -0.5, -0.5]);
   });
 
-  it('ΔG = 目標/日數 × H_mult × 天氣加成；倒扣唔計加成', () => {
+  it('ΔG = 基本生長 × H_mult × 天氣加成；倒扣唔計加成', () => {
     expect(deltaG(22.2, 1.5, 1)).toBe(33.3);
     expect(deltaG(22.2, 1, 1.15)).toBe(25.5);
     expect(deltaG(22.2, -0.5, 1.15)).toBe(-11.1);
@@ -59,14 +59,6 @@ describe('公式', () => {
     expect(carbonKg(0)).toBe(0);
   });
 
-  it('徽章：完成拎齊，枯死按捱過嘅日數保底', () => {
-    expect(earnedTiers(90, 90, true)).toEqual([1]);
-    expect(earnedTiers(365, 365, true)).toEqual([1, 2, 3]);
-    expect(earnedTiers(365, 210, false)).toEqual([1, 2]);
-    expect(earnedTiers(365, 100, false)).toEqual([1]);
-    expect(earnedTiers(365, 60, false)).toEqual([]);
-    expect(earnedTiers(90, 300, false)).toEqual([1]);
-  });
 });
 
 describe('夜間結算', () => {
@@ -76,11 +68,11 @@ describe('夜間結算', () => {
     expect(settlement).toMatchObject({ event: 'typhoon8', wFactor: 5, nFactor: 5, baseDamage: 60, finalDamage: 30, hAfter: 50, rAfter: 13, hMult: 1 });
     expect(settlement.wAfter).toBe(50);
     expect(settlement.nAfter).toBe(60);
-    // 樟樹目標 50 米 / 90 日 = 55.6 厘米一日。
-    expect(settlement.baseGrowth).toBe(55.6);
+    // v14 樟樹紀錄高度 50 米：(5000 − 18) × (1 − e^(−1/100)) = 49.6 厘米（新樹 18 厘米）。
+    expect(settlement.baseGrowth).toBe(49.6);
     expect(settlement.weatherBonus).toBe(0.6);
-    expect(settlement.deltaG).toBe(33.4);
-    expect(s.heightCm).toBeCloseTo(51.4, 5);
+    expect(settlement.deltaG).toBe(29.8);
+    expect(s.heightCm).toBeCloseTo(47.8, 5);
   });
 
   it('v13：暴雨同颱風唔同類，疊加計（雨 −10 ＋ 風 30）；暴雨水分係即時 +20，落雨日冇流失', () => {
@@ -187,28 +179,30 @@ describe('瀕死、枯死、遺產', () => {
     expect(s.dying?.at).toBe(NOW);
   });
 
-  it('枯死變養分地標，下一棵樹開局養分高，保底徽章', () => {
+  it('枯死變養分地標，下一棵樹開局養分高；v14 枯死唔再發保底徽章（能力徽章跟樹齡里程碑）', () => {
     const meta = freshMeta();
-    const s = createGame('2026-01-01', { season: 's12' });
-    Object.assign(s, { health: 3, moisture: 0, nutrients: 0, dying: { since: '2026-07-19', at: 0 } });
-    settleDay(s, '2026-07-20', ['clear'], meta, NOW);
-    expect(s.over).toMatchObject({ kind: 'dead', tiers: [1, 2] });
+    const s = createGame('2026-01-01');
+    Object.assign(s, { health: 3, moisture: 0, nutrients: 0, ageDays: 200, dying: { since: '2026-07-19', at: 0 } });
+    const r = settleDay(s, '2026-07-20', ['clear'], meta, NOW);
+    expect(s.over).toMatchObject({ kind: 'dead', tiers: [] });
+    expect(r.milestones).toEqual([]);
     bookGameEnd(meta, s);
     expect(bookGameEnd(meta, s)).toEqual([]);
-    expect(meta.badges).toEqual({ '1': 1, '2': 1, '3': 0 });
+    expect(meta.badges).toEqual({ '1': 0, '2': 0, '3': 0 });
     expect(meta.pendingLegacy).toBe(true);
-    const next = newGame(meta, '2026-07-21', 's3', '第二棵');
+    const next = newGame(meta, '2026-07-21', '第二棵');
     expect(next.nutrients).toBe(90);
+    expect(next.ageDays).toBe(0);
     expect(meta.pendingLegacy).toBe(false);
   });
 
-  it('完成賽季發徽章，但遊戲唔會完結', () => {
-    const s = createGame('2026-01-01', { season: 's3' });
-    Object.assign(s, { moisture: 60, nutrients: 90 });
+  it('v14：冇完結，樹齡 90 日遊戲照玩落去', () => {
+    const s = createGame('2026-01-01');
+    Object.assign(s, { moisture: 60, nutrients: 90, ageDays: 89 });
     const r = settleDay(s, '2026-03-31', ['clear'], null, NOW);
-    expect(r.completed).toBe(true);
+    expect(s.ageDays).toBe(90);
+    expect(r.milestones.map((m) => m.id)).toEqual(['m30', 'm90']);
     expect(s.over).toBeNull();
-    expect(s.completed).toMatchObject({ tiers: [1] });
   });
 });
 

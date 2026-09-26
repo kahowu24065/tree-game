@@ -1,23 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { SEASONS } from '../src/balance';
 import { stagesFor } from '../src/content';
 import { ANIMALS, CATEGORY_ORDER, unlockHint } from '../src/data/animals';
-import { roundTo10, SPECIES, speciesTargetCm, STAGE_NAMES, speciesForSeason, stageIndexFor, stageSampleCm } from '../src/data/species';
+import { roundTo10, SPECIES, speciesTargetCm, STAGE_NAMES, stageIndexFor, stageSampleCm } from '../src/data/species';
 import { freshMeta, newGame } from '../src/meta';
 import { createGame, refreshUnlocks, settleDay } from '../src/sim';
 import type { GameState } from '../src/types';
 
 function tall(over: Partial<GameState> = {}): GameState {
-  const s = createGame('2026-09-25', { season: 's12' });
+  const s = createGame('2026-09-25', { species: 'redwood' });
   s.started = true;
-  return Object.assign(s, { health: 95, heightCm: 9000, stormSurvivals: 3 }, over);
+  return Object.assign(s, { health: 95, heightCm: 9000, stormSurvivals: 3, ageDays: 400 }, over);
 }
 
 describe('樹種', () => {
-  it('九個樹種，每個賽季三款，id 唔重複', () => {
+  it('九個樹種任揀，id 唔重複（v14 冇賽季）', () => {
     expect(SPECIES).toHaveLength(9);
     expect(new Set(SPECIES.map((s) => s.id)).size).toBe(9);
-    for (const season of SEASONS) expect(speciesForSeason(season.id)).toHaveLength(3);
+    for (const sp of SPECIES) expect(createGame('2026-09-25', { species: sp.id }).species).toBe(sp.id);
   });
 
   it('每個樹種目標 = 真實最高紀錄四捨五入到最接近嘅 10 米', () => {
@@ -37,20 +36,16 @@ describe('樹種', () => {
     expect(roundTo10(100.5)).toBe(100);
   });
 
-  it('每個樹種都可以喺自己賽季日數內達到目標（良好照顧、晴天）', () => {
+  it('良好照顧（健康 80 以上 ×1.5、晴天）一年內每個樹種都去到紀錄高度 97% 以上', () => {
     for (const sp of SPECIES) {
-      const s = createGame('2026-01-01', { season: sp.season, species: sp.id });
+      const s = createGame('2026-01-01', { species: sp.id });
       s.started = true;
       Object.assign(s, { health: 95 });
-      const days = SEASONS.find((x) => x.id === sp.season)!.days;
-      for (let i = 0; i < days; i++) {
-        Object.assign(s, { moisture: 60, nutrients: 80, health: Math.max(s.health, 60) });
+      for (let i = 0; i < 365; i++) {
+        Object.assign(s, { moisture: 60, nutrients: 80, health: Math.max(s.health, 60), eventBonus: 1 });
         settleDay(s, new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10), ['clear'], null, Date.UTC(2026, 8, 25, 4));
       }
-      expect(s.heightCm, sp.id).toBeGreaterThanOrEqual(speciesTargetCm(sp.id));
-      // …and not trivially: a merely "normal" tree (×1) ends right about at the target.
-      const base = speciesTargetCm(sp.id) / days;
-      expect(base * days).toBeCloseTo(speciesTargetCm(sp.id), 6);
+      expect(s.heightCm / speciesTargetCm(sp.id), sp.id).toBeGreaterThan(0.97);
     }
   });
 
@@ -81,10 +76,11 @@ describe('樹種', () => {
   });
 
 
-  it('開局揀樹種：唔屬於個賽季就用預設', () => {
-    expect(createGame('2026-09-25', { season: 's6', species: 'ginkgo' }).species).toBe('ginkgo');
-    expect(createGame('2026-09-25', { season: 's6', species: 'redwood' }).species).toBe(speciesForSeason('s6')[0]!.id);
-    expect(newGame(freshMeta(), '2026-09-25', 's12', '紅杉', 'eucalyptus').species).toBe('eucalyptus');
+  it('開局揀樹種：九款任揀，唔識嘅 id 用預設', () => {
+    expect(createGame('2026-09-25', { species: 'ginkgo' }).species).toBe('ginkgo');
+    expect(createGame('2026-09-25', { species: 'redwood' }).species).toBe('redwood');
+    expect(createGame('2026-09-25', { species: 'nope' as never }).species).toBe(SPECIES[0]!.id);
+    expect(newGame(freshMeta(), '2026-09-25', '紅杉', 'eucalyptus').species).toBe('eucalyptus');
   });
 });
 
@@ -106,7 +102,7 @@ describe('動物圖鑑', () => {
     expect(ANIMALS.some((a) => a.group[1] >= 5)).toBe(true);
   });
 
-  it('解鎖條件：高度、健康、天氣、月份、賽季', () => {
+  it('解鎖條件：高度、健康、天氣、月份、樹齡', () => {
     const low = createGame('2026-09-25');
     low.heightCm = 10;
     expect(refreshUnlocks(low, { date: '2026-09-25' })).toEqual([]);
@@ -126,9 +122,10 @@ describe('動物圖鑑', () => {
     const monthOnly = ANIMALS.find((a) => a.months && !a.months.includes(9) && !a.weather);
     if (monthOnly) expect(dry.animals).not.toContain(monthOnly.id);
 
-    const s3 = tall({ season: 's3' });
-    refreshUnlocks(s3, { date: '2026-09-25', events: ['hot'] });
-    for (const a of ANIMALS.filter((x) => x.season === 's12')) expect(s3.animals).not.toContain(a.id);
+    const young = tall({ ageDays: 10 });
+    refreshUnlocks(young, { date: '2026-09-25', events: ['hot'] });
+    expect(ANIMALS.some((x) => x.minAgeDays)).toBe(true);
+    for (const a of ANIMALS.filter((x) => x.minAgeDays)) expect(young.animals).not.toContain(a.id);
 
     const weak = tall({ health: 30 });
     refreshUnlocks(weak, { date: '2026-09-25', events: ['hot'] });

@@ -6,8 +6,10 @@ import {
   N_FACTOR,
   N_MALNOURISHED,
   N_OPTIMAL,
-  SEASONS,
-  TIER_DAYS,
+  GROWTH_FLOOR_SHARE,
+  GROWTH_TAU_DAYS,
+  MILESTONE_TIER_SHARE,
+  type MilestoneTier,
   RAIN_OVER_CAP,
   W_MAX,
   W_NIGHT_LOSS,
@@ -17,8 +19,6 @@ import {
   EMERGENCY,
   WX_CATEGORY_ORDER,
   type WeatherCategory,
-  type SeasonDef,
-  type SeasonId,
   type WeatherEventId,
 } from './balance';
 
@@ -143,13 +143,28 @@ export function hMult(h: number): number {
   return hMultTier(h).mult;
 }
 
-export function seasonDef(id: SeasonId): SeasonDef {
-  return SEASONS.find((s) => s.id === id) ?? SEASONS[0]!;
+/** v14: share of the gap to R closed each night, 1 − e^(−1/τ) (τ = 100 days). */
+export const GROWTH_K = 1 - Math.exp(-1 / GROWTH_TAU_DAYS);
+
+/**
+ * v14 每日基本生長 (cm, before H_mult / 天氣加成) from the tree's CURRENT height h (after earlier nights and collapses):
+ * max((R − h) × (1 − e^(−1/100)), 0.0002 × R), R = 紀錄高度 (cm). Taller → slower; beyond R it keeps the floor. No cap.
+ */
+export function baseDailyGrowth(recordCm: number, heightCm: number): number {
+  return Math.max(Math.max(0, recordCm - heightCm) * GROWTH_K, GROWTH_FLOOR_SHARE * recordCm);
 }
 
-/** 最終目標高度 / 週期總日數 (cm per day). The target is the species' own (record height rounded to 10 m). */
-export function baseDailyGrowth(season: SeasonDef, targetCm: number): number {
-  return targetCm / season.days;
+/** v14 expected share of R after t nights at ×1: e(t) = 1 − e^(−t/τ). */
+export function expectedShare(days: number): number {
+  return 1 - Math.exp(-Math.max(0, days) / GROWTH_TAU_DAYS);
+}
+
+/** v14 milestone tier from p = h/R at day t: 金 ≥ 0.98·e(t), 銀 ≥ 0.88·e(t), otherwise 銅. */
+export function milestoneTier(share: number, days: number): MilestoneTier {
+  const e = expectedShare(days);
+  if (share >= MILESTONE_TIER_SHARE.gold * e) return 'gold';
+  if (share >= MILESTONE_TIER_SHARE.silver * e) return 'silver';
+  return 'bronze';
 }
 
 /** ΔG = base × H_mult × 天氣獎勵加成. Losses (H_mult < 0) ignore the weather bonus. */
@@ -160,15 +175,6 @@ export function deltaG(baseCm: number, mult: number, weatherBonus: number): numb
 /** 碳吸收量 (公斤 CO₂／年) = 常數 × G^1.5, G in metres. */
 export function carbonKg(heightCm: number): number {
   return round1(CARBON_K * Math.pow(Math.max(0, heightCm) / 100, 1.5));
-}
-
-/**
- * Badge tiers earned. Finishing grants every tier up to the season's; dying grants every tier whose
- * length you actually survived (fail-safe), never above the chosen season.
- */
-export function earnedTiers(seasonDays: number, survivedDays: number, completed: boolean): (1 | 2 | 3)[] {
-  const reach = completed ? seasonDays : survivedDays;
-  return ([1, 2, 3] as const).filter((t) => TIER_DAYS[t] <= reach && TIER_DAYS[t] <= seasonDays);
 }
 
 /** Deterministic 0-1 roll per date (same result on every device, testable). */
