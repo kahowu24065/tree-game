@@ -12,12 +12,8 @@
     <canvas id="scene" aria-label="今日的樹同天空"></canvas>
     <div id="app" class="hud">
       <div class="left-col">
-        <button type="button" class="glass weather-card" id="weather-card" data-open="forecast" aria-label="天氣同預報"></button>
+        <div class="glass weather-card" id="weather-card"></div>
         <div id="note-slot" class="note-slot"></div>
-      </div>
-      <div class="top-right">
-        <button type="button" class="glass pill place-pill" id="place-pill" data-action="location" aria-label="揀地點"></button>
-        <button type="button" class="glass round" id="gear" data-action="settings" aria-label="設定"></button>
       </div>
       <section class="glass status-card" id="status-card" aria-label="樹木狀態"></section>
       <button type="button" class="rail" id="rail" data-open="milestones" aria-label="高度進度同里程"></button>
@@ -30,6 +26,7 @@
           <span class="grab"></span>
           <span class="sheet-title" id="sheet-title">成長日誌</span>
         </div>
+        <button type="button" class="round sheet-gear" id="gear" data-action="settings" aria-label="設定"></button>
         <div class="sheet-body" id="sheet-body"></div>
       </section>
       <nav class="dock" id="dock" aria-label="主要動作"></nav>

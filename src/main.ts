@@ -46,6 +46,8 @@ import {
   animalName,
   closeModal,
   locationModal,
+  noteNext,
+  noteToggle,
   openModal,
   overModal,
   milestoneModal,
@@ -840,6 +842,17 @@ function doAction(action: string, target: HTMLElement): void {
       togglePreview();
       render();
       return;
+    case 'note-next':
+    case 'note-toggle': {
+      // v16.1 note stack: page to the next card / expand the text. Keep keyboard focus on the same control.
+      const cls = action === 'note-next' ? 'nc-pager' : 'nc-title';
+      const refocus = document.activeElement === target;
+      if (action === 'note-next') noteNext();
+      else noteToggle();
+      render();
+      if (refocus) document.querySelector<HTMLElement>(`#note-slot .${cls}`)?.focus();
+      return;
+    }
     case 'dismiss-note':
       state.morningNote = null;
       persist();
@@ -898,6 +911,26 @@ function doAction(action: string, target: HTMLElement): void {
       return;
   }
 }
+
+/**
+ * v16.1: the left-edge buttons (島上動物, developer wrench) sit below the weather card + note stack — CSS reads the
+ * column's bottom edge from --lc-bottom, kept up to date as the cards change height.
+ */
+function trackLeftColumn(): void {
+  const col = document.querySelector<HTMLElement>('.left-col');
+  if (!col) return;
+  let last = -1;
+  const sync = () => {
+    const b = Math.round(col.getBoundingClientRect().bottom);
+    if (b === last) return;
+    last = b;
+    document.documentElement.style.setProperty('--lc-bottom', `${b}px`);
+  };
+  if ('ResizeObserver' in window) new ResizeObserver(sync).observe(col);
+  window.addEventListener('resize', sync);
+  sync();
+}
+trackLeftColumn();
 
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;

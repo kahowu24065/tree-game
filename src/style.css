@@ -120,6 +120,7 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 
 .weather-card {
+  position: relative;
   width: 100%;
   border-radius: 20px;
   padding: 10px 12px 10px 10px;
@@ -129,9 +130,28 @@ body.sheet-open .hud > .sheet-backdrop {
   column-gap: 8px;
   text-align: left;
   transition: transform 0.15s ease;
+  pointer-events: auto;
 }
 
-.weather-card:active {
+/* v16.1: the whole card is the weather button (a transparent layer under the content); the place chip is its own button. */
+.wx-hit {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 0;
+}
+.weather-card > :not(.wx-hit) {
+  position: relative;
+  pointer-events: none;
+}
+.weather-card > .wx-place {
+  z-index: 1;
+  pointer-events: auto;
+}
+.wx-rest {
+  display: contents;
+}
+.weather-card:has(.wx-hit:active) {
   transform: scale(0.98);
 }
 
@@ -169,16 +189,49 @@ body.sheet-open .hud > .sheet-backdrop {
 
 .wx-place {
   grid-column: 1 / -1;
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 3px;
-  margin-top: 5px;
+  max-width: 100%;
+  min-height: 26px;
+  margin: 5px 0 0 -4px;
+  padding: 2px 7px 2px 4px;
+  border-radius: 10px;
+  background: rgba(47, 125, 79, 0.08);
   font-size: 12.5px;
   font-weight: 600;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.wx-place:active {
+  background: rgba(47, 125, 79, 0.18);
+}
+
+.wx-place .wx-place-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wx-place .wx-tag {
+  flex: none;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(35, 53, 44, 0.08);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wx-place .wx-place-name + svg,
+.wx-place .wx-tag + svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--ink-soft);
 }
 
 .wx-place svg {
@@ -301,14 +354,7 @@ body.sheet-open .hud > .sheet-backdrop {
   }
 }
 
-.top-right {
-  position: absolute;
-  top: calc(var(--pad) + var(--safe-t));
-  right: calc(var(--pad) + var(--safe-r));
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
+/* v16.1: nothing floats in the top-right any more (place → weather card, settings → 成長日誌 panel). */
 
 .pill {
   height: 40px;
@@ -364,7 +410,7 @@ body.sheet-open .hud > .sheet-backdrop {
 
 .status-card {
   position: absolute;
-  top: calc(var(--pad) + var(--safe-t) + 50px);
+  top: calc(var(--pad) + var(--safe-t));
   right: calc(var(--pad) + var(--safe-r));
   width: 156px;
   border-radius: 20px;
@@ -475,7 +521,7 @@ body.sheet-open .hud > .sheet-backdrop {
 .rail {
   position: absolute;
   right: calc(var(--pad) + var(--safe-r));
-  top: calc(var(--pad) + var(--safe-t) + 290px);
+  top: calc(var(--pad) + var(--safe-t) + 244px);
   bottom: calc(var(--dock-h) + 70px);
   width: 64px;
   max-height: 300px;
@@ -1664,7 +1710,8 @@ body.sheet-open .sheet-backdrop {
 #dev-root {
   position: fixed;
   left: calc(8px + var(--safe-l));
-  top: 44%;
+  /* v16.1: never under the weather card / note stack (--lc-bottom is that column's bottom edge, set from JS). */
+  top: max(44%, calc(var(--lc-bottom, 0px) + 14px));
   z-index: 60;
 }
 
@@ -2069,10 +2116,10 @@ body.dying::after {
   }
   .status-card {
     width: 190px;
-    top: calc(var(--pad) + 56px);
+    top: calc(var(--pad) + var(--safe-t));
   }
   .rail {
-    top: calc(var(--pad) + 330px);
+    top: calc(var(--pad) + var(--safe-t) + 284px);
     max-height: 340px;
   }
   .stat {
@@ -2395,8 +2442,9 @@ h3.sub small {
 .animal-toast {
   position: absolute;
   left: 50%;
-  top: calc(var(--safe-t) + 8px);
-  transform: translate(-50%, -14px);
+  /* v16.1: arrival toasts come up from the bottom, just above the 成長日誌 panel (top while the panel is open). */
+  bottom: calc(var(--dock-h) + 56px);
+  transform: translate(-50%, 14px);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2457,7 +2505,7 @@ h3.sub small {
 .animal-list-btn {
   position: absolute;
   left: calc(var(--pad) + var(--safe-l));
-  top: 61%;
+  top: max(61%, calc(var(--lc-bottom, 0px) + 66px));
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -3264,4 +3312,129 @@ body.cold #scene {
 body.tree-fx .note-slot {
   opacity: 0;
   pointer-events: none;
+}
+
+/* ---------- v16.1 layout ---------- */
+
+/* The general toast steps up a row while an animal arrival toast shows. */
+body.animal-toast-on .toast {
+  bottom: calc(var(--dock-h) + 104px);
+}
+
+/* With the 成長日誌 panel open the bottom is taken: toasts show at the top (the top cards are dimmed behind it). */
+body.sheet-open .animal-toast,
+body.sheet-open .toast {
+  top: calc(var(--safe-t) + 10px);
+  bottom: auto;
+}
+body.sheet-open .animal-toast {
+  transform: translate(-50%, -14px);
+}
+body.sheet-open .animal-toast.show {
+  transform: translate(-50%, 0);
+}
+
+/* Settings: right end of the 成長日誌 title row. A sibling of the drag handle, so tapping it never drags the panel. */
+.sheet-gear {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  z-index: 1;
+}
+.sheet-gear svg {
+  width: 19px;
+  height: 19px;
+}
+.sheet-gear:active {
+  transform: scale(0.94);
+}
+
+/* Note stack: one card at a time — title row (tap to expand) + pager, then the action buttons. */
+.note-card.stack {
+  padding: 8px 10px 8px 12px;
+}
+.nc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.note-card button.nc-title {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+.nc-title {
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+  font-size: 13.5px;
+}
+.note-card.stack .nc-title b {
+  display: inline;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-card.dying .nc-title b {
+  color: var(--red);
+}
+.nc-title svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+.note-card.open .nc-title svg {
+  transform: rotate(180deg);
+}
+.note-card button.nc-pager {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  min-height: 26px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: rgba(35, 53, 44, 0.08);
+  color: var(--ink);
+  font-size: 12px;
+}
+.nc-pager svg {
+  width: 13px;
+  height: 13px;
+}
+.note-card .nc-body {
+  margin: 6px 0 4px;
+}
+.note-card.stack .note-btns {
+  margin-top: 4px;
+  display: flex;
+  gap: 14px;
+}
+.note-card.dying .note-btns button {
+  color: var(--red);
+}
+.note-card[data-note='note'] .note-btns button {
+  color: var(--green);
+}
+
+/* Narrow phones (≤ 379 px, e.g. 360): shorter note titles so the pager fits. */
+@media (max-width: 379px) {
+  .nc-long,
+  .nc-title svg {
+    display: none;
+  }
+  .note-card.stack .nc-title {
+    font-size: 13px;
+  }
 }

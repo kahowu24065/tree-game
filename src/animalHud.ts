@@ -234,7 +234,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   }
 
   function hudRects(): Rect[] {
-    const ids = ['weather-card', 'status-card', 'rail', 'sheet', 'dock', 'place-pill', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint'];
+    const ids = ['weather-card', 'status-card', 'rail', 'sheet', 'dock', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint'];
     const out: Rect[] = [];
     for (const id of ids) {
       const el = document.getElementById(id);
@@ -329,6 +329,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
     if (current && time > current.until) {
       current = null;
       toastEl.classList.remove('show');
+      document.body.classList.remove('animal-toast-on');
       gapUntil = time + 450;
       window.setTimeout(() => {
         if (!current) toastEl.hidden = true;
@@ -348,6 +349,8 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
       toastEl.innerHTML = `<span class="at-ic">${animalIcon(a.category, a.id === 'firefly' ? 'firefly' : (live.find((c) => c.uid === a.uid)?.kind ?? 'bird'))}</span>
         <span class="at-text">${isNew ? '<em>新</em>' : ''}${esc(arrivalText(still))}</span><small>撳一下跟拍</small>`;
       toastEl.hidden = false;
+      // v16.1: the general toast steps up a row while an arrival toast shows (class, not :has(), for older browsers).
+      document.body.classList.add('animal-toast-on');
       requestAnimationFrame(() => toastEl.classList.add('show'));
     }
   }

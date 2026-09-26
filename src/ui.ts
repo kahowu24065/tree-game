@@ -266,13 +266,93 @@ function waterBar(w: number): string {
   </div>`;
 }
 
-/** Top-left weather card, top-right place pill, status card, height rail and dock. */
+/** v16.1 note stack: one card at a time. */
+export interface NoteCard {
+  key: 'dying' | 'collapse' | 'note';
+  cls: string;
+  /** Title HTML; `.nc-long` parts are hidden on narrow phones. */
+  title: string;
+  body: string;
+  btns: string;
+}
+
+/** 瀕死 countdown for the one-line card title (HH:MM, rounded down). */
+export function clockLeft(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** The note cards to show, most urgent first: 瀕死 > 倒塌 (double R day) > the morning note. */
+export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
+  const out: NoteCard[] = [];
+  if (!state.started) return out;
+  if (state.dying && !state.over) {
+    out.push({
+      key: 'dying',
+      cls: 'dying',
+      title: `瀕死<span class="nc-long">・剩</span> ${clockLeft(dyingLeft)}`,
+      body: `將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上即刻救返（剩 ${esc(hm(Math.max(0, Math.floor(dyingLeft / 60000))))}）。`,
+      btns: `<button type="button" data-open="care">去救</button>`,
+    });
+  }
+  if (!state.over && state.windUnlocked && doubleRActive(state) && !state.doubleRSeen) {
+    out.push({
+      key: 'collapse',
+      cls: 'double-r',
+      title: '🪵 昨晚倒塌咗',
+      body: `今日加固效果雙倍：打木樁 +${PREPS.stakes.amount * 2}、綁防風繩 +${PREPS.ropes.amount * 2}、修枝防風 +${PREPS.prune.amount * 2}（最多 ${R_MAX}）。${esc(collapseText(state))}。`,
+      btns: `<button type="button" data-open="forecast">去加固</button><button type="button" data-action="dismiss-double">知道喇</button>`,
+    });
+  }
+  if (state.morningNote) {
+    out.push({ key: 'note', cls: '', title: '今朝消息', body: esc(state.morningNote), btns: `<button type="button" data-action="dismiss-note">知道喇</button>` });
+  }
+  return out;
+}
+
+/**
+ * Which card the stack shows: stays on the current one while it exists; a card that just appeared and is more urgent
+ * (e.g. 瀕死 starting) takes over; otherwise the most urgent.
+ */
+export function pickNoteKey(keys: readonly string[], current: string | null, before: readonly string[]): string | null {
+  if (!keys.length) return null;
+  const fresh = keys.find((k) => !before.includes(k));
+  if (current && keys.includes(current)) {
+    if (fresh && keys.indexOf(fresh) < keys.indexOf(current)) return fresh;
+    return current;
+  }
+  return keys[0]!;
+}
+
+/** Next card in the stack (wraps). */
+export function nextNoteKey(keys: readonly string[], current: string | null): string | null {
+  if (!keys.length) return null;
+  const i = current ? keys.indexOf(current) : -1;
+  return keys[(i + 1) % keys.length]!;
+}
+
+let noteKey: string | null = null;
+let noteSeenKeys: string[] = [];
+let noteOpen = false;
+let noteOpenKey: string | null = null;
+
+/** Pager 「1/2 ›」: show the next card (collapsed). */
+export function noteNext(): void {
+  noteKey = nextNoteKey(noteSeenKeys, noteKey);
+  noteOpen = false;
+}
+
+/** Tap on a card's title: expand / collapse its text. */
+export function noteToggle(): void {
+  noteOpen = !noteOpen;
+  noteOpenKey = noteKey;
+}
+
+/** Top-left weather card (with the place picker), status card, height rail, note stack and dock. */
 export function renderChrome(view: View): void {
   const { state, cond } = view;
   const card = document.getElementById('weather-card');
   if (card) renderWeatherCard(card, view);
-  const pill = document.getElementById('place-pill');
-  if (pill) pill.innerHTML = `${icon('pin')}<span>${esc(view.place)}</span>${view.placeNote ? `<small>${esc(view.placeNote)}</small>` : ''}${icon('chevronDown')}`;
   const gear = document.getElementById('gear');
   if (gear && !gear.innerHTML) gear.innerHTML = icon('gear');
   const close = document.getElementById('drawer-close');
@@ -343,15 +423,22 @@ export function renderChrome(view: View): void {
 
   const slot = document.getElementById('note-slot');
   if (slot) {
-    const dying = state.dying && !state.over
-      ? `<article class="glass note-card dying"><p><b>瀕死・${esc(hm(Math.max(0, dyingLeftMs(state)) / 60000))}</b>將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上即刻救返。</p></article>`
+    const cards = noteCards(state, dyingLeftMs(state));
+    noteKey = pickNoteKey(cards.map((c) => c.key), noteKey, noteSeenKeys);
+    noteSeenKeys = cards.map((c) => c.key);
+    const i = Math.max(0, cards.findIndex((c) => c.key === noteKey));
+    const c = cards[i];
+    if (c && c.key !== noteOpenKey) noteOpen = false;
+    const html = c
+      ? `<article class="glass note-card stack ${c.cls}${noteOpen ? ' open' : ''}" data-note="${c.key}">
+          <div class="nc-head"><button type="button" class="nc-title" data-action="note-toggle" aria-expanded="${noteOpen}" aria-controls="nc-body"><b>${c.title}</b>${icon('chevronDown')}</button>${
+            cards.length > 1 ? `<button type="button" class="nc-pager" data-action="note-next" aria-label="下一張（${i + 1}/${cards.length}）">${i + 1}/${cards.length}${icon('chevronRight')}</button>` : ''
+          }</div>
+          <p class="nc-body" id="nc-body"${noteOpen ? '' : ' hidden'}>${c.body}</p>
+          <div class="note-btns">${c.btns}</div>
+        </article>`
       : '';
-    const note = state.started && state.morningNote ? `<article class="glass note-card"><p>${esc(state.morningNote)}</p><button type="button" data-action="dismiss-note">知道喇</button></article>` : '';
-    const dbl = state.started && !state.over && state.windUnlocked && doubleRActive(state) && !state.doubleRSeen
-      ? `<article class="glass note-card double-r" role="alert"><p><b>🪵 棵樹昨晚倒塌咗</b>今日加固效果雙倍：打木樁 +${PREPS.stakes.amount * 2}、綁防風繩 +${PREPS.ropes.amount * 2}、修枝防風 +${PREPS.prune.amount * 2}（最多 ${R_MAX}）。${esc(collapseText(state))}。</p><div class="note-btns"><button type="button" data-open="forecast">去加固</button><button type="button" data-action="dismiss-double">知道喇</button></div></article>`
-      : '';
-    const html = dying + dbl + note;
-    if (slot.innerHTML !== html) slot.innerHTML = html;
+    setHtml(slot, html);
   }
   document.body.classList.toggle('night', view.night);
   document.body.classList.toggle('cold', Boolean(cond.cold));
@@ -372,14 +459,18 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   card.classList.toggle('hot', !cd && hotNow);
   card.classList.toggle('cold', !cd && coldNow && !hotNow);
   card.classList.toggle('sim', simulated && !wx.loading);
+  // v16.1: the card is a container with two real buttons — the whole card opens the weather (or retries a simulated
+  // one) and the 「📍 地點 ▾」 chip picks the place. Built once so keyboard focus survives the per-minute refresh.
+  if (!card.querySelector('.wx-hit')) {
+    card.innerHTML = `<button type="button" class="wx-hit"></button><span class="wx-art" aria-hidden="true"></span><span class="wx-main"></span><button type="button" class="wx-place" data-action="location"></button><span class="wx-rest"></span>`;
+  }
+  const hit = card.querySelector<HTMLButtonElement>('.wx-hit')!;
   if (simulated) {
-    delete card.dataset.open;
-    card.dataset.action = 'retry-weather';
-    card.setAttribute('aria-label', '模擬天氣，撳一下再試攞真實天氣');
+    delete hit.dataset.open;
+    hit.dataset.action = 'retry-weather';
   } else {
-    delete card.dataset.action;
-    card.dataset.open = 'forecast';
-    card.setAttribute('aria-label', '天氣同預報');
+    delete hit.dataset.action;
+    hit.dataset.open = 'forecast';
   }
   const label = view.manual ? ev(view.todayEvent).label : cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code);
   let line: string;
@@ -398,13 +489,34 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
     .join('');
   const source = sourceLabel(wx);
   const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
-  card.innerHTML = `
-    <span class="wx-art">${weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || view.manual ? undefined : wx.nowIcon)}</span>
-    <span class="wx-main"><b>${temp}</b><span>${esc(firstLoad ? '攞緊天氣…' : label)}</span></span>
-    <span class="wx-place">${icon('pin')}${esc(view.place)}${wx.station && !simulated && !view.manual ? `<small>· ${esc(wx.station)}站</small>` : ''}</span>
-    ${chips && !view.manual ? `<span class="wx-warns">${chips}</span>` : ''}
-    ${line ? `<span class="wx-line">${line}</span>` : ''}
-    <span class="wx-src ${simulated ? 'sim' : ''}">${source}</span>`;
+  const shownLabel = firstLoad ? '攞緊天氣…' : label;
+  setAttr(hit, 'aria-label', simulated ? `${temp} ${shownLabel}・模擬天氣，撳一下再試攞真實天氣` : `${temp} ${shownLabel}・天氣同預報`);
+  setHtml(card.querySelector('.wx-art')!, weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || view.manual ? undefined : wx.nowIcon));
+  setHtml(card.querySelector('.wx-main')!, `<b>${temp}</b><span>${esc(shownLabel)}</span>`);
+  const place = card.querySelector<HTMLButtonElement>('.wx-place')!;
+  setAttr(place, 'aria-label', `揀地點（而家：${view.place}${view.placeNote ? `，${view.placeNote}` : ''}）`);
+  setHtml(place, placeChipHtml(view.place, view.placeNote, wx.station && !simulated && !view.manual ? wx.station : ''));
+  setHtml(
+    card.querySelector('.wx-rest')!,
+    `${chips && !view.manual ? `<span class="wx-warns">${chips}</span>` : ''}${line ? `<span class="wx-line">${line}</span>` : ''}<span class="wx-src ${simulated ? 'sim' : ''}">${source}</span>`,
+  );
+}
+
+/** v16.1 place picker chip inside the weather card: 📍 name, 預設 tag, ▾, then the station (if any). */
+export function placeChipHtml(place: string, note: string, station: string): string {
+  return `${icon('pin')}<span class="wx-place-name">${esc(place)}</span>${note ? `<small class="wx-tag">${esc(note)}</small>` : ''}${icon('chevronDown')}${station ? `<small class="wx-station">· ${esc(station)}站</small>` : ''}`;
+}
+
+const lastHtml = new WeakMap<Element, string>();
+/** Set innerHTML only when the markup we generate changed (the browser's serialisation may differ from ours). */
+function setHtml(el: Element, html: string): void {
+  if (lastHtml.get(el) === html) return;
+  lastHtml.set(el, html);
+  el.innerHTML = html;
+}
+
+function setAttr(el: Element, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
 }
 
 function sourceLabel(wx: WeatherView): string {
