@@ -59,6 +59,12 @@ function snapshot(storage: Storage): Record<string, string> {
   return out;
 }
 
+let pendingWrites: () => Promise<void> = async () => {};
+/** Wait until every mirrored write has reached Preferences (call before reloading the page). */
+export function flushPersist(): Promise<void> {
+  return pendingWrites();
+}
+
 /** Native only: load Preferences into localStorage before the game boots, then write-through. Web: no-op. */
 export async function hydrateNative(): Promise<void> {
   if (!isNative()) return;
@@ -72,7 +78,7 @@ export async function hydrateNative(): Promise<void> {
     const plan = planHydrate(prefs, snapshot(localStorage));
     for (const [k, v] of plan.toLocal) localStorage.setItem(k, v);
     for (const [key, value] of plan.toPrefs) await Preferences.set({ key, value });
-    installWriteThrough(localStorage, {
+    pendingWrites = installWriteThrough(localStorage, {
       set: (key, value) => Preferences.set({ key, value }),
       remove: (key) => Preferences.remove({ key }),
     });

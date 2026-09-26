@@ -1301,6 +1301,13 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
       </div>
     </div>`
     }
+    <div class="setting-row">
+      <span>存檔</span>
+      <div class="seg">
+        <button type="button" data-action="export-save">匯出存檔</button>
+        <button type="button" data-action="import-save">匯入存檔</button>
+      </div>
+    </div>
     <div class="howto">
       <p><b>點玩：</b>每晚 12 點結算：先計水分變化（每晚自然流失 −10；落雨日唔流失，毛毛雨仲 +10），再計健康 = 舊健康 + 水分分數 + 養分分數 + 熱／雨／風三類天氣分 + 應急獎勵 − 蟲害。</p>
       <p>水分 0–150：50–100 +5；低過 50 乾旱 −10；101–115 輕度爛根 −10；116–135 嚴重爛根 −20；136–149 根部壞死 −30；去到 150 即刻瀕死。養分 60 以上 +5、30–59 為 0、低過 30 −10。</p>
@@ -1314,6 +1321,34 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
       <p>健康 80 以上長得最快（×1.5，有綠光）；健康跌到 0 或者水分去到 150 會瀕死 24 小時，將水分調返 50–100、養分 60 以上就救得返。</p>
     </div>
     <button type="button" class="primary" data-action="close-modal">好</button>
+  `;
+}
+
+/** 匯出存檔: the code in a read-only box (already copied when possible). */
+export function exportSaveModal(code: string, copied: boolean, canShare: boolean): string {
+  return `
+    <p class="eyebrow">匯出存檔</p>
+    <h2>存檔碼</h2>
+    <p>${copied ? '已經複製咗去剪貼簿。' : '長按下面揀「全選」再複製。'}將存檔碼貼去新機（或者新版本）嘅「匯入存檔」就得。</p>
+    <textarea class="save-code" readonly rows="6">${esc(code)}</textarea>
+    <div class="seg">
+      <button type="button" data-action="copy-save">複製</button>
+      ${canShare ? '<button type="button" data-action="share-save">分享</button>' : ''}
+    </div>
+    <button type="button" class="primary" data-action="close-modal">好</button>
+  `;
+}
+
+/** 匯入存檔: paste box; `error` shows the last validation problem. */
+export function importSaveModal(error = ''): string {
+  return `
+    <p class="eyebrow">匯入存檔</p>
+    <h2>貼上存檔碼</h2>
+    <p>匯入會取代而家呢棵樹同埋徽章紀錄。</p>
+    <textarea class="save-code" rows="6" placeholder="SEKAI1.…"></textarea>
+    ${error ? `<p class="save-error">${esc(error)}</p>` : ''}
+    <button type="button" class="primary" data-action="do-import-save">匯入</button>
+    <button type="button" class="ghost" data-action="close-modal">取消</button>
   `;
 }
 

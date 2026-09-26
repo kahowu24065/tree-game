@@ -40,7 +40,8 @@ import {
   type CareAction,
   type CatchupReport,
 } from './sim';
-import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache } from './storage';
+import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
+import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
   PLACES,
@@ -57,6 +58,8 @@ import {
   renderSheet,
   setThumbnailer,
   settingsModal,
+  exportSaveModal,
+  importSaveModal,
   startModal,
   stormModal,
   windExplainerModal,
@@ -96,7 +99,10 @@ import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { isNative } from './native/platform';
-import { hydrateNative } from './native/persist';
+import { flushPersist, hydrateNative } from './native/persist';
+import { decodeSave, encodeSave } from './saveCode';
+import { Share } from '@capacitor/share';
+import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
 import { syncPush } from './native/push';
@@ -402,7 +408,65 @@ function drawScene(input: SceneInput, time: number): void {
   else scene2d?.draw(input, time);
 }
 
+/* ---------- 匯出／匯入存檔 ---------- */
+function saveCodeText(): string {
+  return (document.querySelector('.save-code') as HTMLTextAreaElement | null)?.value.trim() ?? '';
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (isNative()) await Clipboard.write({ string: text });
+    else await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canShare(): boolean {
+  return isNative() || typeof navigator.share === 'function';
+}
+
+async function shareText(text: string): Promise<void> {
+  try {
+    if (isNative()) await Share.share({ title: '世界之樹存檔', text });
+    else await navigator.share({ title: '世界之樹存檔', text });
+  } catch {
+    /* cancelled */
+  }
+}
+
+async function exportSave(): Promise<void> {
+  persist();
+  const code = await encodeSave(state, meta);
+  const copied = await copyText(code);
+  openModal(exportSaveModal(code, copied, canShare()));
+}
+
+async function importSave(): Promise<void> {
+  const code = saveCodeText();
+  if (!code) return;
+  const res = await decodeSave(code);
+  if (!res.ok) {
+    openModal(importSaveModal(res.error));
+    return;
+  }
+  const s = res.payload.save;
+  const when = res.payload.at ? `（${new Date(res.payload.at).toLocaleDateString('en-CA')} 匯出）` : '';
+  const height = s.heightCm >= 100 ? `${(s.heightCm / 100).toFixed(1)} 米` : `${Math.round(s.heightCm)} 厘米`;
+  if (!window.confirm(`匯入「${s.treeName || '棵樹'}」${when}：樹齡 ${s.ageDays} 日、高 ${height}${s.over ? '（已枯死）' : ''}。\n而家嘅存檔會被取代，確定？`)) return;
+  importing = true;
+  localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+  if (res.payload.meta) localStorage.setItem(META_KEY, JSON.stringify(res.payload.meta));
+  await flushPersist();
+  location.reload();
+}
+
+/** Set while an imported save is being written, so nothing overwrites it before the reload. */
+let importing = false;
+
 function persist(): void {
+  if (importing) return;
   saveGame(state);
   saveMeta(meta);
   scheduleReminders(false);
@@ -908,6 +972,21 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'rename':
       openModal(startModal(state.treeName, meta, true));
+      return;
+    case 'export-save':
+      void exportSave();
+      return;
+    case 'copy-save':
+      void copyText(saveCodeText()).then((ok) => toast(ok ? '已複製存檔碼。' : '複製唔到，請長按手動複製。'));
+      return;
+    case 'share-save':
+      void shareText(saveCodeText());
+      return;
+    case 'import-save':
+      openModal(importSaveModal());
+      return;
+    case 'do-import-save':
+      void importSave();
       return;
     case 'new-game':
       openStart();

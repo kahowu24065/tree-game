@@ -3438,3 +3438,17 @@ body.sheet-open .animal-toast.show {
     font-size: 13px;
   }
 }
+
+/* 匯出／匯入存檔 */
+.save-code {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0;
+  font: 12px/1.4 ui-monospace, monospace;
+  word-break: break-all;
+  border-radius: 8px;
+  padding: 8px;
+}
+.save-error {
+  color: #c62828;
+}
