@@ -50,7 +50,7 @@ describe('v9 flocks', () => {
         for (let i = 0; i < 20; i++) {
           const n = groupSize(a, s, rand);
           expect(n).toBeLessThanOrEqual(cap.groups <= 1 ? cap.members : Math.max(2, Math.round(cap.members * 0.4)));
-          if (s >= 1 && a.group[1] >= 2) expect(n).toBeGreaterThanOrEqual(2);
+          expect(n).toBeGreaterThanOrEqual(2); // v13.1: never alone
         }
       }
     }

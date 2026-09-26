@@ -53,7 +53,7 @@ describe('per-stage animal caps', () => {
       for (const a of ANIMALS) {
         for (let i = 0; i < 6; i++) {
           const n = groupSize(a, s, rand);
-          expect(n).toBeGreaterThanOrEqual(1);
+          expect(n).toBeGreaterThanOrEqual(2);
           expect(n).toBeLessThanOrEqual(stageCap(s).members);
         }
       }
@@ -61,7 +61,7 @@ describe('per-stage animal caps', () => {
     const whiteeye = animalById('whiteeye')!;
     const max = (s: number) => Math.max(...Array.from({ length: 60 }, () => groupSize(whiteeye, s, rand)));
     expect(max(4)).toBeGreaterThan(max(1));
-    expect(groupSize(animalById('magpierobin')!, 4, rand)).toBe(1);
+    expect(groupSize(animalById('magpierobin')!, 4, rand)).toBe(2); // v13.1: a pair
   });
 });
 

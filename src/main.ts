@@ -1017,6 +1017,9 @@ if (DEV_PANEL) {
     propInfo: () => scene3d?.propInfo() ?? null,
     waterShare: () => scene3d?.waterShare() ?? null,
     seen: () => [...state.seenAnimals],
+    rotate: () => scene3d?.rotateAnimals(),
+    rotation: () => scene3d?.rotationInfo() ?? null,
+    caps: () => scene3d?.animalCaps() ?? null,
   };
   void import('./dev/panel').then((m) => {
     const root = document.getElementById('dev-root');

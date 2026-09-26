@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BLOCK, NAV_CELL, WATER, type WalkNav } from './walkNav';
 import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
-import { allowedAt, flocky, groupSize, SIZE_LABEL, stageCap } from '../data/eco';
+import { allowedAt, flocky, groupSize, MIN_GROUP, rotateDelay, SIZE_LABEL, stageCap } from '../data/eco';
 import { MotionHints, newTrail, stepTrail, type TrailState } from './motionHints';
 import { clamp } from '../util';
 import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius, shoreRadius } from '../scale';
@@ -1182,7 +1182,9 @@ export class Animals3D {
   private islandR = ISLAND_R;
   /** Current animal exaggeration factor (one for all species). */
   private af = 1;
-  private nextRotate = 8;
+  /** v13.1: first rotation 3–5 min after the scene starts (anchored on the first update); then every 3–5 min. */
+  private nextRotate = Infinity;
+  private started = false;
   private nextArrival = 3;
   private time = 0;
   private fly = fireflies();
@@ -1514,10 +1516,10 @@ export class Animals3D {
     let guard = 0;
     while (this.visitors().length < cap.groups && guard++ < 16) {
       const room = cap.members - this.visitorMembers();
-      if (room < 1) break;
+      if (room < MIN_GROUP) break;
       const options = this.candidates();
       if (!options.length) break;
-      this.spawn(this.pickOption(options), { room });
+      if (!this.spawn(this.pickOption(options), { room })) break;
     }
   }
 
@@ -1527,9 +1529,15 @@ export class Animals3D {
     if (visitors.length) this.retire(visitors.sort((a, b) => a.born - b.born)[0]!);
     const options = this.candidates().filter((id) => !this.crews.some((c) => c.def.id === id));
     const room = stageCap(this.stage).members - this.visitorMembers();
-    if (options.length && room >= 1) this.spawn(this.pickOption(options), { room });
+    if (options.length && room >= MIN_GROUP) this.spawn(this.pickOption(options), { room });
     this.fill();
-    this.nextRotate = this.time + 28 + this.rng() * 20;
+    this.nextRotate = this.time + rotateDelay(this.rng);
+  }
+
+  /** v13.1 instrumentation: seconds until the next timed rotation, and the smallest visible crew. */
+  rotationInfo(): { now: number; next: number; inS: number; minCrew: number } {
+    const counts = this.visibleCrews().map((c) => c.members.length);
+    return { now: this.time, next: this.nextRotate, inS: this.nextRotate - this.time, minCrew: counts.length ? Math.min(...counts) : 0 };
   }
 
   info(): EcoInfo[] {
@@ -1568,11 +1576,14 @@ export class Animals3D {
     }
   }
 
-  /** Add a group of `id` (developer spawn ignores unlocks, caps and day/night). */
-  spawn(id: string, opts: { resident?: boolean; forced?: boolean; room?: number } = {}): void {
+  /**
+   * Add a group of `id` (developer spawn ignores unlocks, caps and day/night). v13.1: never a lone animal —
+   * returns false (and spawns nothing) when there is no room for at least a pair.
+   */
+  spawn(id: string, opts: { resident?: boolean; forced?: boolean; room?: number } = {}): boolean {
     const def = animalById(id);
     const tree = this.tree;
-    if (!def || !tree) return;
+    if (!def || !tree) return false;
     if (opts.forced) {
       const old = this.crews.find((c) => c.def.id === id && !c.leaving);
       if (old) this.retire(old);
@@ -1583,9 +1594,10 @@ export class Animals3D {
     }
     let n = groupSize(def, opts.forced || opts.resident ? Math.max(this.stage, 3) : this.stage, this.rng);
     if (opts.room !== undefined) n = Math.min(n, opts.room);
-    n = Math.max(1, Math.min(n, MAX_MEMBERS - this.memberCount()));
+    n = Math.min(n, MAX_MEMBERS - this.memberCount());
+    if (n < MIN_GROUP) return false;
     const t = template(id);
-    if (!t) return;
+    if (!t) return false;
     const crew: Crew = {
       uid: this.uidNext++,
       def,
@@ -1607,7 +1619,8 @@ export class Animals3D {
     crew.leader.copy(entry);
     crew.leaderTarget.copy(this.groundTarget(def));
     for (let i = 0; i < n; i++) {
-      const obj = def.motion === 'nest' ? this.nestWithRobin(t) : t.clone();
+      // Nest: the first member is the nest with a robin in it, the others its mate(s) on the rim.
+      const obj = def.motion === 'nest' ? (i === 0 ? this.nestWithRobin(t) : this.mateRobin(t, i)) : t.clone();
       obj.rotation.order = 'YZX';
       const member: Member = {
         obj,
@@ -1660,6 +1673,21 @@ export class Animals3D {
     }
     this.arrivals.push({ uid: crew.uid, id: def.id, name: def.name, count: crew.members.length, motion: def.motion, category: def.category });
     if (this.arrivals.length > 12) this.arrivals.shift();
+    return true;
+  }
+
+  /** v13.1: the robin's mate, perched on the far rim of the nest (same local frame as nestWithRobin). */
+  private mateRobin(robin: THREE.Group, i: number): THREE.Group {
+    const g = new THREE.Group();
+    const bird = robin.clone();
+    bird.name = 'mateRobin';
+    const a = Math.PI * (0.95 + 0.35 * (i - 1));
+    bird.position.set(Math.cos(a) * 0.3, 0.22, Math.sin(a) * 0.3 - 0.05);
+    bird.rotation.y = -0.6;
+    bird.scale.setScalar(0.95);
+    foldWings(bird, 1);
+    g.add(bird);
+    return g;
   }
 
   private nestWithRobin(robin: THREE.Group): THREE.Group {
@@ -1844,6 +1872,10 @@ export class Animals3D {
     this.time = t;
     const tree = this.tree;
     if (!tree) return;
+    if (!this.started) {
+      this.started = true;
+      this.nextRotate = t + rotateDelay(this.rng);
+    }
     if (t > this.nextRotate) {
       if (this.crews.length) this.rotate();
       else this.fill();
@@ -1853,7 +1885,7 @@ export class Animals3D {
       this.nextArrival = t + 5 + this.rng() * 5;
       const cap = stageCap(this.stage);
       const room = cap.members - this.visitorMembers();
-      if (this.visitors().length < cap.groups && room >= 1) {
+      if (this.visitors().length < cap.groups && room >= MIN_GROUP) {
         const options = this.candidates();
         if (options.length) this.spawn(this.pickOption(options), { room });
       }
@@ -2088,8 +2120,15 @@ export class Animals3D {
           break;
         }
         case 'hollow': {
-          if (tree.hollow) tree.group.localToWorld(m.pos.copy(tree.hollow.pos).add(new THREE.Vector3(0, -m.scale * 0.35, 0)));
-          else this.perchWorld(1, m.pos);
+          // v13.1: owls come as a pair — the first peeks out of the hollow, the mate sits on the trunk beside it.
+          const idx = c.members.indexOf(m);
+          if (tree.hollow) {
+            const o = tree.hollow.out;
+            const side = idx % 2 ? 1 : -1;
+            const lift = idx === 0 ? -m.scale * 0.35 : m.scale * 0.25;
+            const off = idx === 0 ? new THREE.Vector3(0, lift, 0) : new THREE.Vector3(-o.z * side * m.scale * 0.9 + o.x * m.scale * 0.2, lift, o.x * side * m.scale * 0.9 + o.z * m.scale * 0.2);
+            tree.group.localToWorld(m.pos.copy(tree.hollow.pos).add(off));
+          } else this.perchWorld(1 + idx, m.pos);
           break;
         }
         case 'glow':
@@ -3005,8 +3044,13 @@ export class Animals3D {
       const out = def.motion === 'nest' ? tree.nest?.out : tree.hollow?.out;
       m.obj.rotation.set(0, faceYaw(out ?? new THREE.Vector3(0.3, 0, 1)), 0);
       if (def.motion === 'nest') {
-        const bird = m.obj.children[1];
-        if (bird) bird.rotation.y = Math.sin(ph * 0.7) > 0.6 ? 0.5 : 0;
+        if (m.obj.children[0]?.name === 'nestMesh') {
+          const bird = m.obj.children[1];
+          if (bird) bird.rotation.y = Math.sin(ph * 0.7) > 0.6 ? 0.5 : 0;
+        } else {
+          const mate = m.obj.children[0];
+          if (mate) mate.rotation.y = -0.6 + (Math.sin(ph * 0.6) > 0.5 ? 0.6 : 0);
+        }
       }
       return;
     }

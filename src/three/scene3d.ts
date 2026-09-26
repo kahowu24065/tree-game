@@ -394,6 +394,11 @@ export class Scene3D {
     this.animals.rotate();
   }
 
+  /** v13.1 instrumentation: timed-rotation countdown and the smallest visible crew. */
+  rotationInfo(): ReturnType<Animals3D['rotationInfo']> {
+    return this.animals.rotationInfo();
+  }
+
   setQuality(q: Quality): void {
     this.quality = q;
     this.applyQuality();

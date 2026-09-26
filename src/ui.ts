@@ -768,7 +768,7 @@ function animalAlbum(view: View): string {
   }).join('');
   const res = view.state.residents.length;
   return `<p class="status">圖鑑 ${unlocked} / ${ANIMALS.length} · 長駐 ${res}</p>
-    <p class="advice">見過嘅動物會輪流返嚟探棵樹（雀鳥成群飛過、猴子成群落地）。健康度連續 3 晚 90 以上，已見過嘅動物會長駐：每隻每晚 +2 養分（最多 +6）；兩隻或以上仲會幫手防蟲。健康跌穿 70 佢哋會搬走。</p>
+    <p class="advice">見過嘅動物會輪流返嚟探棵樹，每 3–5 分鐘換一批（每種最少成對出現；雀鳥成群飛過、猴子成群落地）。健康度連續 3 晚 90 以上，已見過嘅動物會長駐：每隻每晚 +2 養分（最多 +6）；兩隻或以上仲會幫手防蟲。健康跌穿 70 佢哋會搬走。</p>
     ${groups}`;
 }
 

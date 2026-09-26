@@ -71,22 +71,34 @@ export function allowedAt(a: AnimalDef, stage: number): boolean {
   return sizeClass(a) <= stageCap(stage).maxSize;
 }
 
-/** Group size for a visit at this stage (flocks grow with the tree). */
+/** v13.1: no species ever shows up alone — every group on the island (visitors and residents) is at least a pair. */
+export const MIN_GROUP = 2;
+
+/** v13.1: visiting groups rotate every 3–5 minutes (seconds). The 5–10 s arrival fill is separate. */
+export const ROTATE_MIN_S = 180;
+export const ROTATE_MAX_S = 300;
+
+/** Seconds until the next visitor rotation: uniform in [ROTATE_MIN_S, ROTATE_MAX_S]. */
+export function rotateDelay(rand: () => number): number {
+  return ROTATE_MIN_S + Math.min(0.999999, Math.max(0, rand())) * (ROTATE_MAX_S - ROTATE_MIN_S);
+}
+
+/** Group size for a visit at this stage (flocks grow with the tree). Always ≥ MIN_GROUP (a pair). */
 export function groupSize(a: AnimalDef, stage: number, rand: () => number): number {
-  if (a.motion === 'nest' || a.motion === 'hollow' || a.motion === 'glow') return 1;
+  // Nest / hollow / fireflies: a pair (two robins at the nest, two owls at the hollow; fireflies draw as one swarm).
+  if (a.motion === 'nest' || a.motion === 'hollow' || a.motion === 'glow') return MIN_GROUP;
   const cap = stageCap(stage);
   const [lo0, hi0] = a.group;
-  let lo = lo0;
+  let lo = Math.max(MIN_GROUP, lo0);
   let hi = Math.max(lo, Math.round(hi0 * (hi0 >= 3 ? cap.flock : 1)));
   let limit = cap.members;
   if (flocky(a)) {
-    // Flocks / swarms: bigger groups (at least a pair once the tree is a 小樹), but one flock never takes more
-    // than ~40 % of the stage's animals so the variety cap still leaves room for other species.
+    // Flocks / swarms: bigger groups, but one flock never takes more than ~40 % of the stage's animals so the
+    // variety cap still leaves room for other species.
     const mult = hi0 >= 3 ? cap.flock * 1.35 : 1 + (cap.flock - 0.8) * 0.8;
     hi = Math.max(lo, Math.round(hi0 * mult));
-    if (stage >= 1) lo = Math.min(hi, Math.max(lo, 2));
-    limit = cap.groups <= 1 ? cap.members : Math.max(2, Math.round(cap.members * 0.4));
+    limit = cap.groups <= 1 ? cap.members : Math.max(MIN_GROUP, Math.round(cap.members * 0.4));
   }
   const n = lo + Math.floor(rand() * (hi - lo + 1));
-  return Math.max(1, Math.min(n, limit, cap.members));
+  return Math.max(MIN_GROUP, Math.min(n, limit, cap.members));
 }
