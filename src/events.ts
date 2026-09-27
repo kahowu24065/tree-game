@@ -1,5 +1,5 @@
 /** Real weather → the game's weather events (設計書「天氣與災害權重表」). */
-import { COLD_ABS_MIN_C, COLD_REL_DROP_C, COLD_REL_MAX_C, HK_HOT_MAX_C, HOT_ABS_MAX_C, HOT_REL_MIN_C, HOT_REL_RISE_C, WEATHER_EVENTS, type WeatherEventId } from './balance';
+import { COLD_ABS_MIN_C, COLD_REL_DROP_C, COLD_REL_MAX_C, HK_HOT_MAX_C, HOT_ABS_MAX_C, HOT_REL_MIN_C, HOT_REL_RISE_C, WEATHER_EVENTS, WX_NUM, type WeatherEventId } from './balance';
 import { hkoIconRain, type HkoWarning } from './hko';
 import { pickEvent } from './rules';
 import type { CurrentWeather, DayCond, ForecastDay } from './types';
@@ -63,11 +63,11 @@ export function tempEvents(t: TempInput): WeatherEventId[] {
 
 /** Model numbers (Open-Meteo, anywhere in the world) → headline event. Wind first, then rain, then heat, then cold. */
 export function eventFromNumbers(input: { code: number; precipMm: number; gustKmh: number; windKmh: number } & TempInput): WeatherEventId {
-  if (input.gustKmh >= 118 || input.windKmh >= 63) return 'typhoon8';
-  if (input.gustKmh >= 88 || input.windKmh >= 50) return 'typhoon1';
-  if (input.code >= 95 || input.gustKmh >= 62) return 'thunder';
-  if (input.precipMm >= 70) return 'blackrain';
-  if (input.precipMm >= 25) return 'rainstorm';
+  if (input.gustKmh >= WX_NUM.typhoon8.gust || input.windKmh >= WX_NUM.typhoon8.wind) return 'typhoon8';
+  if (input.gustKmh >= WX_NUM.typhoon1.gust || input.windKmh >= WX_NUM.typhoon1.wind) return 'typhoon1';
+  if (input.code >= WX_NUM.thunder.code || input.gustKmh >= WX_NUM.thunder.gust) return 'thunder';
+  if (input.precipMm >= WX_NUM.blackrain.mm) return 'blackrain';
+  if (input.precipMm >= WX_NUM.rainstorm.mm) return 'rainstorm';
   if (isHotDay(input)) return 'hot';
   if (isColdDay(input)) return 'cold';
   if (input.precipMm >= 0.5 || isRainCode(input.code)) return 'drizzle';

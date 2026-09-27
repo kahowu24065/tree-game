@@ -286,5 +286,5 @@ export interface DayCond {
 }
 
 export type TimeMode = 'auto' | 'day' | 'night';
-export type TabId = 'care' | 'forecast' | 'album' | 'milestones';
+export type TabId = 'care' | 'album' | 'milestones';
 export type LocationSource = 'geo' | 'fallback' | 'manual';

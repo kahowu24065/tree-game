@@ -55,6 +55,7 @@ import {
   milestoneModal,
   renderChrome,
   renderPanel,
+  weatherPageHtml,
   renderSheet,
   setThumbnailer,
   settingsModal,
@@ -151,6 +152,8 @@ try {
 }
 const drawer = document.getElementById('drawer');
 const drawerBackdrop = document.getElementById('drawer-backdrop');
+const wxPage = document.getElementById('wx-page');
+const wxBackdrop = document.getElementById('wx-backdrop');
 const sheet = document.getElementById('sheet');
 const sheetHandle = document.getElementById('sheet-handle');
 
@@ -387,6 +390,7 @@ function view(input: SceneInput): View {
       conditionText: manual() ? undefined : weather.conditionText,
       nowIcon: !manual() && hk ? weather.hko!.current?.icon || undefined : undefined,
       station: weather.station,
+      humidity: manual() ? undefined : weather.current.humidity,
       rainInHours: weather.rainInHours ?? null,
       error: weather.error,
       overridden: manual(),
@@ -400,6 +404,7 @@ function render(): void {
   renderChrome(v);
   renderSheet(state, today());
   if (drawer && !drawer.hidden) renderPanel(v);
+  if (wxPage && !wxPage.hidden) renderWeatherPage(v);
   drawScene(input, performance.now());
   devRender?.();
 }
@@ -845,9 +850,51 @@ function startGame(species?: SpeciesId): void {
 
 /* ---------- Drawer and growth-log sheet ---------- */
 
-function openDrawer(next: TabId): void {
+/** v1.4.1 天氣概況: its own page (not one of the 樹木狀態 tabs). */
+function renderWeatherPage(v: View): void {
+  const panel = document.getElementById('wx-panel');
+  if (!panel) return;
+  const html = weatherPageHtml(v);
+  if (panel.dataset.html === html) return;
+  const scroll = panel.scrollTop;
+  panel.innerHTML = html;
+  panel.dataset.html = html;
+  panel.scrollTop = scroll;
+}
+
+function openWeather(): void {
+  if (!wxPage || !wxBackdrop) return;
+  closeDrawer();
+  setSheet(false);
+  const close = document.getElementById('wx-close');
+  if (close && !close.innerHTML) close.innerHTML = document.getElementById('drawer-close')?.innerHTML ?? '×';
+  const panel = document.getElementById('wx-panel');
+  if (panel) panel.scrollTop = 0;
+  wxPage.hidden = false;
+  wxBackdrop.hidden = false;
+  requestAnimationFrame(() => {
+    wxPage.classList.add('open');
+    wxBackdrop.classList.add('open');
+  });
+  render();
+}
+
+function closeWeather(): void {
+  if (!wxPage || !wxBackdrop || wxPage.hidden) return;
+  wxPage.classList.remove('open');
+  wxBackdrop.classList.remove('open');
+  window.setTimeout(() => {
+    if (!wxPage.classList.contains('open')) {
+      wxPage.hidden = true;
+      wxBackdrop.hidden = true;
+    }
+  }, 260);
+}
+
+function openDrawer(next: TabId, focus?: string): void {
   if (!drawer || !drawerBackdrop) return;
   tab = next;
+  closeWeather();
   setSheet(false);
   drawer.hidden = false;
   drawerBackdrop.hidden = false;
@@ -856,6 +903,7 @@ function openDrawer(next: TabId): void {
     drawerBackdrop.classList.add('open');
   });
   render();
+  if (focus) document.getElementById(`${focus}-card`)?.scrollIntoView({ block: 'start' });
 }
 
 function closeDrawer(): void {
@@ -1022,6 +1070,12 @@ function doAction(action: string, target: HTMLElement): void {
     case 'settings':
       openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
       return;
+    case 'weather':
+      openWeather();
+      break;
+    case 'close-weather':
+      closeWeather();
+      break;
     case 'close-drawer':
       closeDrawer();
       return;
@@ -1076,8 +1130,12 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-species], [data-album-mode]');
-  if (!target) return;
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-species], [data-album-mode], [data-guide], [data-notify]');
+  if (!target) {
+    // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
+    if (el.closest('#status-card') && state.started && !state.over) openDrawer('care');
+    return;
+  }
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;
   if (target.dataset.species) {
@@ -1093,7 +1151,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.dataset.open) {
-    openDrawer(target.dataset.open as TabId);
+    openDrawer(target.dataset.open as TabId, target.dataset.focus);
     return;
   }
   if (target.dataset.tab) {
@@ -1158,7 +1216,8 @@ document.getElementById('modal')?.addEventListener('keydown', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   if (!document.getElementById('modal')?.hidden) return;
-  if (drawer && !drawer.hidden) closeDrawer();
+  if (wxPage && !wxPage.hidden) closeWeather();
+  else if (drawer && !drawer.hidden) closeDrawer();
   else if (sheet?.dataset.state === 'open') setSheet(false);
 });
 
@@ -1310,6 +1369,7 @@ if (DEV_PANEL) {
       pendingNote = '';
       closeModal();
       closeDrawer();
+      closeWeather();
       setSheet(false);
       persist();
       render();

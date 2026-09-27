@@ -5,11 +5,11 @@ import { FEATURE_LABEL, habitatDef } from './data/habitat';
 import { SPECIES, STAGE_NAMES, speciesDef, speciesTargetCm, stageSampleCm, type SpeciesId } from './data/species';
 import { daysBetween, formatShort, weekdayIndex } from './dates';
 import { drawAnimal } from './draw-animals';
-import { dayEvent, hkoWarningEvents, type Countdown } from './events';
+import { type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import type { HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, hMultTier } from './rules';
-import { emergencyName, eventLabel, labelRegion, regionalize } from './labels';
+import { emergencyName, eventLabel, regionalize } from './labels';
 import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId } from './types';
 import { esc, formatHeight, percentOf } from './util';
@@ -52,6 +52,7 @@ export interface WeatherView {
   conditionText?: string;
   nowIcon?: number;
   station?: string;
+  humidity?: number;
   rainInHours: number | null;
   error?: string;
   overridden: boolean;
@@ -301,7 +302,7 @@ export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
       cls: 'double-r',
       title: '🪵 昨晚倒塌咗',
       body: `今日加固效果雙倍：打木樁 +${PREPS.stakes.amount * 2}、綁防風繩 +${PREPS.ropes.amount * 2}、修枝防風 +${PREPS.prune.amount * 2}（最多 ${R_MAX}）。${esc(collapseText(state))}。`,
-      btns: `<button type="button" data-open="forecast">去加固</button><button type="button" data-action="dismiss-double">知道喇</button>`,
+      btns: `<button type="button" data-open="care" data-focus="guard">去加固</button><button type="button" data-action="dismiss-double">知道喇</button>`,
     });
   }
   if (state.morningNote) {
@@ -361,7 +362,6 @@ export function renderChrome(view: View): void {
   const status = document.getElementById('status-card');
   if (status) {
     const stage = stageFor(state.heightCm, speciesTargetCm(state.species));
-    const freshAnimals = state.animals.filter((id) => !state.seenAnimals.includes(id)).length;
     const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying), state.collapses || 0) : null;
     const emerg = state.started && !state.over ? emergencyButtons(view, 'mini') : '';
     status.classList.toggle('pop-open', Boolean(night?.pop));
@@ -377,9 +377,7 @@ export function renderChrome(view: View): void {
         ${statBar('R', '抗風', state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked')}
       </div>
       ${state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : ''}
-      <div class="mini-acts album-row">
-        <button type="button" class="mini mini-album" data-open="album">${icon('book')}<span>圖鑑</span><small>${state.animals.length}/${ANIMALS.length}</small>${freshAnimals ? `<em class="badge">${freshAnimals}</em>` : ''}</button>
-      </div>${emerg ? `<div class="emerg-acts">${emerg}</div>` : ''}${night?.pop ?? ''}`;
+      ${emerg ? `<div class="emerg-acts">${emerg}</div>` : ''}${night?.pop ?? ''}`;
   }
 
   const rail = document.getElementById('rail');
@@ -405,7 +403,7 @@ export function renderChrome(view: View): void {
     const coldOn = emergencyOptions(view.todayEvents).warmCover;
     const covered = Boolean(state.care.warmCover);
     const warmOk = coldOn && !covered && state.started && !state.over;
-    // v15 layout: 澆水 over 疏水 | 施肥 over 除蟲 | 加固 | 保暖 (圖鑑 moved to the status card).
+    // v15 layout: 澆水 over 疏水 | 施肥 over 除蟲 | 加固 | 保暖 (v1.4.1: 圖鑑 lives in the 樹木狀態 pop box).
     dock.innerHTML = `
       <div class="dock-col">
         ${dockBtn('d-water short', 'data-action="water"', 'drop', '澆水', rainBlocks ? '落緊雨' : state.moisture >= W_SATURATED ? '飽和' : `${water.used}/${water.max}`, water.used >= water.max || rainBlocks)}
@@ -415,7 +413,7 @@ export function renderChrome(view: View): void {
         ${dockBtn('d-feed short', 'data-action="fertilize"', 'sprout', '施肥', feed.used >= feed.max ? '施過喇' : `${feed.used}/${feed.max}`, feed.used >= feed.max)}
         <button type="button" class="dock-sub d-bug ${state.pest.active ? 'alert' : ''}" data-action="deworm" ${state.care.dewormed ? 'disabled' : ''}>${icon('bug')}<span>${state.care.dewormed ? '除過喇' : state.pest.active ? '有蟲！' : '除蟲'}</span></button>
       </div>
-      ${dockBtn('d-guard', 'data-open="forecast"', 'shield', '加固', !state.windUnlocked ? '青年樹解鎖' : dbl ? '今日雙倍' : prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : '')}
+      ${dockBtn('d-guard', 'data-open="care" data-focus="guard"', 'shield', '加固', !state.windUnlocked ? '青年樹解鎖' : dbl ? '今日雙倍' : prepShort ? '惡劣天氣' : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : '')}
       <button type="button" class="dock-btn d-warm ${warmOk ? 'hot-pulse' : 'done'}${covered ? ' lit' : ''}" data-action="warm-cover" ${warmOk ? '' : 'disabled aria-disabled="true"'}>
         <span class="dock-ic">${icon('mulch')}</span><span class="dock-label">保暖</span><small>${covered ? '今日做咗' : coldOn ? '寒冷・應急' : '寒冷先用'}</small>
       </button>`;
@@ -469,8 +467,8 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
     delete hit.dataset.open;
     hit.dataset.action = 'retry-weather';
   } else {
-    delete hit.dataset.action;
-    hit.dataset.open = 'forecast';
+    delete hit.dataset.open;
+    hit.dataset.action = 'weather';
   }
   const label = view.manual ? ev(view.todayEvent).label : cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code);
   let line: string;
@@ -490,7 +488,7 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   const source = sourceLabel(wx);
   const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
   const shownLabel = firstLoad ? '攞緊天氣…' : label;
-  setAttr(hit, 'aria-label', simulated ? `${temp} ${shownLabel}・模擬天氣，撳一下再試攞真實天氣` : `${temp} ${shownLabel}・天氣同預報`);
+  setAttr(hit, 'aria-label', simulated ? `${temp} ${shownLabel}・模擬天氣，撳一下再試攞真實天氣` : `${temp} ${shownLabel}・天氣概況`);
   setHtml(card.querySelector('.wx-art')!, weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || view.manual ? undefined : wx.nowIcon));
   setHtml(card.querySelector('.wx-main')!, `<b>${temp}</b><span>${esc(shownLabel)}</span>`);
   const place = card.querySelector<HTMLButtonElement>('.wx-place')!;
@@ -637,16 +635,15 @@ export function renderPanel(view: View): void {
   const panel = document.getElementById('panel');
   if (!panel) return;
   const scroll = panel.scrollTop;
-  panel.innerHTML = `${tabs(view.tab)}<div class="panel-body">${body(view)}</div>`;
+  panel.innerHTML = `${tabs(view.tab, view.state.animals.filter((id) => !view.state.seenAnimals.includes(id)).length)}<div class="panel-body">${body(view)}</div>`;
   panel.scrollTop = scroll;
   paintThumbs();
 }
 
-function tabs(active: TabId): string {
+function tabs(active: TabId, freshAnimals = 0): string {
   const items: [TabId, string][] = [
     ['care', '照顧'],
-    ['forecast', '天氣·加固'],
-    ['album', '圖鑑'],
+    ['album', freshAnimals ? `圖鑑<em class="badge">${freshAnimals}</em>` : '圖鑑'],
     ['milestones', '里程碑'],
   ];
   return `<nav class="tabs" role="tablist">${items
@@ -660,8 +657,6 @@ function tabs(active: TabId): string {
 function body(view: View): string {
   if (!view.state.started) return `<div class="card quiet"><p>先揀樹種同替棵樹起個名。</p></div>`;
   switch (view.tab) {
-    case 'forecast':
-      return forecastTab(view);
     case 'album':
       return albumTab(view);
     case 'milestones':
@@ -725,6 +720,7 @@ function careTab(view: View): string {
     </div>
     ${state.windUnlocked ? `<p class="fine collapse-line">${esc(collapseText(state))}：風災時抗風力唔夠會倒塌。</p>` : `<p class="fine">未到青年樹：風災唔傷樹。</p>`}
     ${emergencyButtons(view, 'act')}
+    ${guardCards(view)}
     ${nightCard(view.preview, state.collapses || 0)}
     <p class="fine">最佳：水分 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}，養分 ${N_OPTIMAL[0]}+。而家${esc(tier.label)}（×${tier.mult}）${state.health >= 80 ? '，有綠光' : ''}。${state.pest.active ? '<b class="bad">有蟲害：每晚 −15 健康。</b>' : ''}</p>
     <p class="advice">${esc(advice(state, view.preview, view.countdown))}</p>
@@ -824,14 +820,6 @@ function countdownDamage(state: GameState, id: WeatherEventId): string {
   return `以而家抗風力 ${Math.round(state.resist)} 計，傷害會係 ${dmg}（${d.damage} × (1 − ${Math.round(state.resist)}/100)）。${below ? `⚠️ 低過倒塌門檻 ${d.collapseBelow}，會倒塌！` : `倒塌門檻 ${d.collapseBelow}，而家安全。`}`;
 }
 
-/** v15 how real weather becomes game events, for the player's region. */
-export function weatherRulesText(region = labelRegion()): string {
-  const tail = '熱、寒、雨、風四類天氣各自計埋（例如酷熱加暴雨加颱風三樣都扣）；同一類只計最嚴重嗰個。風災要棵樹長到青年樹先會生效。';
-  if (region === 'intl')
-    return `你喺香港以外：按 Open-Meteo 預報判斷，名稱叫烈風、暴風、大雨、豪雨（規則同香港一樣，只係名唔同）。酷熱：最高 35°C 或以上，或者最高 28°C 以上兼高過過去 14 日平均最高 5°C 或以上。寒冷：最低 3°C 或以下，或者最低 10°C 或以下兼低過過去 14 日平均最低 8°C 或以上。雨量 25 毫米 → 大雨、70 毫米 → 豪雨；陣風 88 → 烈風、118 → 暴風；雷暴或陣風 62 → 狂風雷暴。${tail.replace('暴雨', '大雨')}`;
-  return `香港（同鄰近地區）：酷熱天氣警告 → 酷熱；寒冷天氣警告 → 寒冷；黃／紅雨 → 暴雨；黑雨 → 黑雨；雷暴警告或強烈季候風 → 狂風雷暴；一號／三號風球 → 初級颱風；八號或以上 → 高級颱風；山泥傾瀉警告 → 山泥傾瀉（風災類，同初級颱風一樣）。其他地方按 Open-Meteo 判斷，名稱叫烈風、暴風、大雨、豪雨（規則一樣）。${tail}（風：初級颱風＝山泥傾瀉 &lt; 狂風雷暴 &lt; 高級颱風；雨：黑雨 &gt; 暴雨）`;
-}
-
 /** 天氣事件表 (shown in 設定 → 玩法 → 天氣與警告). */
 export function eventTableHtml(): string {
   const table = (Object.keys(WEATHER_EVENTS) as WeatherEventId[])
@@ -846,7 +834,8 @@ export function eventTableHtml(): string {
   return `<table class="evtable"><thead><tr><th>事件</th><th>類</th><th>健康</th><th>副作用・應對</th></tr></thead><tbody>${table}</tbody></table>`;
 }
 
-function forecastTab(view: View): string {
+/** 照顧 tab: the 12-hour countdown (what it does to the tree) and the 加固 card (moved here from the old 天氣·加固 tab). */
+function guardCards(view: View): string {
   const { state } = view;
   const cd = view.countdown;
   const alert = cd
@@ -856,7 +845,7 @@ function forecastTab(view: View): string {
         <p>${esc(effectText(cd.event, state.windUnlocked))}。${esc(ev(cd.event).tip)}</p>
         <p class="fine">來源：${esc(cd.source)}。${esc(countdownDamage(state, cd.event))}</p>
       </article>`
-    : `<article class="card"><p class="eyebrow">12 小時預警</p><p>未來 12 小時未見惡劣天氣。</p></article>`;
+    : '';
   const locked = !state.windUnlocked;
   const dbl = !locked && doubleRActive(state);
   const preps = (Object.keys(PREPS) as PrepId[])
@@ -866,61 +855,64 @@ function forecastTab(view: View): string {
       return `<button type="button" class="prep ${done ? 'on' : ''} ${locked ? 'locked' : ''} ${dbl && !done ? 'double' : ''}" data-prep="${k}" aria-pressed="${done}" ${locked ? 'disabled aria-disabled="true"' : ''}><span>${PREPS[k].label}</span><small>${sub}</small></button>`;
     })
     .join('');
-  const emerg = emergencyButtons(view, 'act');
-  const shield = `<article class="card ${locked ? 'locked-card' : ''}">
+  const shield = `<article class="card guard-card ${locked ? 'locked-card' : ''}" id="guard-card">
       <p class="eyebrow">加固・抗風力 R${locked ? '（青年樹時解鎖）' : `・${esc(collapseText(state))}`}</p>
       ${dbl ? `<p class="double-banner">🪵 棵樹昨晚倒塌咗，今日加固效果雙倍！</p>` : ''}
       <h2>${Math.round(state.resist)} / ${R_MAX}</h2>
       <div class="track fat"><div class="fill shield" style="width:${Math.round(state.resist)}%"></div></div>
-      <p>${
-        locked
-          ? `棵樹未到青年樹：抗風力唔會變（唔會每晚減，風災亦唔會消耗），風災唔會傷樹、唔會倒塌。長到青年樹就會解鎖加固。`
-          : `${regionalize(`只有風災（初級颱風、狂風雷暴、高級颱風）受抗風力影響：傷害 = 基礎 × (1 − R/100)。風災會消耗抗風力：初級颱風 18、狂風雷暴 25、高級颱風 35；`)}每晚繩索鬆少少（−${R_DAILY_DECAY}）。R 低過門檻（20／25／40）一定倒塌：高度 −20%，最多倒 2 次，第 3 次會死。每樣加固每日做一次。`
-      }</p>
+      <p class="fine">${locked ? '未到青年樹：風災唔傷樹，抗風力唔變。' : `每樣每日一次，每晚 −${R_DAILY_DECAY}。`}<button type="button" class="linkish" data-action="guide" data-tab="calc">計法</button></p>
       <div class="preps">${preps}</div>
     </article>`;
+  return alert + shield;
+}
+
+/** v1.4.1 天氣概況: its own page — real-world warnings in force plus current conditions and the forecast. */
+export function weatherPageHtml(view: View): string {
+  const { cond, wx } = view;
+  const simulated = wx.provider === 'sim' && !wx.overridden;
+  const label = wx.conditionText || weatherLabel(cond.code);
+  const facts = [
+    wx.humidity !== undefined ? `濕度 ${Math.round(wx.humidity)}%` : '',
+    `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,
+    cond.precipMm > 0 ? `雨量 ${Math.round(cond.precipMm * 10) / 10} 毫米` : '',
+  ].filter(Boolean);
+  const rain = wx.rainInHours !== null && !cond.raining && !simulated && !wx.overridden ? (wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`) : '';
+  const now = `<article class="card wx-now">
+      <span class="wx-now-art">${weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || wx.overridden ? undefined : wx.nowIcon)}</span>
+      <div><p class="eyebrow">而家・${esc(view.place)}${wx.station && !simulated && !wx.overridden ? `・${esc(wx.station)}站` : ''}</p>
+      <h2>${Math.round(cond.tempC)}°C ${esc(label)}</h2>
+      <p class="fine">${facts.map(esc).join(' · ')}${rain ? `<br>${esc(rain)}` : ''}</p></div>
+    </article>`;
+  let warns: string;
+  if (wx.hkoUsed) {
+    warns = wx.warnings.length
+      ? `<ul class="hko-warns">${wx.warnings.map((w) => `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(w.name)}</b></span></li>`).join('')}</ul>`
+      : '<p>而家冇天氣警告生效。</p>';
+    warns += `${wx.messages.length ? `<p class="fine">${wx.messages.map(esc).join('<br>')}</p>` : ''}${wx.situation ? `<p class="fine">${esc(wx.situation)}</p>` : ''}`;
+  } else {
+    warns = `<p>${wx.overridden ? '手動天氣（開發者）：冇真實警告。' : '你喺香港以外，冇天文台警告；以下預報嚟自 Open-Meteo。'}</p>`;
+  }
+  const cd = view.countdown;
+  const soon = cd && !wx.overridden ? `<p class="fine wx-soon">${icon('warn')}${cd.active ? '而家' : '預報'}：${esc(ev(cd.event).label)} · ${esc(hoursText(cd.hours))}（${esc(cd.source)}）</p>` : '';
+  const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? '香港天文台・生效中警告' : '天氣警告'}</p>${warns}${soon}</article>`;
   const rows = view.forecast
     .map((day) => {
-      const e = day.date === view.today ? view.todayEvent : dayEvent(day);
-      const d = ev(e);
-      const tag = e !== 'clear' ? `<span class="tag ${d.damage >= 30 ? 'typhoon' : d.severe ? 'rain' : 'wind'}">${esc(d.label)}</span>` : '';
       const today = day.date === view.today ? ' today' : '';
-      return `<article class="day ${d.damage >= 30 ? 'danger' : d.severe ? 'warn' : ''}${today}">
-        <span class="day-art">${weatherArt(day.code, false, d.damage >= 30, day.hkoIcon)}</span>
+      return `<article class="day${today}">
+        <span class="day-art">${weatherArt(day.code, false, false, day.hkoIcon)}</span>
         <div><strong>${day.date === view.today ? '今日' : `星期${WEEK[weekdayIndex(day.date)] ?? ''}`}</strong><span>${esc(formatShort(day.date))}</span></div>
         <div><b>${esc(dayLabel(day))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
-        <div class="tags">${tag}</div>
-        ${view.wx.hkoDays[day.date] ? `<p class="hko-day">天文台：${esc(view.wx.hkoDays[day.date]!)}</p>` : ''}
+        ${wx.hkoDays[day.date] ? `<p class="hko-day">天文台：${esc(wx.hkoDays[day.date]!)}</p>` : ''}
       </article>`;
     })
     .join('');
-  const wx = view.wx;
-  const hkoCard = wx.hkoUsed
-    ? `<article class="card hko">
-        <p class="eyebrow">香港天文台</p>
-        ${
-          wx.warnings.length
-            ? `<ul class="hko-warns">${wx.warnings
-                .map((w) => {
-                  const game = hkoWarningEvents([w])[0];
-                  return `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(w.name)}</b>${game ? `<small>遊戲當：${esc(ev(game).label)}</small>` : ''}</span></li>`;
-                })
-                .join('')}</ul>`
-            : '<p>而家冇天氣警告生效。</p>'
-        }
-        ${wx.messages.length ? `<p class="fine">${wx.messages.map(esc).join('<br>')}</p>` : ''}
-        ${wx.situation ? `<p class="fine">${esc(wx.situation)}</p>` : ''}
-      </article>`
-    : '';
-
   return `
-    ${alert}
-    ${emerg}
-    ${shield}
-    ${hkoCard}
-    <p class="status">${esc(view.statusLine)}${wx.provider === 'sim' && !wx.overridden ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
+    <header class="wx-page-head"><h2>天氣概況</h2><p class="fine">${sourceLabel(wx)}</p></header>
+    ${warnCard}
+    ${now}
+    <h3 class="sub">未來預報</h3>
     <div class="days">${rows}</div>
-    <p class="fine">天氣點樣變成遊戲事件：<button type="button" class="linkish" data-action="guide" data-tab="weather">玩法 → 天氣與警告</button></p>
+    <p class="status">${esc(view.statusLine)}${simulated ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
     <button type="button" class="texty" data-action="locate">用我所在位置更新天氣</button>
   `;
 }

@@ -214,6 +214,14 @@ export const HOT_ABS_MAX_C = 35;
 /** 酷熱 (outside HK): or day max ≥ this AND ≥ normal max + HOT_REL_RISE_C. */
 export const HOT_REL_MIN_C = 28;
 export const HOT_REL_RISE_C = 5;
+/** v15 wind / rain thresholds for model numbers (Open-Meteo, km/h and mm per day). The push server mirrors these. */
+export const WX_NUM = {
+  typhoon8: { gust: 118, wind: 63 },
+  typhoon1: { gust: 88, wind: 50 },
+  thunder: { gust: 62, code: 95 },
+  blackrain: { mm: 70 },
+  rainstorm: { mm: 25 },
+} as const;
 /** Game heat threshold for model numbers in / near HK (HKO WHOT decides when HKO data is there). */
 export const HK_HOT_MAX_C = 33;
 

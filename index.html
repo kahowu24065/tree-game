@@ -33,12 +33,20 @@
       <nav class="dock" id="dock" aria-label="主要動作"></nav>
     </div>
     <div class="drawer-backdrop" id="drawer-backdrop" data-action="close-drawer" hidden></div>
-    <section class="drawer glass" id="drawer" aria-label="照顧同紀錄面板" hidden>
+    <section class="drawer glass" id="drawer" aria-label="樹木狀態：照顧、圖鑑、里程碑" hidden>
       <div class="drawer-head">
         <span class="grab"></span>
         <button type="button" class="round small" data-action="close-drawer" aria-label="關閉" id="drawer-close"></button>
       </div>
       <div class="panel" id="panel"></div>
+    </section>
+    <div class="drawer-backdrop" id="wx-backdrop" data-action="close-weather" hidden></div>
+    <section class="drawer glass wx-page" id="wx-page" role="dialog" aria-label="天氣概況" hidden>
+      <div class="drawer-head">
+        <span class="grab"></span>
+        <button type="button" class="round small" data-action="close-weather" aria-label="關閉" id="wx-close"></button>
+      </div>
+      <div class="panel" id="wx-panel"></div>
     </section>
     <div id="modal" class="modal" hidden></div>
     <div id="dev-root" hidden></div>
