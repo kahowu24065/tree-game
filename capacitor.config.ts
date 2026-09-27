@@ -7,8 +7,8 @@ const config: CapacitorConfig = {
   plugins: {
     // Show HKO warning pushes as normal notifications even while the app is open.
     PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
-    // Monochrome status-bar icon (android/app/src/main/res/drawable/ic_stat_tree.xml).
-    LocalNotifications: { smallIcon: 'ic_stat_tree', iconColor: '#2E7D32' },
+    // Monochrome status-bar icon (drawable-*/ic_stat_tree.png, from app-assets/ic_stat_tree.svg).
+    LocalNotifications: { smallIcon: 'ic_stat_tree', iconColor: '#5E9E36' },
   },
 };
 

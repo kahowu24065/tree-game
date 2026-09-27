@@ -314,4 +314,4 @@ Weather-warning push (`@capacitor/push-notifications`, channel `weather-warnings
 - Web part without the 開發者面板: `npm run build:app` (= `VITE_DEV_PANEL=0 npm run build`). Debug APKs and the website use `npm run build` (panel on).
 - Signing: `android/keystore.properties` (gitignored; `storeFile`, `storePassword`, `keyAlias`, `keyPassword`) or `$SEKAI_KEYSTORE_PROPERTIES`. Keep the keystore backup safe — updates must be signed with the same key.
 - `npm run build:app && npx cap sync android && cd android && ./gradlew assembleRelease bundleRelease` → `app/build/outputs/apk/release/app-release.apk` and `bundle/release/app-release.aab`.
-- Icon / splash sources: `app-assets/*.svg` → `npm run assets` (renders PNGs, then `@capacitor/assets` writes all densities).
+- Icons: `app-assets/icon-v2-source.png` (launcher art) and `app-assets/ic_stat_tree.svg` (notification silhouette) → `npm run assets` writes every launcher/adaptive/round mipmap, notification PNGs, splash screens, `app-assets/play-store-icon-512.png` and the web favicons.

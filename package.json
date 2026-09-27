@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:app": "VITE_DEV_PANEL=0 npm run build",
-    "assets": "node app-assets/render.mjs && npx @capacitor/assets generate --android --assetPath app-assets"
+    "assets": "node app-assets/render.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
