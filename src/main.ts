@@ -101,6 +101,7 @@ import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { isNative } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
 import { decodeSave, encodeSave } from './saveCode';
+import { guideModal, type GuideTab } from './guide';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
@@ -291,7 +292,7 @@ function placeLabel(): { place: string; note: string } {
 }
 
 /** How hard the tree sways (0 calm … 1 typhoon), from the weather in force now; the dev panel can force it. */
-const EVENT_SWAY: Record<WeatherEventId, number> = { clear: 0.08, drizzle: 0.18, hot: 0.04, cold: 0.1, rainstorm: 0.55, blackrain: 0.65, typhoon1: 0.72, thunder: 0.85, typhoon8: 1 };
+const EVENT_SWAY: Record<WeatherEventId, number> = { clear: 0.08, drizzle: 0.18, hot: 0.04, cold: 0.1, rainstorm: 0.55, blackrain: 0.65, typhoon1: 0.72, thunder: 0.85, typhoon8: 1, landslip: 0.4 };
 function swayLevel(cond: DayCond): number {
   if (DEV_PANEL && dev.sway !== null) return dev.sway;
   const events = manual() ? todayEvents() : liveEvents();
@@ -499,6 +500,8 @@ function scheduleReminders(background: boolean): void {
       isHK: regionFor(weather.source, nearHongKong(weather.lat, weather.lon)) === 'hk',
       rUnlocked: Boolean(state.windUnlocked),
       alive: state.started && !state.over,
+      tree: state.over ? 'dead' : state.dying ? 'dying' : 'ok',
+      resist: Math.round(state.resist),
     });
   const offset = virtualNow() - Date.now();
   applyNotifications(
@@ -989,6 +992,9 @@ function doAction(action: string, target: HTMLElement): void {
     case 'rename':
       openModal(startModal(state.treeName, meta, true));
       return;
+    case 'guide':
+      openModal(guideModal((target?.dataset.tab as GuideTab | undefined) ?? 'play'));
+      return;
     case 'export-save':
       void exportSave();
       return;
@@ -1121,6 +1127,11 @@ document.addEventListener('click', (event) => {
     const name = PLACES.find((p) => p.id === placeChoice)?.name ?? '你所在位置';
     toast(`天氣改為跟住${name}。`);
     void refreshWeather(placeChoice === 'geo');
+    return;
+  }
+  if (target.dataset.guide) {
+    openModal(guideModal(target.dataset.guide as GuideTab));
+    document.querySelector('.modal-card')?.scrollTo({ top: 0 });
     return;
   }
   if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {

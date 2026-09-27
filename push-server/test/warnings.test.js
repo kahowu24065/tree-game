@@ -9,9 +9,9 @@ const AMBER = levelsFromWarnsum(fx('amber-t3'));
 const BLACK = levelsFromWarnsum(fx('black-t8'));
 
 test('levels: irrelevant warnings and CANCEL are ignored', () => {
-  assert.deepEqual(NONE, { heat: 0, rain: 0, typhoon: 0, cold: 0 });
-  assert.deepEqual(AMBER, { heat: 0, rain: 1, typhoon: 2, cold: 0 });
-  assert.deepEqual(BLACK, { heat: 0, rain: 3, typhoon: 3, cold: 1 });
+  assert.deepEqual(NONE, { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 });
+  assert.deepEqual(AMBER, { heat: 0, rain: 1, typhoon: 2, cold: 0, landslip: 0 });
+  assert.deepEqual(BLACK, { heat: 0, rain: 3, typhoon: 3, cold: 1, landslip: 0 });
 });
 
 test('first run records state without notifying', () => {

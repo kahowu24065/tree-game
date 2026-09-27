@@ -42,7 +42,7 @@ export const N_DAILY_USE = 10;
 export const R_DAILY_DECAY = 2;
 
 /* ---------- Weather events ---------- */
-export type WeatherEventId = 'clear' | 'hot' | 'cold' | 'drizzle' | 'rainstorm' | 'blackrain' | 'thunder' | 'typhoon1' | 'typhoon8';
+export type WeatherEventId = 'clear' | 'hot' | 'cold' | 'drizzle' | 'rainstorm' | 'blackrain' | 'thunder' | 'typhoon1' | 'typhoon8' | 'landslip';
 
 /** v13 weather categories: they stack with each other; inside one category only the most severe event counts. v15 adds 寒. */
 export type WeatherCategory = 'heat' | 'cold' | 'rain' | 'wind';
@@ -90,6 +90,7 @@ export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
   rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
   blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
   typhoon1: { id: 'typhoon1', label: '初級颱風', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '一號／三號風球：青年樹之後，抗風力低過 20 會倒塌，提早加固。' },
+  landslip: { id: 'landslip', label: '山泥傾瀉', category: 'wind', damage: 30, dW: 0, dR: -18, collapseBelow: 20, growth: 0.8, severe: true, tip: '山泥傾瀉警告（只限香港）：同初級颱風一樣計，靠加固應付；同風球一齊嚟只計較嚴重嗰個，加固一次就兩樣都顧到。' },
   thunder: { id: 'thunder', label: '狂風雷暴', category: 'wind', damage: 35, dW: 0, dR: -25, collapseBelow: 25, growth: 0.8, severe: true, tip: '青年樹之後，抗風力低過 25 會倒塌，要提前加固樹幹。' },
   typhoon8: { id: 'typhoon8', label: '高級颱風', category: 'wind', damage: 60, dW: 0, dR: -35, collapseBelow: 40, growth: 0.6, severe: true, tip: '八號或以上：終極考驗。青年樹之後，抗風力低過 40 一定倒塌。' },
 };
@@ -98,10 +99,11 @@ export const WX_CATEGORY_ORDER: Record<WeatherCategory, WeatherEventId[]> = {
   heat: ['hot'],
   cold: ['cold'],
   rain: ['rainstorm', 'blackrain'],
-  wind: ['typhoon1', 'thunder', 'typhoon8'],
+  // v1.4 山泥傾瀉 = same tier as 初級颱風 (listed first, so a 風球 of equal weight is the one shown).
+  wind: ['landslip', 'typhoon1', 'thunder', 'typhoon8'],
 };
 export const WX_CATEGORY_LABEL: Record<WeatherCategory, string> = { heat: '熱', cold: '寒', rain: '雨', wind: '風' };
-export const EVENT_ORDER: WeatherEventId[] = ['clear', 'drizzle', 'hot', 'cold', 'rainstorm', 'blackrain', 'typhoon1', 'thunder', 'typhoon8'];
+export const EVENT_ORDER: WeatherEventId[] = ['clear', 'drizzle', 'hot', 'cold', 'rainstorm', 'blackrain', 'landslip', 'typhoon1', 'thunder', 'typhoon8'];
 
 /** Weathering a wind event (after 青年樹) with ≤ this share of its base damage (well reinforced) earns the storm bonus. */
 export const STORM_SURVIVE_SHARE = 0.25;

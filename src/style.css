@@ -3452,3 +3452,19 @@ body.sheet-open .animal-toast.show {
 .save-error {
   color: #c62828;
 }
+
+/* v1.4 設定 → 玩法 */
+.guide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+}
+.guide-tabs button {
+  flex: 1 1 auto;
+  padding: 0 8px;
+}
+.guide-body .evtable {
+  font-size: 12px;
+}

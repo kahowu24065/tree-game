@@ -67,6 +67,8 @@ export function parseState(body, now = Date.now()) {
     isHK: body.isHK !== false || !region,
     rUnlocked: body.rUnlocked === true,
     alive: body.alive !== false,
+    tree: ['ok', 'dying', 'dead'].includes(body.tree) ? body.tree : body.alive === false ? 'dead' : 'ok',
+    resist: Number.isFinite(Number(body.resist)) ? Math.max(0, Math.min(100, Math.round(Number(body.resist)))) : null,
     at: now,
   };
 }

@@ -114,7 +114,7 @@ export function forecastUrl(lat, lon) {
 
 /** Game events → per-category push level (wind: 烈風 1 < 狂風雷暴 2 < 暴風 3; rain: 大雨 1 < 豪雨 2). */
 export function levelsFromEvents(events) {
-  const out = { heat: 0, rain: 0, typhoon: 0, cold: 0 };
+  const out = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
   for (const e of events) {
     if (e === 'hot') out.heat = 1;
     else if (e === 'cold') out.cold = 1;
@@ -152,4 +152,11 @@ export function intlMessageFor({ category, level }, reminder = false) {
   return reminder
     ? { title: `${label}仲未完`, body: `棵樹仲未做應急行動：${body}`, category, level }
     : { title: `你嗰度有${label}天氣！`, body, category, level };
+}
+
+/** Non-HK downgrade / end info (e.g. 豪雨轉大雨, 你嗰度烈風天氣已完結). */
+export function intlDropMessageFor({ category, from, to }) {
+  const a = INTL_LABEL[category](from);
+  if (to > 0) return { title: `${a}轉${INTL_LABEL[category](to)}`, body: '天氣有啲好轉，但仍要留意。', category, level: to };
+  return { title: `你嗰度${a}天氣已完結`, body: '天氣好轉咗，棵樹可以鬆一口氣。', category, level: 0 };
 }

@@ -1088,7 +1088,7 @@ export function visualReinforcement(resist: number, unlocked = true): Reinforcem
   return { stakes: resist >= 15, ropes: resist >= 35, prune: resist >= 60 };
 }
 
-const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain', 'thunder', 'typhoon1', 'typhoon8'];
+const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain', 'thunder', 'typhoon1', 'typhoon8', 'landslip'];
 
 /** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and tree age. */
 export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[] }): string[] {

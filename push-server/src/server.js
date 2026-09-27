@@ -1,13 +1,14 @@
 // 世界之樹 push relay.
 //  • HK devices: polls HKO warnsum; a warning issued / upgraded → push.
 //  • Other devices: per 0.5° cell, Open-Meteo + the game's own rules (src/intl.js) every ~20 min → push new events.
-//  • Action-aware: devices report today's 應急行動 via POST /state; done / dead / not-yet-windy trees are skipped.
-//  • One follow-up reminder ~2 h later while the warning is still in force and the action is still undone.
+//  • v1.4: downgrades / cancellations push as info; dead / 瀕死 trees still get warnings (with a state line);
+//    wind warnings before 青年樹 become real-life safety notices; the action push / 2 h reminder is skipped once
+//    today's matching 應急行動 is done. HKO 山泥傾瀉警告 (WL) is its own category, handled by 加固.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
-import { cellKey, currentEventsIntl, forecastUrl, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
+import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
+import { cellKey, currentEventsIntl, forecastUrl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
 import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { createSender } from './fcm.js';
@@ -53,12 +54,22 @@ alerts.cells ??= {};
 
 const isHkDevice = (r) => !r.state || r.state.isHK;
 
-async function push(records, category, msg) {
-  const targets = records.filter((r) => shouldNotify(r.state, category)).map((r) => r.token);
-  if (!targets.length) return console.log(`[push] ${msg.title} → nobody needs it`);
-  const { sent, dead } = await fcm.send(targets, msg);
-  const removed = store.remove(dead);
-  console.log(`[push] ${msg.title} → sent ${sent}/${targets.length}, removed ${removed} dead tokens`);
+/** Send `base` (issue / reminder / drop) to the devices that should get it, grouped by their personalised text. */
+async function push(records, kind, base, hk) {
+  const groups = new Map();
+  for (const r of records) {
+    if (!shouldNotify(r.state, base.category, Date.now(), kind)) continue;
+    const msg = deviceMessage(base, r.state, kind, hk);
+    const key = `${msg.title}\n${msg.body}`;
+    if (!groups.has(key)) groups.set(key, { msg, tokens: [] });
+    groups.get(key).tokens.push(r.token);
+  }
+  if (!groups.size) return console.log(`[push] ${base.title} (${kind}) → nobody needs it`);
+  for (const { msg, tokens } of groups.values()) {
+    const { sent, dead } = await fcm.send(tokens, msg);
+    const removed = store.remove(dead);
+    console.log(`[push] ${msg.title} (${kind}) → sent ${sent}/${tokens.length}, removed ${removed} dead tokens`);
+  }
 }
 
 async function pollHko() {
@@ -66,12 +77,13 @@ async function pollHko() {
     const res = await fetch(HKO, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`HKO ${res.status}`);
     const levels = levelsFromWarnsum(await res.json());
-    const { state, fresh, reminders } = stepScope(alerts.hk, levels, Date.now());
+    const { state, fresh, reminders, drops } = stepScope(alerts.hk, levels, Date.now());
     alerts.hk = state;
     writeJson(ALERTS_FILE, alerts); // saved before sending: a crash mid-send never re-notifies after restart
     const hk = store.records().filter(isHkDevice);
-    for (const w of fresh) await push(hk, w.category, messageFor(w));
-    for (const w of reminders) await push(hk, w.category, reminderFor(w));
+    for (const w of fresh) await push(hk, 'issue', messageFor(w), true);
+    for (const w of drops) await push(hk, 'drop', dropMessageFor(w), true);
+    for (const w of reminders) await push(hk, 'reminder', reminderFor(w), true);
     lastPoll = new Date().toISOString();
     lastError = null;
   } catch (e) {
@@ -100,11 +112,12 @@ async function pollCells() {
       if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
       const w = parseOpenMeteo(await res.json());
       const levels = levelsFromEvents(currentEventsIntl(w.current, w.today, w.normals));
-      const { state, fresh, reminders } = stepScope(alerts.cells[key] ?? null, levels, Date.now());
+      const { state, fresh, reminders, drops } = stepScope(alerts.cells[key] ?? null, levels, Date.now(), { confirmDrops: 2 });
       alerts.cells[key] = state;
       writeJson(ALERTS_FILE, alerts);
-      for (const x of fresh) await push(records, x.category, intlMessageFor(x));
-      for (const x of reminders) await push(records, x.category, intlMessageFor(x, true));
+      for (const x of fresh) await push(records, 'issue', intlMessageFor(x), false);
+      for (const x of drops) await push(records, 'drop', intlDropMessageFor(x), false);
+      for (const x of reminders) await push(records, 'reminder', intlMessageFor(x, true), false);
     } catch (e) {
       console.error('[cell]', key, String(e?.message ?? e));
     }

@@ -17,6 +17,17 @@ and the very first run only records the current state.
   regional names. First sight of a cell only records its state.
 - State: `alerts.json` (HK + cells; migrates the v1 `last-levels.json` without re-notifying); device state lives in `tokens.json`.
 
+## v1.4 push rules (current)
+| Change | Who gets it |
+| --- | --- |
+| Warning issued / upgraded | everyone in scope, except devices that already did today's matching action (酷熱澆水／疏水／加固／保暖). Dead / 瀕死 trees included, with a short state line; 抗風力 under the 倒塌 threshold adds a 倒塌風險 line |
+| 風球 / 山泥傾瀉 before 青年樹 (`rUnlocked` false) | always, as a real-life safety notice (no 加固 call to action, no reminder) |
+| ~2 h reminder (max one per firing) | action still undone, doable (not dead, not pre-青年樹 wind) |
+| Downgrade / cancel (紅雨轉黃雨, 八號風球轉三號風球, 酷熱天氣警告已取消…) | everyone in scope (info). Non-HK cells need 2 consecutive lower readings (~40 min) so forecasts don't flap |
+- HK categories: 酷熱, 寒冷, 暴雨 (黃／紅／黑), 風球 (1/3/8/9/10), **山泥傾瀉警告 (HKO warnsum `WL`, handled by 加固)**.
+- First run / first sight of a cell only records the state (no pushes).
+- `/state` also takes `tree` (`ok`/`dying`/`dead`) and `resist` (抗風力) from app 1.4.
+
 ## API
 - `POST /register` `{ token, platform, appVersion }` → `{ ok }` (token 20–4096 chars `[A-Za-z0-9_:.-]`)
 - `POST /unregister` `{ token }`

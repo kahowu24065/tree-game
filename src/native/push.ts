@@ -18,6 +18,10 @@ export interface PushState {
   isHK: boolean;
   rUnlocked: boolean;
   alive: boolean;
+  /** v1.4: tree condition for the push text (dead / 瀕死 trees still get every warning). */
+  tree: 'ok' | 'dying' | 'dead';
+  /** 抗風力 R (rounded), so the server can mention 倒塌風險 for wind warnings. */
+  resist: number;
 }
 
 let latest: PushState | null = null;

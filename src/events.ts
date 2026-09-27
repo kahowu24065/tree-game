@@ -7,7 +7,7 @@ import { isRainCode, type HourPoint } from './weather';
 
 /**
  * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告或強烈季候風 → 狂風雷暴;
- * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷.
+ * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷; v1.4 山泥傾瀉警告 (WL) → 山泥傾瀉.
  */
 export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
@@ -16,6 +16,7 @@ export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): W
     else if (w.group === 'WCOLD') out.add('cold');
     else if (w.group === 'WRAIN') out.add(w.code === 'WRAINB' ? 'blackrain' : 'rainstorm');
     else if (w.group === 'WTS' || w.group === 'WMSGNL') out.add('thunder');
+    else if (w.group === 'WL') out.add('landslip');
     else if (w.group === 'WTCSGNL') out.add(/^TC(1|3)$/.test(w.code) ? 'typhoon1' : 'typhoon8');
   }
   return [...out];
@@ -212,6 +213,12 @@ export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
       c.windKmh = Math.max(c.windKmh, 45);
       c.gustKmh = Math.max(c.gustKmh, 75);
       c.stormKind = 'gale';
+      break;
+    case 'landslip':
+      // 山泥傾瀉警告 comes with prolonged heavy rain: wet scene, no extra wind.
+      c.raining = true;
+      c.precipMm = Math.max(c.precipMm, 20);
+      if (c.code < 63) c.code = 63;
       break;
     case 'typhoon1':
       c.windKmh = Math.max(c.windKmh, 50);
