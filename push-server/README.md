@@ -1,8 +1,8 @@
 # tree-push-server
 
 《世界之樹》push relay: polls HKO `warnsum` every 150 s and, when a HK warning is **issued or upgraded**
-(酷熱; 黃／紅／黑雨; 一號／三號／八號+ 風球; 寒冷), sends an FCM push to every registered device.
-Downgrades and cancellations are silent. The last-seen levels are saved to disk, so a restart never re-notifies,
+(酷熱; 黃／紅／黑雨; 一號／三號／八號+ 風球; 寒冷; 山泥傾瀉), sends an FCM push to every registered device.
+Since v1.4 downgrades and cancellations are pushed too (info) — see「v1.4 push rules」below. The last-seen levels are saved to disk, so a restart never re-notifies,
 and the very first run only records the current state.
 
 ## v2: action-aware + non-HK
