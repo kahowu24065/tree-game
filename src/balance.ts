@@ -152,6 +152,52 @@ export const AGE_MILESTONES: readonly { id: AgeMilestoneId; days: number; label:
   { id: 'm1095', days: 1095, label: '3年' },
 ];
 export const RECORD_MILESTONE = { id: 'record' as const, label: '超越世界紀錄' };
+
+/**
+ * 酷熱／寒冷 claim an achievement at these counts, then every 100 after 100.
+ * 風暴／八號／暴雨／黑雨 claim one at every new event (1, 2, 3…).
+ */
+export const WX_AWARD_STEPS = [1, 5, 10, 20, 50, 100] as const;
+export const WX_TRACKS = [
+  { id: 'storm', unit: '個', name: '風暴', detail: '青年樹之後，靠加固擋住大部分風災傷害。同一場跨幾日都係一次。' },
+  { id: 't8', unit: '個', name: '八號風球', intlName: '暴風', detail: '八號或以上，而且靠加固擋住大部分傷害。同一場跨幾日都係一次。', intlDetail: '暴風，而且靠加固擋住大部分傷害。同一場跨幾日都係一次。' },
+  { id: 'black', unit: '場', name: '黑雨', intlName: '豪雨', detail: '黑雨嗰日做咗疏水。同一場雨跨幾日都係一次。' },
+  { id: 'rain', unit: '場', name: '暴雨', intlName: '大雨', detail: '暴雨嗰日做咗疏水。同一場雨跨幾日都係一次。' },
+  { id: 'heat', unit: '個', name: '酷熱', detail: '酷熱嗰日做咗酷熱澆水，先算捱過。' },
+  { id: 'cold', unit: '個', name: '寒冷', detail: '寒冷嗰日做咗保暖，先算捱過。' },
+] as const;
+export type WeatherTrackId = (typeof WX_TRACKS)[number]['id'];
+/** `storm:5` — the track and the count it was claimed at. */
+export type WeatherAchievementId = `${WeatherTrackId}:${number}`;
+
+export function isWxAwardCount(track: WeatherTrackId, n: number): boolean {
+  if (n < 1) return false;
+  if (track === 'heat' || track === 'cold') {
+    if (WX_AWARD_STEPS.includes(n as (typeof WX_AWARD_STEPS)[number])) return true;
+    return n > 100 && n % 100 === 0;
+  }
+  return true;
+}
+
+/** The next count that claims an achievement, after `n` events already weathered. */
+export function nextWxAwardCount(track: WeatherTrackId, n: number): number {
+  if (track !== 'heat' && track !== 'cold') return n + 1;
+  const step = WX_AWARD_STEPS.find((c) => c > n);
+  if (step) return step;
+  return Math.floor(n / 100) * 100 + 100;
+}
+
+export function wxAwardId(track: WeatherTrackId, count: number): WeatherAchievementId {
+  return `${track}:${count}`;
+}
+
+export function parseWxAwardId(id: string): { track: WeatherTrackId; count: number } | null {
+  const match = /^(storm|t8|black|rain|heat|cold):(\d+)$/.exec(id);
+  if (!match) return null;
+  const count = Number(match[2]);
+  if (!isWxAwardCount(match[1] as WeatherTrackId, count)) return null;
+  return { track: match[1] as WeatherTrackId, count };
+}
 /** Tier by p = h/R against the expected e(t) = 1 − e^(−t/τ): 金 ≥ 0.98·e(t), 銀 ≥ 0.88·e(t), else 銅. */
 export const MILESTONE_TIER_SHARE = { gold: 0.98, silver: 0.88 } as const;
 export const MILESTONE_TIER_LABEL: Record<MilestoneTier, string> = { gold: '金', silver: '銀', bronze: '銅' };

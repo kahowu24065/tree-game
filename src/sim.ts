@@ -37,14 +37,20 @@ import {
   GROWTH_FLOOR_SHARE,
   MILESTONE_TIER_LABEL,
   RECORD_MILESTONE,
+  WX_TRACKS,
+  isWxAwardCount,
+  parseWxAwardId,
+  wxAwardId,
   type PrepId,
+  type WeatherAchievementId,
   type WeatherEventId,
+  type WeatherTrackId,
 } from './balance';
 import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
 import { dayEvents, mildEvent } from './events';
-import { emergencyName, eventLabel, regionalize } from './labels';
+import { emergencyName, eventLabel, regionalize, weatherAchievementCopy } from './labels';
 import {
   baseDailyGrowth,
   carbonKg,
@@ -69,7 +75,7 @@ import {
   wTier,
   type NightWater,
 } from './rules';
-import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement } from './types';
+import type { Care, ForecastDay, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
 import { formatHeight } from './util';
 
 export function freshCare(date: string): Care {
@@ -111,6 +117,7 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     species: opts.species ? speciesDef(opts.species).id : defaultSpecies(),
     ageDays: 0,
     milestones: {},
+    wx: freshWx(),
     createdOn: today,
     lastSeenDate: today,
     virtualToday: null,
@@ -830,6 +837,17 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   // v14 樹齡 and milestones (a tree that died tonight gets none).
   state.ageDays = (state.ageDays || 0) + 1;
   const milestones = state.over ? [] : checkMilestones(state, date);
+  if (!state.over) {
+    const rain = plan.rain;
+    checkWeatherAchievements(state, date, {
+      survived,
+      wind: plan.wind && !plan.wind.locked ? plan.wind.event : null,
+      rainHandled: rain?.handled && (rain.event === 'blackrain' || rain.event === 'rainstorm') ? rain.event : null,
+      rainPresent: Boolean(rain && (rain.event === 'blackrain' || rain.event === 'rainstorm')),
+      heatHandled: Boolean(plan.heat?.handled),
+      coldHandled: Boolean(plan.cold?.handled),
+    });
+  }
   return { settlement, messages, died, revived, milestones };
 }
 
@@ -881,6 +899,123 @@ export function checkMilestones(state: GameState, date: string, opts: { retro?: 
     });
   }
   return got;
+}
+
+export function freshWx(): WeatherProgress {
+  return {
+    date: '',
+    counts: { storm: 0, t8: 0, black: 0, rain: 0, heat: 0, cold: 0 },
+    spell: { wind: '', rain: '', windCounted: false, t8Counted: false, rainCounted: false },
+    awards: {},
+  };
+}
+
+/** What the player actually did on a settled night. Merely seeing the weather does not count. */
+export interface WeatherNight {
+  /** 青年樹之後，風災傷害唔超過基礎嘅 25%（靠加固）。 */
+  survived: boolean;
+  /** The wind event that applied (null before 青年樹, or when there was no wind). */
+  wind: WeatherEventId | null;
+  /** 暴雨／黑雨 the player drained for. Null if they did not 疏水. */
+  rainHandled: 'rainstorm' | 'blackrain' | null;
+  /** 暴雨 or 黑雨 is in force, even if the player did not 疏水 (keeps a multi-day rain as one spell). */
+  rainPresent?: boolean;
+  heatHandled: boolean;
+  coldHandled: boolean;
+}
+
+/**
+ * Count a night the tree lived through. A wind or heavy-rain spell that continues from yesterday
+ * stays one count. 酷熱／寒冷 each successful day counts. Idempotent per date. New awards go to the log.
+ */
+export function checkWeatherAchievements(state: GameState, date: string, night: WeatherNight): WeatherAward[] {
+  if (state.over || state.health <= 0) return [];
+  const wx = (state.wx ??= freshWx());
+  wx.awards ??= {};
+  wx.counts ??= { storm: 0, t8: 0, black: 0, rain: 0, heat: 0, cold: 0 };
+  wx.spell ??= { wind: '', rain: '', windCounted: false, t8Counted: false, rainCounted: false };
+  if (wx.date !== date) {
+    const yesterday = addDays(date, -1);
+    if (night.wind) {
+      if (wx.spell.wind !== yesterday) {
+        wx.spell.windCounted = false;
+        wx.spell.t8Counted = false;
+      }
+      if (night.survived && !wx.spell.windCounted) {
+        wx.counts.storm = (Number(wx.counts.storm) || 0) + 1;
+        wx.spell.windCounted = true;
+      }
+      if (night.survived && night.wind === 'typhoon8' && !wx.spell.t8Counted) {
+        wx.counts.t8 = (Number(wx.counts.t8) || 0) + 1;
+        wx.spell.t8Counted = true;
+      }
+      wx.spell.wind = date;
+    }
+    if (night.rainPresent || night.rainHandled) {
+      if (wx.spell.rain !== yesterday) wx.spell.rainCounted = false;
+      if (night.rainHandled && !wx.spell.rainCounted) {
+        const track = night.rainHandled === 'blackrain' ? 'black' : 'rain';
+        wx.counts[track] = (Number(wx.counts[track]) || 0) + 1;
+        wx.spell.rainCounted = true;
+      }
+      wx.spell.rain = date;
+    }
+    if (night.heatHandled) wx.counts.heat = (Number(wx.counts.heat) || 0) + 1;
+    if (night.coldHandled) wx.counts.cold = (Number(wx.counts.cold) || 0) + 1;
+    wx.date = date;
+  }
+  const got: WeatherAward[] = [];
+  for (const track of WX_TRACKS) {
+    const n = wx.counts[track.id] || 0;
+    if (!isWxAwardCount(track.id, n)) continue;
+    const id = wxAwardId(track.id, n);
+    if (wx.awards[id]) continue;
+    const award: WeatherAward = { id, date, ageDays: state.ageDays || 0 };
+    wx.awards[id] = award;
+    got.push(award);
+    const copy = weatherAchievementCopy(id);
+    addLog(state, date, `${state.treeName}達成「${copy.title}」。`, {
+      kind: 'badge',
+      title: copy.title,
+      reward: { text: '成就', tone: 'purple' },
+      time: '',
+    });
+  }
+  return got;
+}
+
+/** `storm1` from the 1st/3rd/5th list becomes `storm:1` when that count still claims an achievement. */
+function legacyWxAwardId(id: string): WeatherAchievementId | null {
+  if (parseWxAwardId(id)) return id as WeatherAchievementId;
+  const match = /^(storm|t8|black|rain|heat|cold)(\d+)$/.exec(id);
+  if (!match) return null;
+  const count = Number(match[2]);
+  if (!isWxAwardCount(match[1] as WeatherTrackId, count)) return null;
+  return wxAwardId(match[1] as WeatherTrackId, count);
+}
+
+/** Old saves counted sunny streaks and “the weather happened”. Those awards do not match the handled-night rules. */
+export function migrateWx(data: GameState): void {
+  const raw = data.wx as (WeatherProgress & { sunny?: number }) | undefined;
+  if (!raw?.counts || typeof raw.sunny === 'number') {
+    data.wx = freshWx();
+    return;
+  }
+  raw.awards ??= {};
+  raw.date ??= '';
+  raw.spell ??= { wind: '', rain: '', windCounted: false, t8Counted: false, rainCounted: false };
+  for (const track of WX_TRACKS) raw.counts[track.id] = Number(raw.counts[track.id]) || 0;
+  for (const id of Object.keys(raw.awards)) {
+    const next = legacyWxAwardId(id);
+    if (!next) {
+      delete raw.awards[id as WeatherAchievementId];
+      continue;
+    }
+    if (next !== id) {
+      raw.awards[next] = { ...raw.awards[id as WeatherAchievementId]!, id: next };
+      delete raw.awards[id as WeatherAchievementId];
+    }
+  }
 }
 
 function noteStage(state: GameState, beforeCm: number, date: string, time = ''): string | null {

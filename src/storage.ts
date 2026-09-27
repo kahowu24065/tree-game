@@ -3,7 +3,7 @@ import { daysBetween } from './dates';
 import { START } from './balance';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
-import { addLog, checkMilestones, RULES_VERSION, windStageCm } from './sim';
+import { addLog, checkMilestones, migrateWx, RULES_VERSION, windStageCm } from './sim';
 import { formatHeight } from './util';
 
 /** Fields of saves made before v14 (seasons). */
@@ -168,6 +168,7 @@ export function parseSave(raw: string): GameState | null {
     migrateWind(data);
     migrateV14(data);
     migrateV16(data);
+    migrateWx(data);
     return data;
   } catch {
     return null;

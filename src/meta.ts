@@ -1,20 +1,24 @@
 import type { SpeciesId } from './data/species';
 /** Progress kept between games: badges (perks + v14 milestones), 免死金牌, 星空浮島, 養分地標. */
-import { AGE_MILESTONES, BADGES, LANDMARK_N_BONUS, RECORD_MILESTONE, type MilestoneId } from './balance';
+import { AGE_MILESTONES, BADGES, LANDMARK_N_BONUS, RECORD_MILESTONE, parseWxAwardId, type MilestoneId } from './balance';
+import { weatherAchievementCopy } from './labels';
 import { createGame } from './sim';
 import type { GameState, MetaState } from './types';
 
 export const META_KEY = 'sekai-tree-meta-v1';
 
 export function freshMeta(): MetaState {
-  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [] };
+  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [], weather: [] };
 }
 
 export function loadMeta(): MetaState {
   try {
     const raw = localStorage.getItem(META_KEY);
     const data = raw ? (JSON.parse(raw) as MetaState) : null;
-    if (data && data.version === 1 && data.badges) return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [] };
+    if (data && data.version === 1 && data.badges) {
+      const weather = Array.isArray(data.weather) ? data.weather.filter((w) => parseWxAwardId(w.id)) : [];
+      return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [], weather };
+    }
   } catch {
     /* ignore */
   }
@@ -76,6 +80,22 @@ export function bookMilestones(meta: MetaState, state: GameState): string[] {
     }
   }
   if (meta.milestones.length > 200) meta.milestones.splice(0, meta.milestones.length - 200);
+  return lines;
+}
+
+/** Copy this tree's new weather achievements into the collection. Idempotent via `booked`. Returns titles just booked. */
+export function bookWeather(meta: MetaState, state: GameState): string[] {
+  meta.weather ??= [];
+  const lines: string[] = [];
+  const awards = Object.values(state.wx?.awards ?? {}).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  awards.sort((a, b) => (parseWxAwardId(a.id)?.count ?? 0) - (parseWxAwardId(b.id)?.count ?? 0) || a.id.localeCompare(b.id));
+  for (const a of awards) {
+    if (!a || a.booked || !parseWxAwardId(a.id)) continue;
+    a.booked = true;
+    meta.weather.push({ id: a.id, treeName: state.treeName, species: state.species, date: a.date, ageDays: a.ageDays });
+    lines.push(weatherAchievementCopy(a.id).title);
+  }
+  if (meta.weather.length > 200) meta.weather.splice(0, meta.weather.length - 200);
   return lines;
 }
 

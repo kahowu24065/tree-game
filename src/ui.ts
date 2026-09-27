@@ -1,4 +1,4 @@
-import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, type PrepId, type WeatherEventId } from './balance';
+import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
@@ -9,9 +9,9 @@ import { type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import type { HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, hMultTier } from './rules';
-import { emergencyName, eventLabel, regionalize } from './labels';
+import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, type NightPlan } from './sim';
-import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId } from './types';
+import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
 
@@ -446,16 +446,27 @@ export function renderChrome(view: View): void {
   document.title = `${state.treeName} · 世界之樹`;
 }
 
+/** Card tint: wind (yellow) beats rain (blue); heat and other warnings stay the red severe tint. */
+function weatherCardTone(cd: Countdown | null, cond: DayCond): 'rain' | 'wind' | null {
+  const cat = cd ? ev(cd.event).category : null;
+  if (cat === 'wind' || cond.stormKind === 'gale' || cond.stormKind === 'typhoon') return 'wind';
+  if (cat === 'rain' || cond.stormKind === 'heavy-rain' || cond.raining) return 'rain';
+  return null;
+}
+
 function renderWeatherCard(card: HTMLElement, view: View): void {
   const { state, cond, wx } = view;
   const simulated = wx.provider === 'sim' && !wx.overridden;
   const firstLoad = simulated && wx.loading;
   const cd = view.countdown;
+  const tone = firstLoad ? null : weatherCardTone(cd, cond);
   const hotNow = view.todayEvents.includes('hot');
   const coldNow = view.todayEvents.includes('cold');
   card.classList.toggle('severe', Boolean(cd) && !firstLoad);
-  card.classList.toggle('hot', !cd && hotNow);
-  card.classList.toggle('cold', !cd && coldNow && !hotNow);
+  card.classList.toggle('wx-rain', tone === 'rain');
+  card.classList.toggle('wx-wind', tone === 'wind');
+  card.classList.toggle('hot', !cd && hotNow && !tone);
+  card.classList.toggle('cold', !cd && coldNow && !hotNow && !tone);
   card.classList.toggle('sim', simulated && !wx.loading);
   // v16.1: the card is a container with two real buttons — the whole card opens the weather (or retries a simulated
   // one) and the 「📍 地點 ▾」 chip picks the place. Built once so keyboard focus survives the per-minute refresh.
@@ -645,6 +656,7 @@ function tabs(active: TabId, freshAnimals = 0): string {
     ['care', '照顧'],
     ['album', freshAnimals ? `圖鑑<em class="badge">${freshAnimals}</em>` : '圖鑑'],
     ['milestones', '里程碑'],
+    ['achievements', '成就'],
   ];
   return `<nav class="tabs" role="tablist">${items
     .map(
@@ -661,6 +673,8 @@ function body(view: View): string {
       return albumTab(view);
     case 'milestones':
       return milestoneTab(view);
+    case 'achievements':
+      return achievementTab(view);
     default:
       return careTab(view);
   }
@@ -940,8 +954,7 @@ function animalAlbum(view: View): string {
       <span class="thumb" data-animal="${animal.id}" data-locked="${got ? '0' : '1'}"></span>
       <strong>${got ? esc(animal.name) : '？？？'}${fresh ? '<em>新</em>' : ''}${resident ? '<em class="res">長駐</em>' : ''}</strong>
       <span class="chip cat-${cat}">${esc(CATEGORY_LABEL[cat])}${animal.group[1] > 1 ? `・成群 ${animal.group[0]}–${animal.group[1]}` : ''}</span>
-      <span>${got ? esc(animal.epithet) : esc(unlockHint(animal))}</span>
-      <small>${got ? esc(animal.about) : `解鎖：${esc(unlockHint(animal))}`}</small>
+      ${got ? `<span>${esc(animal.epithet)}</span><small>${esc(animal.about)}</small>` : `<small>解鎖：${esc(unlockHint(animal))}</small>`}
     </button>`;
     }).join('');
     return `<h3 class="sub">${esc(CATEGORY_LABEL[cat])} <small>${have}/${list.length}</small></h3><div class="album">${cards}</div>`;
@@ -1048,6 +1061,35 @@ function milestoneTab(view: View): string {
     <h3 class="sub">高度里程</h3>
     <ol class="miles">${rows}</ol>
     <button type="button" class="texty" data-action="rename">改棵樹的名</button>
+  `;
+}
+
+/** 成就 tab: a running count per weather, and the next count that claims an achievement. */
+function achievementTab(view: View): string {
+  const { state, meta } = view;
+  const groups = WX_TRACKS.map((track) => {
+    const n = state.wx?.counts?.[track.id] ?? 0;
+    const info = weatherTrackCopy(track.id);
+    const next = nextWxAwardCount(track.id, n);
+    const nextTitle = weatherAchievementCopy(wxAwardId(track.id, next)).title;
+    const earned = Object.values(state.wx?.awards ?? {})
+      .filter((a): a is NonNullable<typeof a> => Boolean(a && parseWxAwardId(a.id)?.track === track.id))
+      .sort((a, b) => (parseWxAwardId(a.id)?.count ?? 0) - (parseWxAwardId(b.id)?.count ?? 0));
+    const got = earned.length ? `<p>已拎：${earned.map((a) => esc(weatherAchievementCopy(a.id).title)).join('、')}</p>` : '';
+    return `<li class="${n ? 'done' : ''}"><strong>${esc(info.name)}</strong><span>已捱過 ${n} ${esc(track.unit)}</span><p>${esc(info.detail)}</p><p>下次成就：${esc(nextTitle)} · ${n} / ${next}</p>${got}</li>`;
+  }).join('');
+  const collected = (meta.weather ?? []).filter((m) => parseWxAwardId(m.id));
+  const collection = collected.length
+    ? `<ol class="miles">${collected
+        .slice()
+        .reverse()
+        .map((m) => `<li class="done"><strong>${esc(weatherAchievementCopy(m.id).title)}</strong><span>已拎</span><p>${esc(m.treeName)}（${esc(speciesDef(m.species).name)}）· ${esc(m.date)} · 樹齡 ${m.ageDays} 日</p></li>`)
+        .join('')}</ol>`
+    : '<p class="fine">未有成就。</p>';
+  return `
+    <ol class="miles">${groups}</ol>
+    <h3 class="sub">成就收藏</h3>
+    ${collection}
   `;
 }
 
@@ -1186,30 +1228,46 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
   const over = state.over!;
   const got = lines.length ? `<ul class="badges">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
   const kept = Object.values(state.milestones ?? {}).length;
+  const wxKept = Object.keys(state.wx?.awards ?? {}).length;
+  const keptLine = kept || wxKept ? `呢棵樹攞到嘅 ${kept} 個里程碑同 ${wxKept} 個天氣成就會一直留喺收藏。` : '未到 1個月，未有里程碑徽章。';
   return `
     <p class="eyebrow">結算</p>
     <h2>${esc(state.treeName)}枯死咗</h2>
     <p>樹齡 ${state.ageDays || over.days} 日，高 ${esc(formatHeight(state.heightCm))}（紀錄高度 ${recordPct(state)}%），碳吸收量約 ${carbonKg(state.heightCm)} 公斤／年。</p>
     ${got}
-    <p>${kept ? `呢棵樹攞到嘅 ${kept} 個里程碑徽章會一直留喺收藏。` : '未到 1個月，未有里程碑徽章。'}再種一棵，樹齡由 0 開始。</p>
+    <p>${keptLine}再種一棵，樹齡由 0 開始。</p>
     <p class="fine">能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
     <button type="button" class="primary" data-action="new-game">再種一棵</button>`;
 }
 
 /** v14 celebratory card for milestones just reached (same badge style as the old season card). */
-export function milestoneModal(state: GameState, meta: MetaState, awards: MilestoneAward[], lines: string[]): string {
+export function milestoneModal(state: GameState, meta: MetaState, awards: MilestoneAward[], lines: string[], weather: WeatherAward[] = []): string {
   const retro = awards.every((a) => a.retro);
   const main = awards[awards.length - 1]!;
   const items = awards.map((a) => `<li><b>${esc(awardLabel(a.id))}</b> ${esc(awardTier(a))} · ${esc(formatHeight(a.heightCm))}（紀錄 ${Math.round(a.share * 100)}%）</li>`).join('');
+  const wxItems = weather.map((a) => `<li><b>${esc(weatherAchievementCopy(a.id).title)}</b> 🌤️</li>`).join('');
   const perks = lines.length ? `<ul class="badges">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
   const title = awards.length > 1 ? `攞到 ${awards.length} 個里程碑！` : main.id === 'record' ? `${esc(state.treeName)}超越世界紀錄！` : `${esc(state.treeName)}${esc(awardLabel(main.id))}！`;
   return `
     <p class="eyebrow">${retro ? 'v14 新規則・補發里程碑' : '里程碑'}</p>
     <h2>🎉 ${title}</h2>
-    <ul class="badges milestone-badges">${items}</ul>
+    <ul class="badges milestone-badges">${items}${wxItems}</ul>
     ${perks}
     <p>${retro ? '新規則：棵樹冇完結日，會一直陪住你；高度照舊，生長會慢慢接近紀錄高度。已經過咗嘅樹齡里程碑按而家高度補發。' : `繼續照顧，${esc(state.treeName)}會一直長落去。`}${nextMilestone(state) ? `下個里程碑：${esc(nextMilestone(state)!.label)}。` : ''}</p>
-    <p class="fine">徽章收藏 ${meta.milestones?.length ?? 0} 個・能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
+    <p class="fine">徽章收藏 ${(meta.milestones?.length ?? 0) + (meta.weather?.length ?? 0)} 個・能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
+    <button type="button" class="primary" data-action="close-modal">好嘢！</button>`;
+}
+
+/** Card for weather achievements reached on a night with no age milestone. */
+export function weatherModal(state: GameState, meta: MetaState, awards: WeatherAward[]): string {
+  const items = awards.map((a) => `<li><b>${esc(weatherAchievementCopy(a.id).title)}</b><span>${esc(weatherAchievementCopy(a.id).detail)}</span></li>`).join('');
+  const title = awards.length > 1 ? `攞到 ${awards.length} 個天氣成就！` : weatherAchievementCopy(awards[0]!.id).title;
+  return `
+    <p class="eyebrow">天氣成就</p>
+    <h2>🎉 ${esc(title)}</h2>
+    <ul class="badges milestone-badges">${items}</ul>
+    <p>繼續照顧，${esc(state.treeName)}會一直長落去。成就留喺成就分頁。</p>
+    <p class="fine">徽章收藏 ${(meta.milestones?.length ?? 0) + (meta.weather?.length ?? 0)} 個</p>
     <button type="button" class="primary" data-action="close-modal">好嘢！</button>`;
 }
 

@@ -1,4 +1,4 @@
-import type { MilestoneId, MilestoneTier, PrepId, WeatherEventId } from './balance';
+import type { MilestoneId, MilestoneTier, PrepId, WeatherAchievementId, WeatherEventId, WeatherTrackId } from './balance';
 import type { SpeciesId } from './data/species';
 
 export interface Care {
@@ -130,6 +130,8 @@ export interface GameState {
   ageDays: number;
   /** v14 milestones this tree reached (樹齡 1個月…3年 and 超越世界紀錄). */
   milestones: Partial<Record<MilestoneId, MilestoneAward>>;
+  /** Weather achievements on this tree (counts of nights the player actually handled). Missing on older saves. */
+  wx?: WeatherProgress;
   createdOn: string;
   lastSeenDate: string;
   virtualToday: string | null;
@@ -216,6 +218,25 @@ export interface MilestoneAward {
   booked?: boolean;
 }
 
+/** Nights the player successfully weathered. A wind or rain spell that runs into the next day stays one count. */
+export interface WeatherProgress {
+  /** Last date the counts were applied to (a night is counted once). */
+  date: string;
+  counts: Record<WeatherTrackId, number>;
+  /** Last date a wind / heavy-rain spell was in force, and whether this spell already added a count. */
+  spell: { wind: string; rain: string; windCounted: boolean; t8Counted: boolean; rainCounted: boolean };
+  awards: Partial<Record<WeatherAchievementId, WeatherAward>>;
+}
+
+/** One weather achievement reached by one tree. */
+export interface WeatherAward {
+  id: WeatherAchievementId;
+  date: string;
+  ageDays: number;
+  /** Copied into meta already. */
+  booked?: boolean;
+}
+
 /** v14 collection entry (kept across trees). */
 export interface MetaMilestone {
   id: MilestoneId;
@@ -238,6 +259,17 @@ export interface MetaState {
   history: { name: string; season?: string; species?: SpeciesId; days: number; heightCm: number; result: 'dead' | 'complete'; date: string }[];
   /** v14 milestone badges from every tree (樹齡里程碑 and 超越世界紀錄). */
   milestones: MetaMilestone[];
+  /** Weather achievements from every tree. */
+  weather: MetaWeather[];
+}
+
+/** Weather achievement kept across trees. */
+export interface MetaWeather {
+  id: WeatherAchievementId;
+  treeName: string;
+  species: SpeciesId;
+  date: string;
+  ageDays: number;
 }
 
 export interface ForecastDay {
@@ -286,5 +318,5 @@ export interface DayCond {
 }
 
 export type TimeMode = 'auto' | 'day' | 'night';
-export type TabId = 'care' | 'album' | 'milestones';
+export type TabId = 'care' | 'album' | 'milestones' | 'achievements';
 export type LocationSource = 'geo' | 'fallback' | 'manual';

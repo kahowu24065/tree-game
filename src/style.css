@@ -344,6 +344,34 @@ body.sheet-open .hud > .sheet-backdrop {
   color: #b3321f;
 }
 
+.weather-card.wx-rain {
+  background: linear-gradient(135deg, rgba(226, 242, 255, 0.94), rgba(186, 218, 248, 0.84));
+  border-color: rgba(90, 160, 220, 0.95);
+  box-shadow: 0 0 0 3px rgba(47, 134, 201, 0.18), var(--shadow);
+}
+
+.weather-card.severe.wx-rain {
+  animation: rain-pulse 2.4s ease-in-out infinite;
+}
+
+.weather-card.wx-rain .wx-line {
+  color: #1a5f96;
+}
+
+.weather-card.wx-wind {
+  background: linear-gradient(135deg, rgba(255, 248, 214, 0.96), rgba(255, 224, 140, 0.86));
+  border-color: rgba(214, 168, 32, 0.95);
+  box-shadow: 0 0 0 3px rgba(200, 150, 20, 0.22), var(--shadow);
+}
+
+.weather-card.severe.wx-wind {
+  animation: wind-pulse 2.4s ease-in-out infinite;
+}
+
+.weather-card.wx-wind .wx-line {
+  color: #8a5a00;
+}
+
 .weather-card.hot {
   background: linear-gradient(135deg, rgba(255, 246, 225, 0.88), rgba(255, 228, 190, 0.74));
 }
@@ -351,6 +379,18 @@ body.sheet-open .hud > .sheet-backdrop {
 @keyframes severe-pulse {
   50% {
     box-shadow: 0 0 0 7px rgba(233, 90, 60, 0.08), var(--shadow);
+  }
+}
+
+@keyframes rain-pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgba(47, 134, 201, 0.1), var(--shadow);
+  }
+}
+
+@keyframes wind-pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgba(200, 150, 20, 0.12), var(--shadow);
   }
 }
 

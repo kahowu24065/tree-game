@@ -56,13 +56,14 @@ import {
   W_SATURATED,
   W_TIERS,
   WEATHER_EVENTS,
+  WX_TRACKS,
   WIND_UNLOCK_STAGE,
   WX_CATEGORY_ORDER,
   WX_NUM,
   type WeatherEventId,
 } from './balance';
 import { SPECIES, STAGE_NAMES, STAGE_SHARES } from './data/species';
-import { emergencyName, eventLabel, labelRegion, regionalize } from './labels';
+import { emergencyName, eventLabel, labelRegion, regionalize, weatherTrackCopy } from './labels';
 import { emergencyBonus } from './rules';
 import { eventTableHtml } from './ui';
 
@@ -152,6 +153,15 @@ function playTab(): string {
       ],
     ),
     p('樹齡＝種低之後結算過嘅晚數。枯死再種，樹齡由 0 開始，已攞嘅徽章同能力照留。'),
+    h('成就'),
+    table(
+      ['捱過', '點樣先計一次'],
+      WX_TRACKS.map((t) => {
+        const copy = weatherTrackCopy(t.id);
+        return [copy.name, copy.detail];
+      }),
+    ),
+    p('風暴、八號、暴雨、黑雨每次新嘅一場計 1（橫跨幾日都係同一場），每次都可以拎成就。酷熱同寒冷按成功嗰日計，夠 1、5、10、20、50、100 次，之後每多 100 次先再拎。跟住呢棵樹計。枯死再種要重新攞，已經拎到嘅留喺成就分頁嘅收藏。'),
     h('樹種'),
     table(
       ['樹種', '紀錄高度'],

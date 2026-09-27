@@ -5,7 +5,7 @@ import { condForEvent, currentEvents, severeCountdown, type Countdown } from './
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
-import { bookGameEnd, bookMilestones, loadMeta, newGame, saveMeta } from './meta';
+import { bookGameEnd, bookMilestones, bookWeather, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { mulchLaid } from './campfire';
@@ -53,6 +53,7 @@ import {
   openModal,
   overModal,
   milestoneModal,
+  weatherModal,
   renderChrome,
   renderPanel,
   weatherPageHtml,
@@ -531,13 +532,15 @@ function scheduleReminders(background: boolean): void {
 function handleOver(): boolean {
   if (!state.over) {
     const awards = Object.values(state.milestones ?? {}).filter((m) => m && !m.booked);
-    if (!awards.length || !state.started) return false;
+    const weather = Object.values(state.wx?.awards ?? {}).filter((a): a is NonNullable<typeof a> => Boolean(a && !a.booked));
+    if ((!awards.length && !weather.length) || !state.started) return false;
     const lines = bookMilestones(meta, state);
+    bookWeather(meta, state);
     persist();
-    openModal(milestoneModal(state, meta, awards, lines));
+    openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather) : weatherModal(state, meta, weather));
     return true;
   }
-  const lines = [...bookMilestones(meta, state), ...bookGameEnd(meta, state)];
+  const lines = [...bookMilestones(meta, state), ...bookWeather(meta, state), ...bookGameEnd(meta, state)];
   persist();
   if (!state.started) return true;
   const open = () => {
@@ -835,6 +838,10 @@ function startGame(species?: SpeciesId): void {
   } else {
     state = newGame(meta, realToday(), name, species);
     tab = 'care';
+    // newGame wipes dayEvents. The weather card still shows a warning already loaded
+    // (酷熱天氣警告 → 酷熱澆水); record it now or the status-card button stays hidden
+    // until the next weather refresh (up to 30 minutes).
+    if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), hkActive());
   }
   persist();
   closeModal();
