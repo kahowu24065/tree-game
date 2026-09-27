@@ -88,7 +88,7 @@ describe('冇高度上限', () => {
     expect(s.passedTargetOn).toBeTruthy();
     expect(s.milestones.record).toBeTruthy();
     s.care.date = d(200);
-    expect(performAction(s, 'fertilize', { raining: false }).ok).toBe(true);
+    expect(performAction(s, 'fertilize').ok).toBe(true);
   });
 
   it('樹齡 3個月里程碑（連一級能力徽章）只入收藏一次', () => {

@@ -980,6 +980,8 @@ interface Crew {
   pause: number;
   enter: number;
   run: boolean;
+  /** Own loop, so flocks of different species don't share one start and fly as one ball. */
+  orbit?: FlyOrbit;
   /** v11: route of a ground crew (goal + flow field on the walk map). */
   walk?: CrewWalk;
   placedNav?: boolean;
@@ -1016,6 +1018,84 @@ export interface AnimalArrival {
   count: number;
   motion: AnimalDef['motion'];
   category: AnimalDef['category'];
+}
+
+/** One crew's loop: phase, extra radius (× scene scale), height fraction, angular speed. */
+export interface FlyOrbit {
+  ang: number;
+  rad: number;
+  alt: number;
+  speed: number;
+}
+
+const FLY_SPEED: Record<string, number> = {
+  flock: 0.45,
+  perch: 0.9,
+  soar: 0.16,
+  hover: 0.35,
+  flutter: 0.35,
+  bat: 0.9,
+};
+
+function wrapAng(a: number): number {
+  const t = a % (Math.PI * 2);
+  return t < 0 ? t + Math.PI * 2 : t;
+}
+
+/** Heading of an orbit at `time` (radians, 0–2π). */
+export function flyHeading(time: number, o: { ang: number; speed: number }): number {
+  return wrapAng(time * o.speed + o.ang);
+}
+
+/**
+ * A loop that does not start on top of the crews already in the air.
+ * Angle sits in the widest gap; radius and height step so the paths are different tubes.
+ */
+export function pickFlyOrbit(time: number, motion: string, existing: FlyOrbit[], band: number): FlyOrbit {
+  const base = FLY_SPEED[motion] ?? 0.4;
+  const speed = base * (0.82 + (band % 5) * 0.08);
+  const headings = existing.map((o) => flyHeading(time, o)).sort((a, b) => a - b);
+  let theta = wrapAng(band * 2.399963);
+  if (headings.length) {
+    let gap = -1;
+    let mid = theta;
+    for (let i = 0; i < headings.length; i++) {
+      const a0 = headings[i]!;
+      const a1 = headings[(i + 1) % headings.length]! + (i + 1 === headings.length ? Math.PI * 2 : 0);
+      const g = a1 - a0;
+      if (g > gap) {
+        gap = g;
+        mid = a0 + g / 2;
+      }
+    }
+    theta = wrapAng(mid);
+  }
+  const soar = motion === 'soar';
+  let rad = (soar ? 3.2 : 1.8) + (band % 4) * (soar ? 1.3 : 1.25);
+  let guard = 0;
+  while (existing.some((o) => Math.abs(o.rad - rad) < 0.5) && guard < 6) {
+    rad += soar ? 1.3 : 1.25;
+    guard++;
+  }
+  const alt = 0.52 + (band % 3) * 0.2;
+  return { ang: theta - time * speed, rad, alt, speed };
+}
+
+/** Slots around a flock leader, in gap-units, so members don't share one point. */
+export function flockSlots(n: number): { x: number; y: number; z: number }[] {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, n))));
+  const rows = Math.ceil(Math.max(1, n) / cols);
+  const out: { x: number; y: number; z: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    out.push({
+      x: (col - (cols - 1) / 2) * 1.25,
+      y: ((i % 3) - 1) * 0.4,
+      z: (row - (rows - 1) / 2) * 1.25,
+    });
+  }
+  return out;
 }
 
 /** Small birds that draw a flight trail. */
@@ -1657,6 +1737,10 @@ export class Animals3D {
         rest: null,
       };
       if (i > 0 && GROUND.has(def.motion)) member.offset.set(-0.6 - i * 0.5 + this.rng() * 0.3, 0, (i % 2 ? 1 : -1) * (0.4 + this.rng() * 0.4));
+      if (def.motion === 'flock') {
+        const slot = flockSlots(n)[i]!;
+        member.offset.set(slot.x, slot.y, slot.z);
+      }
       // Shadows only for the bigger walkers (each rig is ~10–15 meshes; keep the shadow pass cheap on phones).
       if ((def.look.kind === 'quad' || def.look.kind === 'monkey') && (def.look.size ?? 1) >= 1) obj.traverse((o) => ((o as THREE.Mesh).isMesh && (o.castShadow = o.name === 'body' || o.name === 'head' || o.name === 'neck')));
       if (def.motion === 'glow') obj.visible = false;
@@ -1665,7 +1749,9 @@ export class Animals3D {
     }
     if (def.motion === 'glow') this.fly.points.visible = true;
     this.crews.push(crew);
+    if (FLYERS.has(def.motion)) this.ensureOrbit(crew);
     this.assignSeats(crew);
+    if (def.motion === 'flock') this.placeFlock(crew);
     if (GROUND.has(def.motion)) {
       this.placeEntry(crew);
       crew.placedNav = Boolean(NAV);
@@ -1892,6 +1978,7 @@ export class Animals3D {
     }
     this.buildHash();
     for (const c of this.crews) this.step(c, t, dt);
+    if (dt > 0) this.separateFlyers(dt);
     if (dt > 0) {
       const walkers = this.buildHash();
       this.resolvePairs(walkers, dt);
@@ -1935,9 +2022,100 @@ export class Animals3D {
     h.end();
   }
 
+  /** Give a flying crew its own loop, in the widest gap left by crews already airborne. */
+  private ensureOrbit(c: Crew): void {
+    if (c.orbit || !FLYERS.has(c.def.motion)) return;
+    const existing = this.crews.filter((o) => o !== c && o.orbit).map((o) => o.orbit!);
+    c.orbit = pickFlyOrbit(this.time, c.def.motion, existing, existing.length);
+  }
+
+  /** Where a flock's leader is on its own loop. */
+  private flockLeader(c: Crew, t: number, out: THREE.Vector3): THREE.Vector3 {
+    const tree = this.tree!;
+    const o = c.orbit!;
+    const H = Math.max(0.05, tree.height);
+    const R = Math.max(0.2, tree.canopyRadius);
+    const a = t * o.speed + o.ang;
+    const y = H * o.alt + (0.6 + Math.sin(t * 0.7 + o.ang) * 0.5) * GK;
+    return out.set(Math.cos(a) * (R + o.rad * GK), y, Math.sin(a) * (R + o.rad * GK));
+  }
+
+  /** Start a flock already spread on its loop, not in the shared arrival clump. */
+  private placeFlock(c: Crew): void {
+    if (!c.orbit || !this.tree) return;
+    this.flockLeader(c, this.time, c.leader);
+    const len = this.dlen(c.def);
+    for (const m of c.members) {
+      const gap = Math.max(m.scale * 3, len * 2.8);
+      m.pos.copy(c.leader).addScaledVector(m.offset, gap);
+      m.prev.copy(m.pos);
+      m.target.copy(m.pos);
+    }
+  }
+
+  /** Slide airborne animals apart when their bodies occupy the same point. Same crew stays a flock; other species are pushed further. */
+  private separateFlyers(dt: number): void {
+    const tree = this.tree;
+    if (!tree) return;
+    const baseY = tree.group.getWorldPosition(tmp3).y;
+    const ceiling = baseY + flightCeiling(tree.height);
+    const fly: { m: Member; r: number; crew: number; len: number }[] = [];
+    for (const c of this.crews) {
+      if (!AIRBORNE.has(c.def.motion) || c.def.motion === 'glow') continue;
+      const len = this.dlen(c.def);
+      const span = (c.def.real.span ?? c.def.real.len) * this.af;
+      const r = Math.max(len * 0.85, span * 0.42, 0.05);
+      for (const m of c.members) {
+        if (!m.obj.visible || m.lastPerched) continue;
+        fly.push({ m, r, crew: c.uid, len });
+      }
+    }
+    const cap = 2.4 * dt;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < fly.length; i++) {
+        for (let j = i + 1; j < fly.length; j++) {
+          const a = fly[i]!;
+          const b = fly[j]!;
+          const same = a.crew === b.crew;
+          const min = same ? Math.max(a.len, b.len) * 1.2 : a.r + b.r;
+          let dx = b.m.pos.x - a.m.pos.x;
+          let dy = b.m.pos.y - a.m.pos.y;
+          let dz = b.m.pos.z - a.m.pos.z;
+          let d = Math.hypot(dx, dy, dz);
+          if (d >= min) continue;
+          if (d < 1e-5) {
+            dx = 1;
+            dy = 0;
+            dz = 0;
+            d = 1;
+          }
+          const push = Math.min((min - d) * 0.5, cap);
+          const nx = dx / d;
+          const ny = dy / d;
+          const nz = dz / d;
+          a.m.pos.x -= nx * push;
+          a.m.pos.y -= ny * push;
+          a.m.pos.z -= nz * push;
+          b.m.pos.x += nx * push;
+          b.m.pos.y += ny * push;
+          b.m.pos.z += nz * push;
+        }
+      }
+    }
+    for (const f of fly) {
+      const half = f.len * 0.35;
+      const top = ceiling - half;
+      if (f.m.pos.y > top) f.m.pos.y = top;
+      const floor = groundY(f.m.pos.x, f.m.pos.z) + half;
+      if (f.m.pos.y < floor && top >= floor) f.m.pos.y = floor;
+      f.m.obj.position.copy(f.m.pos);
+    }
+  }
+
   private step(c: Crew, t: number, dt: number): void {
     const tree = this.tree!;
     const def = c.def;
+    if (FLYERS.has(def.motion)) this.ensureOrbit(c);
     c.timer += dt;
     const k = (rate: number) => 1 - Math.exp(-dt * rate);
     const H = Math.max(0.05, tree.height);
@@ -1978,10 +2156,14 @@ export class Animals3D {
             m.target.set(Math.cos(m.phase) * (R + 14 * SK), H + 3.5, Math.sin(m.phase) * (R + 14 * SK));
             if (m.pos.distanceTo(m.target) < 1.5 * SK) leaveDone();
           } else if (air) {
-            const a = t * (def.motion === 'flock' ? 0.45 : 0.9) + (def.motion === 'flock' ? 0 : m.phase);
-            const rr = R + (1.2 + (def.motion === 'flock' ? 1.5 : 0.5)) * SK;
-            c.leader.set(Math.cos(a) * rr, H * 0.8 + (0.6 + Math.sin(t * 0.7) * 0.5) * SK, Math.sin(a) * rr);
-            m.target.copy(c.leader).add(tmp2.copy(m.offset).multiplyScalar(def.motion === 'flock' ? m.scale * 3 : 0));
+            if (def.motion === 'flock' && c.orbit) this.flockLeader(c, t, c.leader);
+            else {
+              const a = t * 0.9 + m.phase;
+              const rr = R + 1.7 * SK;
+              c.leader.set(Math.cos(a) * rr, H * 0.8 + (0.6 + Math.sin(t * 0.7 + m.phase) * 0.5) * SK, Math.sin(a) * rr);
+            }
+            const gap = Math.max(m.scale * 3, len * 2.8);
+            m.target.copy(c.leader).add(tmp2.copy(m.offset).multiplyScalar(def.motion === 'flock' ? gap : 0));
           } else {
             this.perchWorld(m.perch, m.target);
             perched = m.pos.distanceTo(m.target) < 0.12 * Math.max(1, m.scale * 3);
@@ -1996,10 +2178,12 @@ export class Animals3D {
             m.target.set(Math.cos(m.phase) * 40 * SK, H + 3.5, Math.sin(m.phase) * 40 * SK);
             if (m.pos.distanceTo(m.target) < 3 * SK) leaveDone();
           } else {
-            // Raptors circle just over the crown, up to the ceiling (tree + 5 m).
-            const a = t * 0.16 + m.phase;
-            const rr = Math.max(5 * SK, R + 3.5 * SK) + i * 1.2 * SK;
-            m.target.set(Math.cos(a) * rr, H + Math.min(2.5 * SK, 3.2) + Math.sin(t * 0.3 + i) * Math.min(0.8 * SK, 1.2), Math.sin(a) * rr);
+            // Raptors circle just over the crown, up to the ceiling (tree + 5 m). Each species keeps its own ring.
+            const o = c.orbit;
+            const a = t * (o?.speed ?? 0.16) + m.phase;
+            const rr = Math.max(5 * SK, R + (o?.rad ?? 3.5) * SK) + i * 1.2 * SK;
+            const lift = Math.min(2.5 * SK, 3.2) + ((o?.alt ?? 0.7) - 0.7) * 1.4 * SK;
+            m.target.set(Math.cos(a) * rr, H + lift + Math.sin(t * 0.3 + i) * Math.min(0.8 * SK, 1.2), Math.sin(a) * rr);
           }
           m.pos.lerp(m.target, k(1.4));
           flap = 1;
@@ -2036,19 +2220,22 @@ export class Animals3D {
               m.timer = 6 + this.rng() * 8;
             }
           } else {
-            const speed = def.motion === 'bat' ? 0.9 : 0.35;
+            const o = c.orbit;
+            const speed = o?.speed ?? (def.motion === 'bat' ? 0.9 : 0.35);
             const low = bfly && (swarm ? c.uid % 2 === 1 : i % 2 === 1);
+            const shell = ((o?.rad ?? 2.7) - 2.7) * 0.45 * SK;
             if (swarm) {
-              // Butterflies of one group fly together: one shared loop, each a few wing-spans off it.
-              const a = t * speed + c.uid * 1.7;
-              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(t * 0.7 + c.uid) * 0.4 * SK;
-              const y = low ? (0.5 + Math.sin(t * 1.3 + c.uid) * 0.3) * SK : H * 0.5 + Math.sin(t * 1.1 + c.uid) * H * 0.12;
+              // One group shares a loop; each species starts on a different arc and a different shell.
+              const spin = o?.ang ?? c.uid * 1.7;
+              const a = t * speed + spin;
+              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + shell + Math.sin(t * 0.7 + spin) * 0.4 * SK;
+              const y = low ? (0.5 + Math.sin(t * 1.3 + spin) * 0.3) * SK + ((o?.alt ?? 0.5) - 0.5) * H * 0.35 : H * (o?.alt ?? 0.5) + Math.sin(t * 1.1 + spin) * H * 0.12;
               m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr).addScaledVector(m.offset, spacing);
               m.target.y += Math.sin(ph * 2.3) * spacing * 0.3;
             } else {
-              const a = t * speed * m.speed + m.phase * 2;
-              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + Math.sin(ph * 0.7) * 0.4 * SK;
-              const y = low ? (0.5 + Math.sin(ph * 1.3) * 0.3) * SK : H * (def.motion === 'bat' ? 0.75 : 0.5) + Math.sin(ph * 1.1) * H * 0.12;
+              const a = t * speed * m.speed + m.phase * 2 + (o?.ang ?? 0);
+              const rr = (low ? R * 0.6 + 1.2 * SK : R + 0.4 * SK) + shell + Math.sin(ph * 0.7) * 0.4 * SK;
+              const y = low ? (0.5 + Math.sin(ph * 1.3) * 0.3) * SK : H * (o?.alt ?? (def.motion === 'bat' ? 0.75 : 0.5)) + Math.sin(ph * 1.1) * H * 0.12;
               m.target.set(Math.cos(a) * rr, y, Math.sin(a) * rr);
             }
             if (bfly) {

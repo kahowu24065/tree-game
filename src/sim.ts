@@ -1080,7 +1080,7 @@ export function actionLimit(state: GameState, action: CareAction): { used: numbe
   return { used: state.care.dewormed ? 1 : 0, max: 1 };
 }
 
-export function performAction(state: GameState, action: CareAction, opts: { raining: boolean }): ActionResult {
+export function performAction(state: GameState, action: CareAction): ActionResult {
   if (state.over) return { ok: false, message: '呢局已經完結。' };
   const lim = actionLimit(state, action);
   if (lim.used >= lim.max) return { ok: false, message: '今日做夠喇，聽日再嚟。' };
@@ -1088,7 +1088,6 @@ export function performAction(state: GameState, action: CareAction, opts: { rain
   let reward: LogReward;
   const title = { water: '已澆水', fertilize: '已施肥', deworm: '已除蟲', drain: '已疏水' }[action];
   if (action === 'water') {
-    if (opts.raining) return { ok: false, message: '落緊雨，泥土濕㗎喇，唔使澆。' };
     // Saturated soil: watering does nothing and does not use up one of today's turns.
     if (state.moisture >= W_SATURATED) return { ok: false, message: '泥土已經飽和，唔使再澆' };
     state.care.water += 1;
@@ -1223,7 +1222,7 @@ export function visualReinforcement(resist: number, unlocked = true): Reinforcem
   return { stakes: resist >= 15, ropes: resist >= 35, prune: resist >= 60 };
 }
 
-const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain', 'thunder', 'typhoon1', 'typhoon8', 'landslip'];
+const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain'];
 
 /** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and tree age. */
 export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[] }): string[] {

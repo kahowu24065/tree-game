@@ -181,6 +181,25 @@ export function severeCountdown(opts: {
   return found[0]!;
 }
 
+/** Heavier rain wins. 毛毛雨 has no category, so it is listed here rather than in WX_CATEGORY_ORDER. */
+const SCENE_RAIN: WeatherEventId[] = ['blackrain', 'rainstorm', 'drizzle'];
+
+/**
+ * Scene conditions for the day's events. The headline (highest damage) sets wind and sky.
+ * 毛毛雨／暴雨／黑雨 still add rain when a wind or landslide headline would otherwise hide it.
+ * A wind stormKind (颱風／狂風) is kept, so those warnings do not rain unless a rain event is also on.
+ */
+export function sceneCond(base: DayCond, events: readonly WeatherEventId[], opts?: { manual?: boolean }): DayCond {
+  const headline = pickEvent(events);
+  let c = headline === 'clear' && !opts?.manual ? { ...base } : condForEvent(base, headline);
+  const rain = SCENE_RAIN.find((id) => events.includes(id));
+  if (!rain || rain === headline) return c;
+  const wind = c.stormKind === 'typhoon' || c.stormKind === 'gale' ? c.stormKind : null;
+  c = condForEvent(c, rain);
+  if (wind) c.stormKind = wind;
+  return c;
+}
+
 /** Scene conditions for an event (rain, wind, sky) layered on the real day. */
 export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
   const c = { ...base };
@@ -208,17 +227,13 @@ export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
       c.stormKind = 'heavy-rain';
       break;
     case 'thunder':
-      c.raining = true;
-      c.code = 95;
+      // 狂風雷暴唔一定落雨：只加強風，唔覆蓋本身有冇雨。
       c.windKmh = Math.max(c.windKmh, 45);
       c.gustKmh = Math.max(c.gustKmh, 75);
       c.stormKind = 'gale';
       break;
     case 'landslip':
-      // 山泥傾瀉警告 comes with prolonged heavy rain: wet scene, no extra wind.
-      c.raining = true;
-      c.precipMm = Math.max(c.precipMm, 20);
-      if (c.code < 63) c.code = 63;
+      // 山泥傾瀉警告唔等於落緊雨，場景跟返本來嘅天氣。
       break;
     case 'typhoon1':
       c.windKmh = Math.max(c.windKmh, 50);
@@ -227,12 +242,10 @@ export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
       if (c.code < 3) c.code = 3;
       break;
     case 'typhoon8':
-      c.raining = true;
-      c.code = 95;
-      c.precipMm = Math.max(c.precipMm, 60);
       c.windKmh = Math.max(c.windKmh, 90);
       c.gustKmh = Math.max(c.gustKmh, 140);
       c.stormKind = 'typhoon';
+      if (c.code < 3) c.code = 3;
       break;
     default:
       c.raining = false;

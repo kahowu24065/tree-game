@@ -126,7 +126,7 @@ describe('夜間結算', () => {
     const r = settleDay(s, '2026-09-28', ['drizzle'], null, NOW);
     expect(r.settlement.pestDamage).toBe(15);
     s.care.date = '2026-09-29';
-    expect(performAction(s, 'deworm', { raining: false }).ok).toBe(true);
+    expect(performAction(s, 'deworm').ok).toBe(true);
     expect(s.pest.active).toBe(false);
   });
 });
@@ -152,9 +152,9 @@ describe('瀕死、枯死、遺產', () => {
     s.care.date = '2026-09-26';
     s.moisture = 40;
     s.nutrients = 45;
-    performAction(s, 'water', { raining: false });
+    performAction(s, 'water');
     expect(s.dying).not.toBeNull();
-    const res = performAction(s, 'fertilize', { raining: false });
+    const res = performAction(s, 'fertilize');
     expect(res.message).toContain('救返');
     expect(s.dying).toBeNull();
     expect(s.health).toBe(10);
@@ -215,14 +215,13 @@ describe('瀕死、枯死、遺產', () => {
 });
 
 describe('照顧同動物', () => {
-  it('澆水每日 3 次、落雨唔使澆，疏水降水分，加固每樣每日一次', () => {
+  it('澆水每日 3 次、落雨都照澆，疏水降水分，加固每樣每日一次', () => {
     const s = game({ moisture: 30, windUnlocked: true });
     s.care.date = '2026-09-25';
-    expect(performAction(s, 'water', { raining: true }).ok).toBe(false);
-    for (let i = 0; i < 3; i++) expect(performAction(s, 'water', { raining: false }).ok).toBe(true);
-    expect(performAction(s, 'water', { raining: false }).ok).toBe(false);
+    for (let i = 0; i < 3; i++) expect(performAction(s, 'water').ok).toBe(true);
+    expect(performAction(s, 'water').ok).toBe(false);
     expect(s.moisture).toBe(75);
-    performAction(s, 'drain', { raining: false });
+    performAction(s, 'drain');
     expect(s.moisture).toBe(65);
     expect(reinforce(s, 'stakes').ok).toBe(true);
     expect(reinforce(s, 'stakes').ok).toBe(false);

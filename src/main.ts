@@ -1,7 +1,7 @@
 import './style.css';
 import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { addDays, clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
-import { condForEvent, currentEvents, severeCountdown, type Countdown } from './events';
+import { condForEvent, currentEvents, sceneCond, severeCountdown, type Countdown } from './events';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
@@ -231,7 +231,7 @@ function todayEvents(): WeatherEventId[] {
 function todayCond(): DayCond {
   const t = today();
   const day = presentedDays().find((d) => d.date === t) ?? mildDay(t);
-  if (manual()) return withCold(condForEvent(condFromForecast(mildDay(t), 28), pickEvent(todayEvents())), todayEvents(), true);
+  if (manual()) return withCold(sceneCond(condFromForecast(mildDay(t), 28), todayEvents(), { manual: true }), todayEvents(), true);
   const useLive = weather.origin !== 'offline';
   const temp = useLive ? weather.current.tempC : (day.tempMax + day.tempMin) / 2;
   const cond = condFromForecast(day, temp);
@@ -245,10 +245,9 @@ function todayCond(): DayCond {
     cond.hot = false;
     cond.stormKind = null;
   }
-  // Severe events drive the scene only while in force right now.
+  // Severe events drive the scene only while in force right now. Rain warnings still rain on top of a wind headline.
   const live = liveEvents();
-  const now = pickEvent(live);
-  return withCold(now === 'clear' ? cond : condForEvent(cond, now), live, false);
+  return withCold(sceneCond(cond, live), live, false);
 }
 
 /**
@@ -996,7 +995,7 @@ function bindSheetDrag(): void {
 
 function doAction(action: string, target: HTMLElement): void {
   if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'drain') {
-    const result = performAction(state, action as CareAction, { raining: todayCond().raining });
+    const result = performAction(state, action as CareAction);
     persist();
     render();
     toast(result.message);

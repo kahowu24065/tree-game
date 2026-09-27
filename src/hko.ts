@@ -151,9 +151,9 @@ export function isHkoIcon(icon: unknown): icon is number {
   return typeof icon === 'number' && icon in HKO_ICON_LABELS;
 }
 
-/** Icons that mean rain is expected (showers, rain, thunderstorms). */
+/** Icons that mean rain is falling (showers and rain). 65 雷暴唔算，因為唔一定有雨。 */
 export function hkoIconRain(icon: number): boolean {
-  return icon === 53 || icon === 54 || (icon >= 62 && icon <= 65);
+  return icon === 53 || icon === 54 || (icon >= 62 && icon <= 64);
 }
 
 /** Approximate coordinates of HKO temperature stations, to pick the one nearest the player. */

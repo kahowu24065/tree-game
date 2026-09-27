@@ -393,7 +393,6 @@ export function renderChrome(view: View): void {
 
   const dock = document.getElementById('dock');
   if (dock) {
-    const rainBlocks = cond.raining;
     const water = actionLimit(state, 'water');
     const feed = actionLimit(state, 'fertilize');
     const cd = view.countdown;
@@ -406,7 +405,7 @@ export function renderChrome(view: View): void {
     // v15 layout: 澆水 over 疏水 | 施肥 over 除蟲 | 加固 | 保暖 (v1.4.1: 圖鑑 lives in the 樹木狀態 pop box).
     dock.innerHTML = `
       <div class="dock-col">
-        ${dockBtn('d-water short', 'data-action="water"', 'drop', '澆水', rainBlocks ? '落緊雨' : state.moisture >= W_SATURATED ? '飽和' : `${water.used}/${water.max}`, water.used >= water.max || rainBlocks)}
+        ${dockBtn('d-water short', 'data-action="water"', 'drop', '澆水', state.moisture >= W_SATURATED ? '飽和' : `${water.used}/${water.max}`, water.used >= water.max)}
         <button type="button" class="dock-sub d-drain ${state.moisture > W_SATURATED ? 'alert' : ''}" data-action="drain" ${drains.used >= drains.max ? 'disabled' : ''}>${icon('drain')}<span>${drains.used >= drains.max ? '疏過喇' : `疏水 ${drains.max - drains.used}`}</span></button>
       </div>
       <div class="dock-col">
@@ -708,7 +707,7 @@ export function emergencyButtons(view: View, variant: 'mini' | 'act'): string {
 }
 
 function careTab(view: View): string {
-  const { state, cond } = view;
+  const { state } = view;
   const event = eventTitle(state);
   const today = ev(view.todayEvent);
   const multi = view.todayEvents.filter((e) => e !== 'clear');
@@ -739,7 +738,7 @@ function careTab(view: View): string {
     <p class="fine">最佳：水分 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}，養分 ${N_OPTIMAL[0]}+。而家${esc(tier.label)}（×${tier.mult}）${state.health >= 80 ? '，有綠光' : ''}。${state.pest.active ? '<b class="bad">有蟲害：每晚 −15 健康。</b>' : ''}</p>
     <p class="advice">${esc(advice(state, view.preview, view.countdown))}</p>
     <div class="actions">
-      ${actionBtn('water', 'drop', 'blue', '澆水', cond.raining ? '落緊雨' : state.moisture >= W_SATURATED ? `泥土飽和 · ${water.used}/${water.max}` : `+${CARE.water.amount}（最多到 100）· ${water.used}/${water.max}`, water.used >= water.max || cond.raining)}
+      ${actionBtn('water', 'drop', 'blue', '澆水', state.moisture >= W_SATURATED ? `泥土飽和 · ${water.used}/${water.max}` : `+${CARE.water.amount}（最多到 100）· ${water.used}/${water.max}`, water.used >= water.max)}
       ${actionBtn('fertilize', 'sprout', 'green', '施肥', `+${CARE.fertilize.amount} 養分 · ${feed.used}/${feed.max}`, feed.used >= feed.max)}
       ${actionBtn('deworm', 'bug', 'orange', '除蟲', state.care.dewormed ? '用過喇' : state.pest.active ? '有蟲！' : '預防', state.care.dewormed)}
       ${actionBtn('drain', 'drain', 'purple', '疏水', `${CARE.drain.amount} 水分 · ${drain.used}/${drain.max}`, drain.used >= drain.max)}

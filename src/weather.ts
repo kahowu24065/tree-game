@@ -87,7 +87,8 @@ export function describePlace(lat: number, lon: number, timezone: string): strin
 }
 
 export function isRainCode(code: number): boolean {
-  return (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99);
+  // 95–99 係雷暴，唔等於落雨。
+  return (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
 }
 
 export function isSnowCode(code: number): boolean {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
 import { dayEvent, hkoWarningEvents, severeCountdown } from '../src/events';
-import { condFromForecast, dayLabel, districtRain, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
+import { condFromForecast, dayLabel, districtRain, isRainCode, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')) as unknown;
 
@@ -170,7 +170,10 @@ describe('預報圖示跟天文台', () => {
     ]);
     expect([76, 77, 80, 83, 85, 90, 91, 92, 93].map(hkoIconLabel)).toEqual(['大致多雲', '天色大致良好', '大風', '霧', '煙霞', '熱', '暖', '涼', '冷']);
     expect(hkoIconRain(54)).toBe(true);
+    expect(hkoIconRain(65)).toBe(false);
     expect(hkoIconRain(90)).toBe(false);
+    expect(isRainCode(95)).toBe(false);
+    expect(isRainCode(63)).toBe(true);
   });
 
   it('逐日用天文台圖示，今日用即時觀測圖示，數字唔變', () => {

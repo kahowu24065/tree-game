@@ -186,7 +186,6 @@ export class Scene {
     const model = this.ensureModel(input);
     const storming = input.cond.stormKind === 'typhoon' || input.cond.code >= 95;
     const heavy =
-      storming ||
       input.cond.stormKind === 'heavy-rain' ||
       input.cond.precipMm >= 25 ||
       input.cond.code === 65 ||

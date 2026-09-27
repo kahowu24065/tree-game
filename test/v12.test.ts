@@ -15,8 +15,8 @@ function game(over: Partial<GameState> = {}): GameState {
   s.dailyEventId = 'quiet';
   return Object.assign(s, { health: 70, moisture: 60, nutrients: 90, resist: 0 }, over);
 }
-const water = (s: GameState) => performAction(s, 'water', { raining: false });
-const drain = (s: GameState) => performAction(s, 'drain', { raining: false });
+const water = (s: GameState) => performAction(s, 'water');
+const drain = (s: GameState) => performAction(s, 'drain');
 
 describe('v12 照顧：澆水上限、疏水 3 次', () => {
   it('澆水 +15 最多到 100（部分都得）；≥100 冇效果、唔用次數', () => {

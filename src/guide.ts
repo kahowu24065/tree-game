@@ -109,7 +109,7 @@ function playTab(): string {
     table(
       ['行動', '效果', '每日次數'],
       [
-        ['澆水', `水分 +${CARE.water.amount}，最多到 ${W_SATURATED}；已經 ${W_SATURATED} 唔會用次數；落緊雨唔使澆`, CARE.water.perDay],
+        ['澆水', `水分 +${CARE.water.amount}，最多到 ${W_SATURATED}；已經 ${W_SATURATED} 唔會用次數；落雨都照澆`, CARE.water.perDay],
         ['疏水', `水分 ${CARE.drain.amount}`, CARE.drain.perDay],
         ['施肥', `養分 +${CARE.fertilize.amount}`, CARE.fertilize.perDay],
         ['除蟲', '有蟲害就清除；冇蟲就當預防，蟲害計數歸零', 1],

@@ -39,10 +39,9 @@ function overcastOf(input: SceneInput): number {
 
 function rainOf(input: SceneInput): number {
   const c = input.cond;
-  if (c.stormKind === 'typhoon' || c.code >= 95) return 1;
+  // 風球、山泥傾瀉、狂風雷暴唔自動落雨；有雨先出雨絲。
   if (c.stormKind === 'heavy-rain' || c.precipMm >= 25 || c.code === 65 || c.code === 82) return 0.9;
-  if (c.stormKind === 'gale') return 0.45;
-  if (c.raining || (c.code >= 51 && c.code <= 82)) return c.code >= 63 ? 0.6 : 0.35;
+  if (c.raining || (c.code >= 51 && c.code <= 67) || (c.code >= 80 && c.code <= 82)) return c.code >= 63 ? 0.6 : 0.35;
   return 0;
 }
 
