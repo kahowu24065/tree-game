@@ -820,7 +820,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     baseGrowth: base,
     deltaG: r1(state.heightCm - beforeCm),
     heightAfter: state.heightCm,
-    carbonKg: carbonKg(state.heightCm),
+    carbonKg: carbonKg(state.heightCm, state.species),
     notes,
     heat: plan.heat,
     cold: plan.cold,

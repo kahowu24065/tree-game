@@ -118,10 +118,9 @@ export function onStream(x: number, z: number, pad: number): boolean {
   return false;
 }
 
-export function buildIsland(): Island {
+/** Grass dome, earth rim and rocky underside — the seedling island's landform, before the garden is dressed. */
+export function buildSeedlingBody(): { group: THREE.Group; grass: THREE.Mesh; rim: THREE.Mesh; under: THREE.Mesh } {
   const group = new THREE.Group();
-
-  // Grass top: a gently domed disc with an irregular rim.
   const top = new THREE.CylinderGeometry(ISLAND_R, ISLAND_R, 0.5, 40, 3);
   const pos = top.getAttribute('position') as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
@@ -143,7 +142,6 @@ export function buildIsland(): Island {
   grass.receiveShadow = true;
   group.add(grass);
 
-  // Earth rim and rocky underside: the floating island body.
   const rim = new THREE.CylinderGeometry(ISLAND_R * 1.0, ISLAND_R * 0.9, 0.9, 40, 2);
   jitterGeometry(rim, 0.35, 3, false);
   clampInsideShore(rim, ISLAND_R, 0.985);
@@ -158,6 +156,15 @@ export function buildIsland(): Island {
   const underMesh = new THREE.Mesh(under, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }));
   underMesh.position.y = -1.35 - (ISLAND_R * 1.35) / 2;
   group.add(underMesh);
+  return { group, grass, rim: rimMesh, under: underMesh };
+}
+
+export function buildIsland(): Island {
+  const body = buildSeedlingBody();
+  const group = body.group;
+  const grass = body.grass;
+  const rimMesh = body.rim;
+  const underMesh = body.under;
 
   // Dirt around the trunk.
   const dirt = new THREE.Mesh(new THREE.CircleGeometry(1.1, 18), mat('#8c6a48'));

@@ -490,6 +490,7 @@ export function activeHot(warnings: HkoWarning[] | undefined): boolean {
 export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; source: LocationSource }> {
   const fallback = { lat: HK_LAT, lon: HK_LON, source: 'fallback' as const };
   // Android app: native location plugin (asks for permission); refused / failed → 香港 as before.
+  // maximumAge 0: every open and every 10-minute stay asks for a new fix, not a cached one.
   if (isNative()) return nativePosition(timeoutMs).then((p) => (p ? { ...p, source: 'geo' as const } : fallback));
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(fallback);
   const ask = () => new Promise<{ lat: number; lon: number; source: LocationSource }>((resolve) => {
@@ -503,7 +504,7 @@ export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; so
         clearTimeout(timer);
         resolve(fallback);
       },
-      { enableHighAccuracy: false, timeout: timeoutMs - 500, maximumAge: 30 * 60 * 1000 },
+      { enableHighAccuracy: false, timeout: timeoutMs - 500, maximumAge: 0 },
     );
   });
   // Skip the wait entirely when the player has already said no.

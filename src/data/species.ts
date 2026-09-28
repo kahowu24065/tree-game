@@ -30,6 +30,10 @@ export interface SpeciesDef {
    * Used only to show an equivalent real age: H = R (1 − e^(−t/τ)).
    */
   realTauYears: number;
+  /** Basic wood density (g/cm³), a typical published mean for the species. */
+  woodDensity: number;
+  /** Typical diameter at breast height (cm) when the tree is 10 m tall. The game only stores height. */
+  dbhAt10m: number;
 }
 
 export const STAGE_NAMES = ['幼苗', '小樹', '青年樹', '成年樹', '巨樹'] as const;
@@ -51,6 +55,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '香港郊野同公園常見，樹冠又闊又密，葉有樟腦香。',
     stages: ['兩片圓葉加一個嫩芽', '幼幹分出幾枝，樹冠細細個', '樹冠開始變圓，春天有紅銅色嫩葉', '闊大濃密嘅圓頂樹冠，開細白花', '粗壯灰褐樹幹、板根，樹冠比樹身仲闊'],
     realTauYears: 80,
+    woodDensity: 0.55,
+    dbhAt10m: 27,
   },
   {
     id: 'cotton',
@@ -66,6 +72,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '「英雄樹」，樹幹筆直，枝條一層層平伸，春天未出葉先開大紅花。',
     stages: ['掌狀嫩葉，莖上有細刺', '筆直幼幹，幹上一粒粒圓錐刺', '枝條分層平伸，好似塔咁', '層層橫枝開滿大紅花', '高大筆直嘅灰幹，紅花之外仲有棉絮爆出'],
     realTauYears: 35,
+    woodDensity: 0.4,
+    dbhAt10m: 32,
   },
   {
     id: 'banyan',
@@ -81,6 +89,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '香港村口、廟前最常見嘅大樹，枝上垂落氣根，落地變成支柱根。',
     stages: ['幾塊細細嘅深綠葉', '樹幹開始扭曲，枝條向外伸', '樹冠又闊又密，開始有氣根垂落', '一簾簾氣根，樹冠闊過樹高', '多條氣根落地成柱，好似一片細樹林，結滿細榕果'],
     realTauYears: 30,
+    woodDensity: 0.43,
+    dbhAt10m: 20,
   },
   {
     id: 'metasequoia',
@@ -96,6 +106,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '「活化石」，1940 年代先喺湖北重新發現。落葉針葉樹，樹形窄長如塔。',
     stages: ['一撮羽毛似嘅軟針葉', '幼幹筆直，細枝對生', '窄長圓錐形，葉色嫩綠', '高聳尖塔，樹幹紅褐有溝紋', '基部板根，葉轉銅紅色，好似秋天'],
     realTauYears: 40,
+    woodDensity: 0.32,
+    dbhAt10m: 14,
   },
   {
     id: 'ginkgo',
@@ -111,6 +123,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '兩億幾年前已經存在嘅物種，扇形葉，秋天變金黃。',
     stages: ['兩三塊扇形小葉', '瘦長樹幹，枝條疏疏落落', '枝條 45 度向上，樹冠開始成形', '寬卵形樹冠，扇葉開始轉金', '滿樹金黃，樹下鋪滿落葉'],
     realTauYears: 120,
+    woodDensity: 0.52,
+    dbhAt10m: 15,
   },
   {
     id: 'deodar',
@@ -126,6 +140,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '喜馬拉雅山嘅「神木」，一層層水平枝，枝尖下垂，樹頂微微彎低。',
     stages: ['一小撮藍綠針葉', '樹頂彎彎，細枝開始分層', '寬闊金字塔形，枝層分明', '大片水平枝層，枝尖下垂，掛住直立球果', '巨大寶塔形，深色樹幹，枝層似雲'],
     realTauYears: 70,
+    woodDensity: 0.48,
+    dbhAt10m: 16,
   },
   {
     id: 'redwood',
@@ -141,6 +157,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '加州海岸霧林嘅巨人，樹皮厚而紅褐，可以活二千年。',
     stages: ['細細一撮扁平針葉', '筆直幼幹，樹皮開始泛紅', '窄長圓錐，樹冠延到地面', '粗大紅褐樹幹，下半段光禿，樹冠集中喺高處', '巨大有溝紋嘅紅幹、火燒疤痕，頂部分出幾條副幹'],
     realTauYears: 150,
+    woodDensity: 0.4,
+    dbhAt10m: 18,
   },
   {
     id: 'eucalyptus',
@@ -156,6 +174,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '世界最高嘅開花植物。樹幹又直又滑，灰白色，下段掛住剝落樹皮。',
     stages: ['對生嘅圓形嫩葉', '瘦長樹幹，葉片開始變長', '樹幹光滑灰白，樹冠疏落', '長長一段光幹，樹冠喺頂上一團團', '巨大白幹、剝落樹皮帶，頂部有枯枝'],
     realTauYears: 70,
+    woodDensity: 0.52,
+    dbhAt10m: 14,
   },
   {
     id: 'douglas',
@@ -171,6 +191,8 @@ export const SPECIES: SpeciesDef[] = [
     blurb: '北美太平洋岸嘅經典聖誕樹形，係世界第二高嘅針葉樹種。',
     stages: ['一圈細針葉', '細細嘅三角形小松', '濃密圓錐形，枝到地面', '高大深綠圓錐，掛滿有「鼠尾」苞片嘅球果', '下半段枝條自然脫落，粗厚深溝樹皮'],
     realTauYears: 90,
+    woodDensity: 0.48,
+    dbhAt10m: 15,
   },
 ];
 

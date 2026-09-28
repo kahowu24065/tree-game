@@ -1,4 +1,5 @@
 import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
+import { ISLE_AWARDS } from './grove';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
@@ -34,6 +35,8 @@ export interface View {
   todayEvent: WeatherEventId;
   /** v12 今晚預計: the same NightPlan the nightly settlement will use. */
   preview: NightPlan;
+  /** Second island: bare means it is unlocked and still empty. */
+  isle: { here: 0 | 1; bare: boolean; open: boolean };
   countdown: Countdown | null;
   manual: boolean;
   minutesToSettle: number;
@@ -361,8 +364,16 @@ export function renderChrome(view: View): void {
   const close = document.getElementById('drawer-close');
   if (close && !close.innerHTML) close.innerHTML = icon('close');
 
+  const bare = view.isle.bare;
   const status = document.getElementById('status-card');
-  if (status) {
+  if (status && bare) {
+    status.classList.remove('pop-open');
+    status.innerHTML = `
+      <button type="button" class="status-head" data-action="plant-isle"><b>第二座空島</b>${icon('chevronRight')}</button>
+      <p class="status-sub">未有樹</p>
+      <p class="status-facts"><span>向左滑嚟到呢度。向右滑返第一座島。</span><span>鏡頭自轉嗰陣會見到其他空島。</span></p>
+      <button type="button" class="primary" data-action="plant-isle">種一棵新樹</button>`;
+  } else if (status) {
     const stage = stageFor(state.heightCm, speciesTargetCm(state.species));
     const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying), state.collapses || 0) : null;
     const emerg = state.started && !state.over ? emergencyButtons(view, 'mini') : '';
@@ -373,7 +384,7 @@ export function renderChrome(view: View): void {
       <p class="status-facts">
         <span>樹齡 ${state.ageDays || 0} 日 = </span>
         <span>真實樹齡 ${realAgeDays(state.heightCm, state.species)} 日</span>
-        <span>碳吸收量<br>約 ${carbonKg(state.heightCm)} 公斤 CO₂／年</span>
+        <span>碳吸收量<br>約 ${carbonKg(state.heightCm, state.species)} 公斤 CO₂／年</span>
       </p>
       <div class="bars">
         ${statBar('H', '健康', state.health, [50, 100], 'health', state.dying ? '瀕死' : '')}
@@ -387,7 +398,10 @@ export function renderChrome(view: View): void {
   }
 
   const rail = document.getElementById('rail');
-  if (rail) {
+  if (rail && bare) {
+    rail.hidden = true;
+    rail.innerHTML = '';
+  } else if (rail) {
     rail.innerHTML = railHtml(state);
     // Keep the height rail in the gap under the status card, including short screens.
     rail.style.top = '';
@@ -403,7 +417,9 @@ export function renderChrome(view: View): void {
   }
 
   const dock = document.getElementById('dock');
-  if (dock) {
+  if (dock && bare) {
+    dock.innerHTML = `<button type="button" class="dock-btn d-plant" data-action="plant-isle" style="grid-column:1 / -1"><span class="dock-ic">${icon('sprout')}</span><span class="dock-label">種一棵新樹</span><small>第二座空島</small></button>`;
+  } else if (dock) {
     const water = actionLimit(state, 'water');
     const feed = actionLimit(state, 'fertilize');
     const cd = view.countdown;
@@ -784,7 +800,7 @@ function careTab(view: View): string {
       <h2>${esc(event.title)}</h2>
       <p>${esc(event.text)}</p>
     </article>
-    <p class="fine">碳吸收量：約 ${carbonKg(state.heightCm)} 公斤 CO₂／年。用心照顧過 ${state.daysCared} 日。進度只係留喺呢部機。</p>
+    <p class="fine">碳吸收量：約 ${carbonKg(state.heightCm, state.species)} 公斤 CO₂／年。用心照顧過 ${state.daysCared} 日。進度只係留喺呢部機。</p>
   `;
 }
 
@@ -1041,7 +1057,7 @@ function milestoneTab(view: View): string {
       <h2>${esc(formatHeight(state.heightCm))} · 大約紀錄高度的 ${pct}%</h2>
       <p>${beyond ? `已經超越${esc(sp.name)}嘅世界紀錄（${R / 100} 米）！冇上限，每日照樣長。` : `紀錄高度 ${R / 100} 米＝${esc(sp.name)}真實紀錄 ${sp.maxM} 米取整。`}</p>
       <div class="track fat"><div class="fill food" style="width:${Math.min(100, pct).toFixed(1)}%"></div></div>
-      <p class="fine">碳吸收量約 ${carbonKg(state.heightCm)} 公斤 CO₂／年。將軍樹 ${SHERMAN_M} 米（而家 ${esc(percentOf(meters, SHERMAN_M))}%），海波龍 ${HYPERION_M} 米。${next ? `下一個高度里程：${esc(next.title)}（${next.meters} 米）。` : ''}</p>
+      <p class="fine">碳吸收量約 ${carbonKg(state.heightCm, state.species)} 公斤 CO₂／年。將軍樹 ${SHERMAN_M} 米（而家 ${esc(percentOf(meters, SHERMAN_M))}%），海波龍 ${HYPERION_M} 米。${next ? `下一個高度里程：${esc(next.title)}（${next.meters} 米）。` : ''}</p>
     </article>
     <h3 class="sub">樹齡里程碑</h3>
     <ol class="miles">${ages}${recRow}</ol>
@@ -1079,7 +1095,14 @@ function achievementTab(view: View): string {
         .map((m) => `<li class="done"><strong>${esc(weatherAchievementCopy(m.id).title)}</strong><span>已拎</span><p>${esc(m.treeName)}（${esc(speciesDef(m.species).name)}）· ${esc(m.date)} · 樹齡 ${m.ageDays} 日</p></li>`)
         .join('')}</ol>`
     : '<p class="fine">未有成就。</p>';
+  const earnedIsle = new Set((meta.isle ?? []).map((a) => a.id));
+  const isles = ISLE_AWARDS.map((a) => {
+    const got = earnedIsle.has(a.id);
+    return `<li class="${got ? 'done' : ''}"><strong>${esc(a.title)}</strong><span>${got ? '已拎' : '未拎'}</span><p>${esc(a.detail)}</p></li>`;
+  }).join('');
   return `
+    <h3 class="sub">島嶼</h3>
+    <ol class="miles">${isles}</ol>
     <ol class="miles">${groups}</ol>
     <h3 class="sub">成就收藏</h3>
     ${collection}
@@ -1226,7 +1249,7 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
   return `
     <p class="eyebrow">結算</p>
     <h2>${esc(state.treeName)}枯死咗</h2>
-    <p>樹齡 ${state.ageDays || over.days} 日，高 ${esc(formatHeight(state.heightCm))}（紀錄高度 ${recordPct(state)}%），碳吸收量約 ${carbonKg(state.heightCm)} 公斤／年。</p>
+    <p>樹齡 ${state.ageDays || over.days} 日，高 ${esc(formatHeight(state.heightCm))}（紀錄高度 ${recordPct(state)}%），碳吸收量約 ${carbonKg(state.heightCm, state.species)} 公斤／年。</p>
     ${got}
     <p>${keptLine}再種一棵，樹齡由 0 開始。</p>
     <p class="fine">能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
@@ -1234,7 +1257,7 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
 }
 
 /** v14 celebratory card for milestones just reached (same badge style as the old season card). */
-export function milestoneModal(state: GameState, meta: MetaState, awards: MilestoneAward[], lines: string[], weather: WeatherAward[] = []): string {
+export function milestoneModal(state: GameState, meta: MetaState, awards: MilestoneAward[], lines: string[], weather: WeatherAward[] = [], recordHint = ''): string {
   const retro = awards.every((a) => a.retro);
   const main = awards[awards.length - 1]!;
   const items = awards.map((a) => `<li><b>${esc(awardLabel(a.id))}</b> ${esc(awardTier(a))} · ${esc(formatHeight(a.heightCm))}（紀錄 ${Math.round(a.share * 100)}%）</li>`).join('');
@@ -1247,6 +1270,7 @@ export function milestoneModal(state: GameState, meta: MetaState, awards: Milest
     <ul class="badges milestone-badges">${items}${wxItems}</ul>
     ${perks}
     <p>${retro ? '新規則：棵樹冇完結日，會一直陪住你；高度照舊，生長會慢慢接近紀錄高度。已經過咗嘅樹齡里程碑按而家高度補發。' : `繼續照顧，${esc(state.treeName)}會一直長落去。`}${nextMilestone(state) ? `下個里程碑：${esc(nextMilestone(state)!.label)}。` : ''}</p>
+    ${recordHint ? `<p>${esc(recordHint)}</p>` : ''}
     <p class="fine">徽章收藏 ${(meta.milestones?.length ?? 0) + (meta.weather?.length ?? 0)} 個・能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
     <button type="button" class="primary" data-action="close-modal">好嘢！</button>`;
 }

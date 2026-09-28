@@ -239,6 +239,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
     for (const id of ids) {
       const el = document.getElementById(id);
       if (!el || el.hidden || el.offsetParent === null) continue;
+      if (id === 'view-reset' && !el.classList.contains('on')) continue;
       if (id === 'toast' && !el.classList.contains('show')) continue;
       const r = el.getBoundingClientRect();
       if (r.width && r.height) out.push({ l: r.left - 4, t: r.top - 4, r: r.right + 4, b: r.bottom + 4 });

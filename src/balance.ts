@@ -126,8 +126,22 @@ export const H_MULT_TIERS: readonly { min: number; mult: number; label: string }
 ];
 export const MIN_HEIGHT_CM = 5;
 
-/** 碳吸收量 (公斤 CO₂／年) = CARBON_K × (高度 G, 米)^1.5. 20 米 ≈ 31 kg, 100 米 ≈ 350 kg. */
-export const CARBON_K = 0.35;
+/**
+ * Lifetime-average 碳吸收量. Stock uses the mean of two aboveground biomass estimates, then roots, then CO₂.
+ * Chave et al. 2014: AGB (kg) = CHAVE_COEF × (wood density × DBH² × height)^CHAVE_EXP
+ * (density g/cm³, DBH cm, height m). The other estimate is stem volume × density × branch expansion.
+ */
+export const CARBON_FRACTION = 0.47;
+export const CO2_PER_CARBON = 44 / 12;
+/** Belowground biomass as a fraction of aboveground biomass. */
+export const ROOT_SHOOT = 0.24;
+export const CHAVE_COEF = 0.0673;
+export const CHAVE_EXP = 0.976;
+/** Stem volume = STEM_FORM × basal area × height; branches scale that dry mass up to aboveground biomass. */
+export const STEM_FORM = 0.45;
+export const BRANCH_EXPANSION = 1.3;
+/** DBH (cm) = species dbh at 10 m × (height / 10 m) ^ DBH_HEIGHT_EXP. */
+export const DBH_HEIGHT_EXP = 0.7;
 
 /* ---------- v14 生長曲線、樹齡里程碑、徽章 ---------- */
 /**

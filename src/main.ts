@@ -41,6 +41,7 @@ import {
   type CatchupReport,
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
+import { canOpenSecond, clearGrove, isleAward, loadGrove, saveGrove } from './grove';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
@@ -123,6 +124,13 @@ setLogClock(() => {
 });
 let meta = loadMeta();
 let state: GameState = loadGame() ?? createGame(formatDateInTz(new Date(), timezone));
+const loadedGrove = loadGrove(state);
+let home = loadedGrove.home;
+let second: GameState | null = loadedGrove.second;
+let isle: 0 | 1 = loadedGrove.isle;
+state = isle === 1 && second ? second : home;
+/** Species picker opened to plant on the empty second island, not to rename or restart. */
+let plantingSecond = false;
 let dev: DevSettings = DEV_PANEL ? loadDev() : defaultDev();
 let tab: TabId = 'care';
 let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
@@ -141,6 +149,7 @@ let scene3d: Scene3D | null = null;
 let scene2d: Scene | null = null;
 try {
   scene3d = new Scene3D(canvas, quality);
+  scene3d.onIslandSwipe = (dx) => handleIslandSwipe(dx);
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
     (species, stage, cm) => scene3d?.speciesThumb(species, stage, cm) ?? null,
@@ -313,13 +322,14 @@ function sceneInput(): SceneInput {
   const timeMode = DEV_PANEL ? dev.time : 'auto';
   // Residents always stay; up to three recent visitors drop by.
   const visitors = state.animals.filter((id) => !state.residents.includes(id)).slice(-3);
+  const bare = isle === 1 && !second;
   const target = speciesTargetCm(state.species);
   const preview = DEV_PANEL ? dev.preview : {};
   const species: SpeciesId = preview.species ?? state.species;
   const previewSeason = preview.species ? speciesTargetCm(preview.species) : target;
-  const stage = preview.stage ?? stageIndexFor(state.heightCm, previewSeason);
-  const islandStage = preview.island;
-  const heightCm = preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : state.heightCm) : state.heightCm;
+  const stage = bare ? 0 : (preview.stage ?? stageIndexFor(state.heightCm, previewSeason));
+  const islandStage = bare ? 0 : preview.island;
+  const heightCm = bare ? 18 : preview.stage !== undefined || preview.species ? (preview.stage !== undefined ? stageSampleCm(stage, previewSeason) : state.heightCm) : state.heightCm;
   return {
     treeName: state.treeName,
     species,
@@ -327,14 +337,14 @@ function sceneInput(): SceneInput {
     islandStage,
     targetCm: previewSeason,
     heightCm,
-    unlocked: [...state.animals],
-    residents: [...state.residents],
+    unlocked: bare ? [] : [...state.animals],
+    residents: bare ? [] : [...state.residents],
     sway: swayLevel(cond),
     health: state.over?.kind === 'dead' ? 0 : Math.max(state.health, state.dying ? 0 : 8),
     moisture: state.moisture,
     pests: state.pest.active ? 70 : 0,
     scars: state.scars,
-    animals: [...state.residents, ...visitors],
+    animals: bare ? [] : [...state.residents, ...visitors],
     cond,
     daylight: daylightFactor(minute, sunrise, sunset, timeMode),
     minute: timeMode === 'day' ? sunrise + 180 : timeMode === 'night' ? 23 * 60 : minute,
@@ -351,8 +361,11 @@ function sceneInput(): SceneInput {
     fallenLog: fallenLogDay(state, today()),
     collapseKey: state.lastCollapse ? `${state.lastCollapse.date}|${state.lastCollapse.heightBefore}` : '',
     dying: Boolean(state.dying) && !state.over,
-    dead: state.over?.kind === 'dead',
-    deathPending: state.over?.kind === 'dead' && state.over.fallSeen === false,
+    dead: bare ? false : state.over?.kind === 'dead',
+    deathPending: bare ? false : state.over?.kind === 'dead' && state.over.fallSeen === false,
+    bare,
+    isleHere: isle,
+    otherTree: isle === 1 || Boolean(second),
   };
 }
 
@@ -377,6 +390,7 @@ function view(input: SceneInput): View {
     countdown: countdown(),
     manual: manual(),
     minutesToSettle: 24 * 60 - clockMinutes(timezone),
+    isle: { here: isle, bare: isle === 1 && !second, open: canOpenSecond(homeTree()) },
     wx: {
       provider: weather.provider ?? (weather.origin === 'offline' ? 'sim' : 'open-meteo'),
       origin: weather.origin,
@@ -463,6 +477,7 @@ async function importSave(): Promise<void> {
   const height = s.heightCm >= 100 ? `${(s.heightCm / 100).toFixed(1)} 米` : `${Math.round(s.heightCm)} 厘米`;
   if (!window.confirm(`匯入「${s.treeName || '棵樹'}」${when}：樹齡 ${s.ageDays} 日、高 ${height}${s.over ? '（已枯死）' : ''}。\n而家嘅存檔會被取代，確定？`)) return;
   importing = true;
+  clearGrove();
   localStorage.setItem(SAVE_KEY, JSON.stringify(s));
   if (res.payload.meta) localStorage.setItem(META_KEY, JSON.stringify(res.payload.meta));
   await flushPersist();
@@ -472,11 +487,82 @@ async function importSave(): Promise<void> {
 /** Set while an imported save is being written, so nothing overwrites it before the reload. */
 let importing = false;
 
+function syncGrove(): void {
+  if (isle === 0 || !second) home = state;
+  else second = state;
+}
+
 function persist(): void {
   if (importing) return;
-  saveGame(state);
+  syncGrove();
+  saveGame(isle === 1 && second ? second : home);
+  saveGrove({ isle, home, second });
   saveMeta(meta);
   scheduleReminders(false);
+}
+
+function homeTree(): GameState {
+  return isle === 0 || !second ? state : home;
+}
+
+function grantIsle(id: 'land' | 'plant' | 'record'): boolean {
+  meta.isle ??= [];
+  if (meta.isle.some((a) => a.id === id)) return false;
+  const tree = id === 'land' ? homeTree() : state;
+  meta.isle.push(isleAward(id, today(), tree.treeName, tree.species));
+  return true;
+}
+
+function arriveIsle(next: 0 | 1): void {
+  if (isle === 0) home = state;
+  else if (second) second = state;
+  isle = next;
+  if (next === 0) state = home;
+  else if (second) state = second;
+  else state = home;
+  const landed = next === 1 && grantIsle('land');
+  if (next === 0 || second) runCatchup();
+  else {
+    persist();
+    render();
+  }
+  if (landed) toast('成就：踏足新島');
+  else if (next === 1 && !second) toast('第二座空島。種一棵新樹，或者向右滑返第一座。');
+}
+
+function handleIslandSwipe(dx: number): void {
+  if (!scene3d || scene3d.sailing()) return;
+  const toSecond = dx < 0;
+  if (isle === 0 && toSecond) {
+    if (!canOpenSecond(state)) {
+      toast('打破世界紀錄之後，先可以滑去第二座空島。');
+      return;
+    }
+    scene3d.sailToOther(reducedMotion, () => arriveIsle(1));
+    return;
+  }
+  if (isle === 1 && !toSecond) {
+    scene3d.sailToOther(reducedMotion, () => arriveIsle(0));
+    return;
+  }
+  toast(isle === 0 ? '向左滑先至去到第二座空島。' : '向右滑返第一座島。');
+}
+
+function plantSecond(species?: SpeciesId): void {
+  const input = document.getElementById('tree-name');
+  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '第二棵';
+  if (isle === 0 || !second) home = state;
+  second = newGame(meta, realToday(), name, species ?? pick.species);
+  isle = 1;
+  state = second;
+  plantingSecond = false;
+  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), hkActive());
+  const fresh = grantIsle('plant');
+  persist();
+  closeModal();
+  render();
+  toast(fresh ? `${state.treeName}種好喇。成就：第二棵樹。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
+  syncWarningWater();
 }
 
 /** Android app: reschedule the local reminders from the current state (web: nothing). */
@@ -536,8 +622,10 @@ function handleOver(): boolean {
     if ((!awards.length && !weather.length) || !state.started) return false;
     const lines = bookMilestones(meta, state);
     bookWeather(meta, state);
+    if (isle === 1 && state.milestones?.record && grantIsle('record')) lines.push('成就：新島破紀錄');
     persist();
-    openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather) : weatherModal(state, meta, weather));
+    const recordHint = isle === 0 && awards.some((a) => a?.id === 'record') ? '向左滑去第二座空島，可以再種一棵。鏡頭自轉嗰陣都會見到其他空島。' : '';
+    openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather, recordHint) : weatherModal(state, meta, weather));
     return true;
   }
   const lines = [...bookMilestones(meta, state), ...bookWeather(meta, state), ...bookGameEnd(meta, state)];
@@ -722,13 +810,26 @@ function usesHko(snapshot: WeatherSnapshot): boolean {
 
 let refreshing: Promise<void> | null = null;
 let refreshTimer = 0;
+/** While the player stays in the game on their own location, take a new fix on this interval. */
+const LOCATE_EVERY_MS = 10 * 60 * 1000;
+
+/** Auto or 「用我所在位置」. A hand-picked district is not re-located. */
+function usesDeviceLocation(): boolean {
+  return !PLACES.some((p) => p.id === placeChoice);
+}
 
 function scheduleRefresh(ms: number): void {
   window.clearTimeout(refreshTimer);
   refreshTimer = window.setTimeout(() => {
     if (document.hidden) return;
-    void refreshWeather();
+    void refreshWeather(usesDeviceLocation());
   }, ms);
+}
+
+/** New GPS fix now, then again every 10 minutes for as long as the game stays open. */
+function relocateNow(): void {
+  if (!usesDeviceLocation() || document.hidden) return;
+  void refreshWeather(true);
 }
 
 function refreshWeather(forceLocate = false): Promise<void> {
@@ -740,7 +841,8 @@ function refreshWeather(forceLocate = false): Promise<void> {
     refreshing = null;
     weatherLoading = false;
     render();
-    scheduleRefresh(weather.origin === 'live' ? WEATHER_TTL_MS : 2 * 60 * 1000);
+    const stay = usesDeviceLocation() ? LOCATE_EVERY_MS : WEATHER_TTL_MS;
+    scheduleRefresh(weather.origin === 'live' ? stay : 2 * 60 * 1000);
   });
   return refreshing;
 }
@@ -830,6 +932,10 @@ function openStart(): void {
 }
 
 function startGame(species?: SpeciesId): void {
+  if (plantingSecond) {
+    plantSecond(species);
+    return;
+  }
   const input = document.getElementById('tree-name');
   const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '世界之樹';
   const wasStarted = state.started && !state.over;
@@ -995,6 +1101,10 @@ function bindSheetDrag(): void {
 /* ---------- Actions (document-level delegation) ---------- */
 
 function doAction(action: string, target: HTMLElement): void {
+  if (isle === 1 && !second && ['water', 'fertilize', 'deworm', 'drain', 'heat-water', 'rain-drain', 'warm-cover'].includes(action)) {
+    toast('呢座島未有樹。先種一棵，或者向右滑返第一座。');
+    return;
+  }
   if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'drain') {
     const result = performAction(state, action as CareAction);
     persist();
@@ -1095,7 +1205,12 @@ function doAction(action: string, target: HTMLElement): void {
     case 'start-game':
       startGame(pick.species);
       return;
+    case 'plant-isle':
+      plantingSecond = true;
+      openModal(startModal('第二棵', meta, false, pick));
+      return;
     case 'close-modal':
+      plantingSecond = false;
       closeModal();
       maybeExplainWind();
       return;
@@ -1373,7 +1488,12 @@ if (DEV_PANEL) {
     },
     reset: () => {
       clearGame();
+      clearGrove();
       state = createGame(realToday());
+      home = state;
+      second = null;
+      isle = 0;
+      plantingSecond = false;
       pendingNote = '';
       closeModal();
       closeDrawer();
@@ -1475,7 +1595,9 @@ if (DEV_PANEL) {
 let lastChrome = 0;
 let viewKey = '';
 let hintShown = localStorage.getItem('sekai-tree-zoom-hint') === '1';
-/** Show 「返回全景」 while the player is zoomed in or following an animal; a one-off zoom hint on first visit. */
+/** How long 「返回全景」 stays after the last zoom, pan, or follow gesture. */
+const VIEW_BTN_MS = 2800;
+/** Fade 「返回全景」 in only while the player is adjusting a zoomed or follow view. */
 function syncViewButton(): void {
   if (!scene3d) return;
   if (!hintShown && state.started && !state.over && document.getElementById('modal')?.hidden) {
@@ -1488,15 +1610,22 @@ function syncViewButton(): void {
     }
   }
   const v = scene3d.viewState();
-  const key = `${v.active}|${v.following ?? ''}`;
-  if (key === viewKey) return;
-  viewKey = key;
   const btn = document.getElementById('view-reset');
-  if (btn) {
-    btn.hidden = !v.active;
+  if (!btn) return;
+  const key = `${v.active}|${v.following ?? ''}`;
+  if (key !== viewKey) {
+    viewKey = key;
     btn.innerHTML = `${ICONS.locate}<span>${v.following ? `跟緊${esc(v.following)}・返回全景` : '返回全景'}</span>`;
+    if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
   }
-  if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
+  const want = v.active && performance.now() - scene3d.viewNudgedAt() < VIEW_BTN_MS;
+  if (want && btn.hidden) {
+    btn.hidden = false;
+    btn.classList.remove('on');
+  } else {
+    btn.classList.toggle('on', want);
+  }
+  btn.setAttribute('aria-hidden', want ? 'false' : 'true');
 }
 
 /** v9 animal markers / arrival toast / 島上動物 list (3D scene only). */
@@ -1545,6 +1674,10 @@ document.addEventListener('visibilitychange', () => {
   }
   requestAnimationFrame(frame);
   runCatchup();
+  if (usesDeviceLocation()) {
+    relocateNow();
+    return;
+  }
   const age = Date.now() - weather.fetchedAt;
   if (!refreshing && (weather.origin !== 'live' || age > WEATHER_TTL_MS)) void refreshWeather();
 });
@@ -1560,14 +1693,18 @@ bindSheetDrag();
 runCatchup();
 if (isNative()) {
   void App.addListener('pause', () => scheduleReminders(true));
+  void App.addListener('resume', () => relocateNow());
   scheduleReminders(false);
   void syncPush(notifyEnabled());
 }
 if (!state.started) openStart();
 requestAnimationFrame(frame);
-if (weather.origin === 'live' && !weatherLoading) {
+if (usesDeviceLocation()) {
+  if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);
+  relocateNow();
+} else if (weather.origin === 'live' && !weatherLoading) {
   applyWeather(weather);
   scheduleRefresh(Math.max(5000, WEATHER_TTL_MS - (Date.now() - weather.fetchedAt)));
 } else {
-  void refreshWeather(!placeChoice && weather.source !== 'geo');
+  void refreshWeather(false);
 }

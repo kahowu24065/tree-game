@@ -12,7 +12,7 @@ export async function nativePosition(timeoutMs: number): Promise<{ lat: number; 
     if (!granted(perm) && perm.coarseLocation !== 'denied') perm = await Geolocation.requestPermissions({ permissions: ['coarseLocation'] });
     if (!granted(perm)) return null;
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
-    const fix = Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: Math.max(1000, timeoutMs - 500), maximumAge: 30 * 60 * 1000 })
+    const fix = Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: Math.max(1000, timeoutMs - 500), maximumAge: 0 })
       .then((pos) => ({ lat: pos.coords.latitude, lon: pos.coords.longitude }))
       .catch(() => null);
     return await Promise.race([fix, timeout]);

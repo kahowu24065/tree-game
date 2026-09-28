@@ -53,10 +53,18 @@ describe('公式', () => {
     expect(deltaG(22.2, -0.5, 1.15)).toBe(-11.1);
   });
 
-  it('碳吸收量 = 0.35 × G^1.5', () => {
-    expect(carbonKg(2000)).toBe(31.3);
-    expect(carbonKg(10000)).toBe(350);
+  it('碳吸收量係今年長高所增加嘅二氧化碳，唔係庫存除以樹齡', () => {
     expect(carbonKg(0)).toBe(0);
+    expect(carbonKg(0, 'redwood')).toBe(0);
+    const young = carbonKg(340, 'camphor');
+    const mid = carbonKg(1080, 'camphor');
+    expect(young).toBeGreaterThan(0);
+    expect(young).toBeLessThan(mid);
+    // ~20-year camphor, about 11 m: the field range cited for that size is 18–28 kg/year.
+    expect(mid).toBeGreaterThanOrEqual(18);
+    expect(mid).toBeLessThanOrEqual(28);
+    expect(carbonKg(98, 'cotton')).toBeGreaterThan(1);
+    expect(carbonKg(1080, 'cotton')).not.toBe(mid);
   });
 
 });

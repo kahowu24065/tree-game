@@ -22,6 +22,7 @@ function view(over: Partial<View['wx']> = {}): View {
     forecast: [{ date: D, code: 63, tempMax: 28, tempMin: 24, precipMm: 40, precipProb: 90, windKmh: 20, gustKmh: 40 } as View['forecast'][number]],
     night: false, todayEvents: ['landslip', 'rainstorm'], nowEvents: ['landslip', 'rainstorm'], todayEvent: 'landslip', preview: previewNight(state, D, ['landslip'], null),
     countdown: { event: 'landslip', hours: 0, active: true, source: '天文台' }, manual: false, minutesToSettle: 300, wx,
+    isle: { here: 0, bare: false, open: false },
   };
 }
 

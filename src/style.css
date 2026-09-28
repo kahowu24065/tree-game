@@ -704,7 +704,7 @@ body.sheet-open .hud > .sheet-backdrop {
   font-weight: 700;
 }
 
-/* Zoom / follow: back to the overview. */
+/* Zoom / follow: back to the overview. Fades in only after a camera gesture, then fades out. */
 .view-reset {
   position: absolute;
   left: calc(var(--pad) + var(--safe-l, 0px));
@@ -717,6 +717,14 @@ body.sheet-open .hud > .sheet-backdrop {
   font-weight: 700;
   color: var(--ink);
   max-width: 60vw;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+
+.view-reset.on {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .view-reset[hidden],

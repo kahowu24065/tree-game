@@ -52,6 +52,12 @@ export interface SceneInput {
   dead?: boolean;
   /** v16: dead, but the death animation has not played yet (keep the standing tree until it does). */
   deathPending?: boolean;
+  /** Standing on the second island before a tree is planted. */
+  bare?: boolean;
+  /** 0 = home island, 1 = the second island. */
+  isleHere?: 0 | 1;
+  /** The other playable island already has a tree (shown on the neighbour during the spin). */
+  otherTree?: boolean;
 }
 
 interface Pt {

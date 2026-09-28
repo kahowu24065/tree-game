@@ -263,6 +263,16 @@ export interface MetaState {
   milestones: MetaMilestone[];
   /** Weather achievements from every tree. */
   weather: MetaWeather[];
+  /** Island achievements (second island after a world record). */
+  isle: IsleAward[];
+}
+
+/** Kept after visiting or planting on the second island. */
+export interface IsleAward {
+  id: 'land' | 'plant' | 'record';
+  date: string;
+  treeName: string;
+  species: SpeciesId;
 }
 
 /** Weather achievement kept across trees. */

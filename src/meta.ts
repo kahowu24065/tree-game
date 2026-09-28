@@ -8,7 +8,7 @@ import type { GameState, MetaState } from './types';
 export const META_KEY = 'sekai-tree-meta-v1';
 
 export function freshMeta(): MetaState {
-  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [], weather: [] };
+  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [], weather: [], isle: [] };
 }
 
 export function loadMeta(): MetaState {
@@ -17,7 +17,8 @@ export function loadMeta(): MetaState {
     const data = raw ? (JSON.parse(raw) as MetaState) : null;
     if (data && data.version === 1 && data.badges) {
       const weather = Array.isArray(data.weather) ? data.weather.filter((w) => parseWxAwardId(w.id)) : [];
-      return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [], weather };
+      const isle = Array.isArray(data.isle) ? data.isle.filter((a) => a && (a.id === 'land' || a.id === 'plant' || a.id === 'record')) : [];
+      return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [], weather, isle };
     }
   } catch {
     /* ignore */

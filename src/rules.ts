@@ -1,6 +1,13 @@
 /** Pure formulas of the design doc. Numbers come from balance.ts. */
 import {
-  CARBON_K,
+  BRANCH_EXPANSION,
+  CARBON_FRACTION,
+  CHAVE_COEF,
+  CHAVE_EXP,
+  CO2_PER_CARBON,
+  DBH_HEIGHT_EXP,
+  ROOT_SHOOT,
+  STEM_FORM,
   EVENT_ORDER,
   H_MULT_TIERS,
   N_FACTOR,
@@ -20,6 +27,7 @@ import {
   type WeatherCategory,
   type WeatherEventId,
 } from './balance';
+import { speciesDef, type SpeciesId } from './data/species';
 
 export const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
 /** v12: 水分 W runs 0-150. */
@@ -174,9 +182,35 @@ export function deltaG(baseCm: number, mult: number, weatherBonus: number): numb
   return round1(mult >= 0 ? baseCm * mult * weatherBonus : baseCm * mult);
 }
 
-/** 碳吸收量 (公斤 CO₂／年) = 常數 × G^1.5, G in metres. */
-export function carbonKg(heightCm: number): number {
-  return round1(CARBON_K * Math.pow(Math.max(0, heightCm) / 100, 1.5));
+function chaveAgbKg(density: number, dbhCm: number, heightM: number): number {
+  return CHAVE_COEF * Math.pow(density * dbhCm * dbhCm * heightM, CHAVE_EXP);
+}
+
+function stemAgbKg(density: number, dbhCm: number, heightM: number): number {
+  const volumeM3 = STEM_FORM * (Math.PI / 4) * Math.pow(dbhCm / 100, 2) * heightM;
+  return volumeM3 * density * 1000 * BRANCH_EXPANSION;
+}
+
+function storedCo2Kg(heightM: number, dbhCm: number, density: number): number {
+  if (heightM <= 0 || dbhCm <= 0) return 0;
+  const agb = (chaveAgbKg(density, dbhCm, heightM) + stemAgbKg(density, dbhCm, heightM)) / 2;
+  return agb * (1 + ROOT_SHOOT) * CARBON_FRACTION * CO2_PER_CARBON;
+}
+
+/**
+ * This year's 碳吸收量 (公斤 CO₂／年).
+ * Trunk diameter stays at the size for the current height. Height advances one year on
+ * H = R (1 − e^(−t/τ)). The rise in stored CO₂ is the annual rate — not the lifetime stock divided by age.
+ */
+export function carbonKg(heightCm: number, species?: SpeciesId | string): number {
+  const heightM = Math.max(0, heightCm) / 100;
+  if (heightM <= 0) return 0;
+  const sp = speciesDef(species);
+  const dbhCm = sp.dbhAt10m * Math.pow(heightM / 10, DBH_HEIGHT_EXP);
+  const remaining = Math.max(0, sp.targetM - heightM);
+  const grownM = remaining * (1 - Math.exp(-1 / sp.realTauYears));
+  const added = storedCo2Kg(heightM + grownM, dbhCm, sp.woodDensity) - storedCo2Kg(heightM, dbhCm, sp.woodDensity);
+  return round1(Math.max(0, added));
 }
 
 /** Deterministic 0-1 roll per date (same result on every device, testable). */

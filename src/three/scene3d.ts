@@ -4,7 +4,7 @@ import { hashString, clamp, mulberry32 } from '../util';
 import { albumFigure, Animals3D, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, resolveObstacles, type Habitat } from './habitat3d';
 import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
-import { buildFence, buildIsland, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
+import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { buildTree, healthUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
@@ -140,6 +140,17 @@ export class Scene3D {
   private sky!: THREE.Mesh;
   /** Island landscape scale (1 = 1:1 metres; grows once the tree outgrows the island). */
   private islandK = 1;
+  /** Home island plus the empty neighbours. Translating this group is the swipe between islands. */
+  private land = new THREE.Group();
+  private farIsles: { group: THREE.Group; tree: THREE.Object3D; play: boolean }[] = [];
+  private isleGap = 40;
+  private shownIsle = 0;
+  private voyageT = 1;
+  private voyageFrom = new THREE.Vector3();
+  private voyageTo = new THREE.Vector3();
+  private voyageDone: (() => void) | null = null;
+  /** Horizontal swipe on the overview (dx in CSS pixels, negative = finger moved left). */
+  onIslandSwipe: ((dx: number) => void) | null = null;
   private fence: Fence | null = null;
   // Player zoom / pan / follow (pinch, wheel, tap an animal).
   private zoom = 1;
@@ -147,6 +158,8 @@ export class Scene3D {
   private panOff = new THREE.Vector3();
   private panGoal = new THREE.Vector3();
   private followRef: unknown = null;
+  /** Last time the player zoomed, panned, or started a follow — drives the brief 「返回全景」 button. */
+  private viewNudgeAt = -1e9;
   private followZoom = 1;
   /** Follow-cam occlusion avoidance: azimuth bias + distance cap, re-evaluated a few times a second. */
   private followBias = 0;
@@ -155,7 +168,7 @@ export class Scene3D {
   private followCheckT = 0;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinch: { d: number; mx: number; my: number } | null = null;
-  private tap: { x: number; y: number; t: number; moved: boolean } | null = null;
+  private tap: { x: number; y: number; t: number; moved: boolean; az: number; el: number } | null = null;
   private raycaster = new THREE.Raycaster();
 
   private canvas: HTMLCanvasElement;
@@ -224,12 +237,15 @@ export class Scene3D {
     this.sun.shadow.radius = 4;
     this.applyQuality();
 
+    this.scene.add(this.land);
     this.island = buildIsland();
-    this.scene.add(this.island.group);
+    this.land.add(this.island.group);
     this.pivot.position.y = 0.18;
-    this.scene.add(this.pivot);
+    this.land.add(this.pivot);
     this.pivot.add(this.leafLoop.group);
-    this.scene.add(this.animals.root);
+    this.land.add(this.animals.root);
+    this.farIsles = this.buildFarIsles();
+    for (const isle of this.farIsles) this.land.add(isle.group);
 
     // Sea far below plus distant islets and cliffs.
     this.sea = new THREE.Mesh(new THREE.CircleGeometry(420, 48), new THREE.MeshStandardMaterial({ color: '#4fa7c9', roughness: 0.35, metalness: 0.1 }));
@@ -322,7 +338,7 @@ export class Scene3D {
     }
     this.landmark.position.set(2.8, 0.05, 2.2);
     this.landmark.visible = false;
-    this.scene.add(this.landmark);
+    this.land.add(this.landmark);
 
     // Rain streaks.
     const n = 900;
@@ -335,9 +351,9 @@ export class Scene3D {
     this.rain.visible = false;
     this.scene.add(this.rain);
 
-    this.scene.add(this.careFx.root);
-    // v15.2: the campfire's point light stays in the scene all the time (intensity 0 by day): no shader recompiles.
-    this.scene.add(this.campfire.group, this.campfire.light);
+    this.land.add(this.careFx.root);
+    // v15.2: the campfire's point light stays on the island (intensity 0 by day): no shader recompiles.
+    this.land.add(this.campfire.group, this.campfire.light);
 
     this.rays = this.buildRays();
     this.bindDrag();
@@ -588,12 +604,12 @@ export class Scene3D {
     }
     if (!pick) return null;
     if (this.logProp) {
-      this.scene.remove(this.logProp.group);
+      this.land.remove(this.logProp.group);
       disposeGroup(this.logProp.group);
     }
     const group = fallenLog(lenU, rU, hashString(key) % 17);
     group.visible = false;
-    this.scene.add(group);
+    this.land.add(group);
     this.logProp = { group, key, ...pick, lenU, rU };
     return this.logProp;
   }
@@ -646,9 +662,9 @@ export class Scene3D {
       this.deadLog = fx;
       this.pivot.add(fx.root);
     }
-    const hideTree = Boolean(this.deadLog) || Boolean(this.fall && (this.fall.mode !== 'collapse' || !this.fallSwapped));
+    const hideTree = Boolean(input.bare) || Boolean(this.deadLog) || Boolean(this.fall && (this.fall.mode !== 'collapse' || !this.fallSwapped));
     tree.group.visible = !hideTree;
-    this.animals.root.visible = !this.fall && !this.deadLog && !input.dead;
+    this.animals.root.visible = !input.bare && !this.fall && !this.deadLog && !input.dead;
     // Health look (continuous, no rebuild).
     const look = healthLook(input.health, Boolean(input.dying), Boolean(input.dead));
     healthUniforms.uWither.value = look.wither;
@@ -757,9 +773,10 @@ export class Scene3D {
       } catch {
         /* synthetic or already-released pointer */
       }
+      if (this.isZoomed() || this.followRef) this.noteView();
       if (this.pointers.size === 1) {
         this.dragging = this.startDrag(e.clientX, e.clientY);
-        this.tap = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+        this.tap = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, az: this.dragAz, el: this.dragEl };
       } else if (this.pointers.size === 2) {
         // Second finger: pinch-zoom / two-finger pan instead of rotating.
         this.dragging = null;
@@ -772,6 +789,7 @@ export class Scene3D {
       if (!this.pointers.has(e.pointerId)) return;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.tap && Math.hypot(e.clientX - this.tap.x, e.clientY - this.tap.y) > 8) this.tap.moved = true;
+      if ((this.isZoomed() || this.followRef) && (this.pinch || this.dragging)) this.noteView();
       if (this.pinch && this.pointers.size >= 2) {
         const [p1, p2] = [...this.pointers.values()];
         const d = Math.max(10, Math.hypot(p1!.x - p2!.x, p1!.y - p2!.y));
@@ -807,7 +825,8 @@ export class Scene3D {
         this.dragging = this.startDrag(p!.x, p!.y);
       } else if (this.pointers.size === 0) {
         this.dragging = null;
-        if (e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
+        const swiped = e.type === 'pointerup' && this.consumeSwipe(e);
+        if (!swiped && e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
         this.tap = null;
       }
       this.lastDrag = performance.now();
@@ -937,6 +956,7 @@ export class Scene3D {
     if (!Number.isFinite(factor) || factor <= 0) return;
     if (this.followRef || this.follow) {
       this.followZoom = clamp(this.followZoom * factor, 0.35, 8);
+      this.noteView();
       return;
     }
     // Closest free zoom: 1.5 m from the aim point (less for a tiny seedling whose overview is already close).
@@ -961,6 +981,7 @@ export class Scene3D {
     this.panGoal.copy(T2.sub(auto));
     this.zoomGoal = z1;
     this.clampPan();
+    this.noteView();
   }
 
   /** Two-finger pan in screen pixels. */
@@ -972,6 +993,7 @@ export class Scene3D {
     const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
     this.panGoal.addScaledVector(right, -dx * perPx).addScaledVector(up, dy * perPx);
     this.clampPan();
+    this.noteView();
   }
 
   private clampPan(): void {
@@ -994,6 +1016,7 @@ export class Scene3D {
       this.follow = null;
       this.followZoom = 1;
       this.resetFollowCam();
+      this.noteView();
       return;
     }
     // v9: a tap that just misses a moving overview marker (flocks move fast on screen) still follows that group.
@@ -1021,6 +1044,7 @@ export class Scene3D {
     this.follow = null;
     this.followZoom = 1;
     this.resetFollowCam();
+    this.noteView();
     return true;
   }
 
@@ -1046,6 +1070,15 @@ export class Scene3D {
     return this.zoomGoal < 0.97 || this.zoomGoal > 1.03 || this.panGoal.lengthSq() > 0.01;
   }
 
+  /** Last time the player adjusted a zoomed or follow camera. */
+  viewNudgedAt(): number {
+    return this.viewNudgeAt;
+  }
+
+  private noteView(): void {
+    this.viewNudgeAt = performance.now();
+  }
+
   /** Whether the player has left the overview (zoomed or following), and who is being followed. */
   viewState(): { active: boolean; following: string | null } {
     const name = this.followRef ? this.animals.refName(this.followRef) : null;
@@ -1064,6 +1097,96 @@ export class Scene3D {
 
   walkerDump(): ReturnType<Animals3D['walkerDump']> {
     return this.animals.walkerDump();
+  }
+
+  /** Slide the archipelago so the neighbouring playable island reaches the camera, then run `done`. */
+  sailToOther(reduced: boolean, done: () => void): boolean {
+    if (this.voyageT < 1) return false;
+    if (reduced) {
+      done();
+      return true;
+    }
+    const sign = this.shownIsle === 0 ? 1 : -1;
+    this.voyageFrom.copy(this.land.position);
+    this.voyageTo.set(-sign * this.isleGap, 0, 0);
+    this.voyageT = 0;
+    this.voyageDone = done;
+    return true;
+  }
+
+  sailing(): boolean {
+    return this.voyageT < 1;
+  }
+
+  private consumeSwipe(e: PointerEvent): boolean {
+    const tap = this.tap;
+    if (!tap?.moved || this.isZoomed() || this.followRef || this.follow || this.voyageT < 1) return false;
+    const dx = e.clientX - tap.x;
+    const dy = e.clientY - tap.y;
+    if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35 || performance.now() - tap.t > 700) return false;
+    this.dragAz = tap.az;
+    this.dragEl = tap.el;
+    this.onIslandSwipe?.(dx);
+    return true;
+  }
+
+  private buildFarIsles(): { group: THREE.Group; tree: THREE.Object3D; play: boolean }[] {
+    const make = (play: boolean, yaw: number) => {
+      const body = buildSeedlingBody();
+      body.group.rotation.y = yaw;
+      const tree = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 1.7, 6), new THREE.MeshStandardMaterial({ color: '#6b4a32', flatShading: true, roughness: 1 }));
+      trunk.position.y = 1.05;
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(1.9, 3.4, 7), new THREE.MeshStandardMaterial({ color: '#3e8f45', flatShading: true, roughness: 1 }));
+      crown.position.y = 2.7;
+      tree.add(trunk, crown);
+      tree.visible = false;
+      body.group.add(tree);
+      return { group: body.group, tree, play };
+    };
+    return [make(true, 0.6), make(false, 2.2), make(false, 4.0)];
+  }
+
+  private layoutFarIsles(input: SceneInput, t: number): void {
+    const here = input.isleHere ?? 0;
+    if (here !== this.shownIsle && this.voyageT >= 1) {
+      this.land.position.set(0, 0, 0);
+      this.shownIsle = here;
+    }
+    const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
+    const ring = Math.max(islandR * 4.2, islandR + 36);
+    this.isleGap = ring;
+    const gap = this.isleGap;
+    const playAt = this.shownIsle === 0 ? gap : -gap;
+    const vista = ring * 1.45;
+    const base = Math.max(0.7, islandR * 0.055);
+    const spots = [
+      { x: playAt, z: gap * 0.04, play: true, scale: base },
+      { x: Math.cos(2.15) * vista, z: Math.sin(2.15) * vista, play: false, scale: base * 0.82 },
+      { x: Math.cos(4.35) * vista, z: Math.sin(4.35) * vista, play: false, scale: base * 0.72 },
+    ];
+    this.farIsles.forEach((isle, i) => {
+      const spot = spots[i]!;
+      isle.play = spot.play;
+      isle.group.position.set(spot.x, Math.sin(t * 0.55 + i * 1.7) * 0.18, spot.z);
+      isle.group.scale.setScalar(spot.scale);
+      isle.tree.visible = spot.play && Boolean(input.otherTree);
+    });
+    const fog = this.scene.fog as THREE.Fog;
+    fog.far = Math.max(220, vista * 2.5);
+  }
+
+  private stepVoyage(input: SceneInput, dt: number): void {
+    if (this.voyageT >= 1) return;
+    const step = input.reducedMotion ? 1 : dt / 0.72;
+    this.voyageT = Math.min(1, this.voyageT + step);
+    const k = 1 - (1 - this.voyageT) ** 3;
+    this.land.position.lerpVectors(this.voyageFrom, this.voyageTo, k);
+    if (this.voyageT >= 1) {
+      const done = this.voyageDone;
+      this.voyageDone = null;
+      done?.();
+    }
   }
 
   /** Back to the automatic overview. */
@@ -1190,7 +1313,7 @@ export class Scene3D {
     const stale = !this.fence || !this.fence.key.startsWith(key + '|') || Math.abs(Number(this.fence.key.split('|').pop()) - hU) / hU > 0.04;
     if (stale) {
       if (this.fence) {
-        this.scene.remove(this.fence.group);
+        this.land.remove(this.fence.group);
         this.fence.dispose();
       }
       this.island.group.updateMatrixWorld(true);
@@ -1202,7 +1325,7 @@ export class Scene3D {
         groundAt: (x, z) => this.groundUnits(x, z),
         skip: (x, z) => this.wetOrBlocked(x, z, 0.02),
       });
-      this.scene.add(this.fence.group);
+      this.land.add(this.fence.group);
     }
     this.fence!.group.scale.setScalar(this.islandK);
   }
@@ -1258,7 +1381,7 @@ export class Scene3D {
     if (key === this.habitatKey) return;
     this.habitatKey = key;
     if (this.habitat) {
-      this.scene.remove(this.habitat.group);
+      this.land.remove(this.habitat.group);
       this.habitat.dispose();
     }
     this.habitat = buildHabitat(input.species, stage, this.quality, bucketScale(bucket));
@@ -1266,7 +1389,7 @@ export class Scene3D {
       (x, z) => this.groundFast(x / this.islandK, z / this.islandK) * this.islandK,
       (x, z) => !this.wetOrBlocked(x / this.islandK, z / this.islandK, 0.2),
     );
-    this.scene.add(this.habitat.group);
+    this.land.add(this.habitat.group);
     this.island.setExtended(stage >= 1);
     this.animals.setIslandRadius(this.habitat.radius, this.islandK);
   }
@@ -1339,6 +1462,8 @@ export class Scene3D {
     this.lastTime = t;
     this.ensureTree(input, t);
     this.ensureHabitat(input);
+    this.layoutFarIsles(input, t);
+    this.stepVoyage(input, dt);
     const tree = this.tree!;
 
     // Growth pop: ease from the old size to the new one.
@@ -1616,7 +1741,7 @@ export class Scene3D {
     this.sea.position.set(this.camera.position.x, -22 * this.islandK, this.camera.position.z);
     this.camera.updateProjectionMatrix();
     fog.near = Math.max(dist, this.camDist) * 1.15;
-    fog.far = Math.max(dist, this.camDist) * 2.6 + 40 * this.islandK;
+    fog.far = Math.max(Math.max(dist, this.camDist) * 2.6 + 40 * this.islandK, dist + this.isleGap * 2.7);
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
@@ -1694,12 +1819,12 @@ export class Scene3D {
       if (!this.mulch || key !== this.mulchKey) {
         const wasOn = Boolean(this.mulch?.isVisible());
         if (this.mulch) {
-          this.scene.remove(this.mulch.group);
+          this.land.remove(this.mulch.group);
           this.mulch.dispose();
         }
         this.mulch = new Mulch3D(ratio, this.quality);
         this.mulchKey = key;
-        this.scene.add(this.mulch.group);
+        this.land.add(this.mulch.group);
         if (wasOn) this.mulch.setVisible(true);
       }
     }
@@ -1726,6 +1851,10 @@ export class Scene3D {
       this.campfire.group.rotation.y = 0.6;
     }
     this.campfire.update(t, dt, ((f?.rU ?? 0.25) * K) / 0.4, campfireNightK(input.daylight), input.reducedMotion);
+    if (input.bare) {
+      this.campfire.group.visible = false;
+      this.campfire.light.intensity = 0;
+    }
     this.updateMulch(input, dt);
     if (!this.careFx.count()) return;
     const dirtR = 1.1 * this.island.dirt.scale.x * K;

@@ -5,7 +5,14 @@
 import {
   AGE_MILESTONES,
   BADGES,
-  CARBON_K,
+  BRANCH_EXPANSION,
+  CARBON_FRACTION,
+  CHAVE_COEF,
+  CHAVE_EXP,
+  CO2_PER_CARBON,
+  DBH_HEIGHT_EXP,
+  ROOT_SHOOT,
+  STEM_FORM,
   CARE,
   COLLAPSE_HEIGHT_LOSS,
   COLLAPSE_MAX,
@@ -153,6 +160,7 @@ function playTab(): string {
       ],
     ),
     p('樹齡＝種低之後結算過嘅晚數。枯死再種，樹齡由 0 開始，已攞嘅徽章同能力照留。'),
+    p('第一棵樹高過紀錄高度之後，向左滑去第二座空島再種一棵；向右滑返第一座。鏡頭自己轉嘅時候會見到其他空島。成就：踏足新島、第二棵樹、新島破紀錄。'),
     h('成就'),
     table(
       ['捱過', '點樣先計一次'],
@@ -239,7 +247,7 @@ function calcTab(): string {
     p(`里程碑嗰日高度 ÷ 紀錄高度，對比預計 <code>1 − e^(−樹齡/${GROWTH_TAU_DAYS})</code>：夠 ${Math.round(MILESTONE_TIER_SHARE.gold * 100)}% 金、夠 ${Math.round(MILESTONE_TIER_SHARE.silver * 100)}% 銀，其他銅。`),
     p(`能力徽章：一級每晚水分流失 ×${T1_WATER_LOSS_MULT}；二級${L('rainstorm')}時有 ${Math.round(T2_RAIN_TO_N_CHANCE * 100)}% 機會將一半水分轉做養分；三級一面免死金牌。`),
     h('碳吸收量'),
-    p(`<code>約 ${CARBON_K} × 高度(米)^1.5</code> 公斤 CO₂／年。`),
+    p(`今年速率，唔係成棵庫存除以樹齡。胸徑 = 10 米典型胸徑 × (樹高÷10)^${DBH_HEIGHT_EXP}，跟住固定。樹高再長一年（紀錄高度減而家高度，乘 <code>1 − e^(−1/真實時間常數)</code>）。地上生物量用 Chave 2014 <code>${CHAVE_COEF} × (密度 × 胸徑² × 樹高)^${CHAVE_EXP}</code> 同樹幹體積（形狀係數 ${STEM_FORM}、枝條 ×${BRANCH_EXPANSION}）取平均，加根 ×${1 + ROOT_SHOOT}，乘碳含量 ${CARBON_FRACTION}，再 ×${Math.round(CO2_PER_CARBON * 1000) / 1000}。兩次庫存嘅差就係今年吸收量。`),
   ].join('');
 }
 
