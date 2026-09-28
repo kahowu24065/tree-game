@@ -1,4 +1,4 @@
-# 一日一樹
+# 世界之樹
 
 > 接手開發（Cursor／新機）：先睇 [HANDOFF.md](HANDOFF.md)。
 
