@@ -61,7 +61,12 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" class="${d.mode === 'real' ? 'on' : ''}" data-dev="mode-real">真實天氣</button>
         <button type="button" class="${d.mode === 'manual' ? 'on' : ''}" data-dev="mode-manual">手動天氣</button>
       </div>
-      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => eventLabel(e)).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀酷熱／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣；揀寒冷會開「保暖」。'}</p>
+      <div class="dev-seg time">
+        <button type="button" class="${d.time === 'auto' ? 'on' : ''}" data-dev="time-auto">真實時間</button>
+        <button type="button" class="${d.time === 'day' ? 'on' : ''}" data-dev="time-day">日頭</button>
+        <button type="button" class="${d.time === 'night' ? 'on' : ''}" data-dev="time-night">夜晚</button>
+      </div>
+      <p class="dev-note">${d.mode === 'real' ? `真實：${esc(api.liveEvents().map((e) => eventLabel(e)).join('、') || '晴天／多雲')}` : '可以揀多個警告：熱、雨、風三類會疊加（同類只計最嚴重）。揀毛毛雨／酷熱天氣警告／暴雨／黑雨會即刻計水分（每日每樣一次），仲會出應急行動掣；揀寒冷會開「保暖」。'}</p>
       <div class="dev-events">${api.events.map(eventBtn).join('')}</div>
       <div class="dev-row">
         <label>12 小時預報
@@ -78,7 +83,6 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="advance7">跳 7 日</button>
         <button type="button" data-dev="advance30">跳 30 日</button>
         <button type="button" data-dev="pest">觸發蟲害</button>
-        <button type="button" data-dev="time">時間：${d.time === 'auto' ? '真實' : d.time === 'day' ? '日間' : '夜間'}</button>
         <button type="button" data-dev="real-date">回到真日期</button>
         <button type="button" class="danger" data-dev="reset">重置存檔</button>
       </div>
@@ -160,7 +164,9 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
     if (cmd === 'toggle') api.setDev({ ...d, open: !d.open });
     if (cmd === 'mode-real') api.setDev({ ...d, mode: 'real' });
     if (cmd === 'mode-manual') api.setDev({ ...d, mode: 'manual' });
-    if (cmd === 'time') api.setDev({ ...d, time: d.time === 'auto' ? 'day' : d.time === 'day' ? 'night' : 'auto' });
+    if (cmd === 'time-auto') api.setDev({ ...d, time: 'auto' });
+    if (cmd === 'time-day') api.setDev({ ...d, time: 'day' });
+    if (cmd === 'time-night') api.setDev({ ...d, time: 'night' });
     if (cmd === 'advance') api.advanceDay();
     if (cmd === 'advance7') api.advanceDays(7);
     if (cmd === 'advance30') api.advanceDays(30);

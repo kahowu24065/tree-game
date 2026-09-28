@@ -67,7 +67,7 @@ describe('香港天文台', () => {
       WHOT: { name: '酷熱天氣警告', code: 'WHOT', actionCode: 'ISSUE' },
       WFIRE: { name: '火災危險警告', code: 'WFIREY', type: '黃色', actionCode: 'CANCEL' },
     });
-    expect(w.map((x) => x.short)).toEqual(['八號風球', '紅雨', '酷熱']);
+    expect(w.map((x) => x.short)).toEqual(['八號風球', '紅雨', '酷熱天氣警告']);
     expect(w[0]!.name).toBe('八號東北烈風或暴風信號');
     expect(drivingWarning(w)?.kind).toBe('typhoon');
     const tc1 = parseWarnsum({ WTCSGNL: { name: '熱帶氣旋警告信號', code: 'TC1', actionCode: 'ISSUE' } });

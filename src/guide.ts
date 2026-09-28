@@ -109,7 +109,7 @@ function playTab(): string {
     table(
       ['行動', '效果', '每日次數'],
       [
-        ['澆水', `水分 +${CARE.water.amount}，最多到 ${W_SATURATED}；已經 ${W_SATURATED} 唔會用次數；落雨都照澆`, CARE.water.perDay],
+        ['澆水', `水分 +${CARE.water.amount}，最多到 ${W_SATURATED}；去到 ${W_SATURATED} 當日唔使再澆，水分跌咗先可以繼續（唔用次數）；酷熱澆水唔受呢個限；落雨都照澆`, CARE.water.perDay],
         ['疏水', `水分 ${CARE.drain.amount}`, CARE.drain.perDay],
         ['施肥', `養分 +${CARE.fertilize.amount}`, CARE.fertilize.perDay],
         ['除蟲', '有蟲害就清除；冇蟲就當預防，蟲害計數歸零', 1],
@@ -182,7 +182,7 @@ function calcTab(): string {
   return [
     h('每晚結算次序'),
     ul([
-      `<b>水分：</b>自然流失 −${W_NIGHT_LOSS}；落雨日（毛毛雨、${L('rainstorm')}、${L('blackrain')}）唔流失；純毛毛雨日仲 +${E.drizzle.dW}（過 ${W_SATURATED} 最多 +${RAIN_OVER_CAP.drizzle}）。`,
+      `<b>水分：</b>自然流失 −${W_NIGHT_LOSS}；落雨日（毛毛雨、${L('rainstorm')}、${L('blackrain')}）唔流失。落雨加嘅水一落就計：純毛毛雨 +${E.drizzle.dW}（過 ${W_SATURATED} 最多 +${RAIN_OVER_CAP.drizzle}），${L('rainstorm')}／${L('blackrain')} +${E.rainstorm.dW}（過 ${W_SATURATED} 最多 +${RAIN_OVER_CAP.heavy}，同一日只計一次）。同日有${L('rainstorm')}或者${L('blackrain')}就唔再計毛毛雨。`,
       `<b>養分：</b>−${N_DAILY_USE}，加長駐動物（每隻 +${RESIDENT_N_EACH}，最多 +${RESIDENT_N_MAX}）。`,
       '<b>健康：</b>用結算後嘅水分同養分計（見下）。',
       `<b>抗風力：</b>${youth}之後每晚 −${R_DAILY_DECAY}，有風災再扣消耗量。`,
@@ -258,7 +258,7 @@ function weatherTab(): string {
     ['八號或以上風球', L('typhoon8'), '加固', `${E.typhoon8.damage} × (1 − R/100)；R 低過 ${E.typhoon8.collapseBelow} 倒塌`],
   ];
   const intlRows: string[][] = [
-    [L('hot'), `最高 ≥ ${HOT_ABS_MAX_C}°C；或者最高 ≥ ${HOT_REL_MIN_C}°C 兼高過過去 ${NORMAL_PAST_DAYS} 日平均最高 ${HOT_REL_RISE_C}°C 或以上`],
+    [eventLabel('hot', 'intl'), `最高 ≥ ${HOT_ABS_MAX_C}°C；或者最高 ≥ ${HOT_REL_MIN_C}°C 兼高過過去 ${NORMAL_PAST_DAYS} 日平均最高 ${HOT_REL_RISE_C}°C 或以上`],
     [L('cold'), `最低 ≤ ${COLD_ABS_MIN_C}°C；或者最低 ≤ ${COLD_REL_MAX_C}°C 兼低過過去 ${NORMAL_PAST_DAYS} 日平均最低 ${COLD_REL_DROP_C}°C 或以上`],
     [eventLabel('rainstorm', 'intl'), `日雨量 ≥ ${WX_NUM.rainstorm.mm} 毫米`],
     [eventLabel('blackrain', 'intl'), `日雨量 ≥ ${WX_NUM.blackrain.mm} 毫米`],
@@ -272,11 +272,11 @@ function weatherTab(): string {
     ul([
       `<b>山泥傾瀉警告</b>（天文台代碼 WL，只限香港）：屬風災類，嚴重程度同一號／三號風球一樣；同風球一齊只計較嚴重嗰個，加固一次兩樣都顧到。`,
       `風災類（雷暴、風球、山泥傾瀉）要${youth}先生效；之前唔傷樹、唔倒塌。`,
-      `未攞到天文台資料時先用預報數字：最高 ≥ ${HK_HOT_MAX_C}°C 當酷熱；寒冷只跟天文台警告。`,
+      `未攞到天文台資料時先用預報數字：最高 ≥ ${HK_HOT_MAX_C}°C 當酷熱天氣警告；寒冷只跟天文台警告。`,
       '即時水分變化喺警告第一次出現嗰陣計，每日一次。',
     ]),
     h('香港以外：跟 Open-Meteo 預報'),
-    p(`名稱唔同，規則一樣：${eventLabel('typhoon1', 'intl')}＝初級颱風、${eventLabel('typhoon8', 'intl')}＝高級颱風、${eventLabel('rainstorm', 'intl')}＝暴雨、${eventLabel('blackrain', 'intl')}＝黑雨；應急行動叫「${emergencyName('rainDrain', 'intl')}」。冇山泥傾瀉。`),
+    p(`名稱唔同，規則一樣：酷熱天氣警告＝${eventLabel('hot', 'intl')}、${eventLabel('typhoon1', 'intl')}＝初級颱風、${eventLabel('typhoon8', 'intl')}＝高級颱風、${eventLabel('rainstorm', 'intl')}＝暴雨、${eventLabel('blackrain', 'intl')}＝黑雨；應急行動叫「${emergencyName('rainDrain', 'intl')}」。冇山泥傾瀉。`),
     table(['事件', '門檻'], intlRows),
     p('同一日只取最嚴重嘅風／雨事件，再加埋酷熱、寒冷（可以同時成立）。'),
     h('預警同今晚預計'),

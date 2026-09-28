@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { stagesFor } from '../src/content';
 import { ANIMALS, CATEGORY_ORDER, unlockHint } from '../src/data/animals';
-import { roundTo10, SPECIES, speciesTargetCm, STAGE_NAMES, stageIndexFor, stageSampleCm } from '../src/data/species';
+import { realAgeDays, roundTo10, SPECIES, speciesTargetCm, STAGE_NAMES, stageIndexFor, stageSampleCm } from '../src/data/species';
 import { freshMeta, newGame } from '../src/meta';
 import { createGame, refreshUnlocks, settleDay } from '../src/sim';
 import type { GameState } from '../src/types';
@@ -19,6 +19,15 @@ describe('樹種', () => {
     for (const sp of SPECIES) expect(createGame('2026-09-25', { species: sp.id }).species).toBe(sp.id);
   });
 
+  it('真實樹齡跟高度：63% 紀錄高度約 τ 年，幼苗少過，過咗紀錄繼續加', () => {
+    const at63 = speciesTargetCm('camphor') * (1 - Math.exp(-1));
+    expect(realAgeDays(at63, 'camphor')).toBe(80 * 365);
+    expect(realAgeDays(18, 'camphor')).toBeGreaterThan(0);
+    expect(realAgeDays(18, 'camphor')).toBeLessThan(realAgeDays(at63, 'camphor'));
+    expect(realAgeDays(0, 'ginkgo')).toBe(0);
+    expect(realAgeDays(speciesTargetCm('redwood') * 1.1, 'redwood')).toBeGreaterThan(realAgeDays(speciesTargetCm('redwood'), 'redwood'));
+  });
+
   it('每個樹種目標 = 真實最高紀錄四捨五入到最接近嘅 10 米', () => {
     const want: Record<string, [number, number]> = {
       camphor: [46.4, 50], cotton: [60, 60], banyan: [30, 30],
@@ -32,6 +41,7 @@ describe('樹種', () => {
       expect(sp.source.url).toMatch(/^https:\/\//);
     }
     expect(roundTo10(48)).toBe(50);
+    for (const sp of SPECIES) expect(sp.realTauYears, sp.id).toBeGreaterThan(0);
     expect(roundTo10(116.2)).toBe(120);
     expect(roundTo10(100.5)).toBe(100);
   });

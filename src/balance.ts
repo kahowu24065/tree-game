@@ -84,8 +84,8 @@ export const COLD_DAMAGE = 10;
  */
 export const WEATHER_EVENTS: Record<WeatherEventId, WeatherEventDef> = {
   clear: { id: 'clear', label: '晴天／多雲', category: null, damage: 0, dW: 0, dR: 0, growth: 1, severe: false, tip: '日常澆水、施肥。' },
-  drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '晚上水分 +10（過 100 最多 +5），當晚唔流失，唔使澆。' },
-  hot: { id: 'hot', label: '酷熱', category: 'heat', damage: 10, dW: -20, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
+  drizzle: { id: 'drizzle', label: '毛毛雨', category: null, damage: 0, dW: 10, dR: 0, growth: 1.15, severe: false, tip: '一落雨水分即刻 +10（過 100 最多 +5），當晚唔流失。落雨都照澆。' },
+  hot: { id: 'hot', label: '酷熱天氣警告', category: 'heat', damage: 10, dW: -20, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '警告一出水分即刻 −20。記得做「酷熱澆水」（額外一次，+5 水分），做咗就唔扣健康，仲有應急獎勵 +3。' },
   cold: { id: 'cold', label: '寒冷', category: 'cold', damage: COLD_DAMAGE, dW: 0, dR: 0, growth: HEAT_GROWTH, severe: true, tip: '水分唔受影響。記得做「保暖」（每日一次）：喺樹根周圍鋪一層 5–10 厘米厚嘅樹皮、乾樹葉、稻草或木屑，保持土溫，防止根部凍傷。做咗就唔扣健康，仲有應急獎勵 +3。' },
   rainstorm: { id: 'rainstorm', label: '暴雨', category: 'rain', damage: 10, dW: 20, dR: 0, growth: 0.9, severe: true, tip: '警告一出水分即刻 +20（過 100 最多 +10）。記得做「暴雨疏水」（額外一次，−10 但唔會低過 50），做咗就唔扣健康，仲有應急獎勵 +3。' },
   blackrain: { id: 'blackrain', label: '黑雨', category: 'rain', damage: 15, dW: 20, dR: 0, growth: 0.85, severe: true, tip: '同暴雨共用一次 +20，唔會再加；唔做「暴雨疏水」會扣 15 健康。' },
@@ -163,7 +163,7 @@ export const WX_TRACKS = [
   { id: 't8', unit: '個', name: '八號風球', intlName: '暴風', detail: '八號或以上，而且靠加固擋住大部分傷害。同一場跨幾日都係一次。', intlDetail: '暴風，而且靠加固擋住大部分傷害。同一場跨幾日都係一次。' },
   { id: 'black', unit: '場', name: '黑雨', intlName: '豪雨', detail: '黑雨嗰日做咗疏水。同一場雨跨幾日都係一次。' },
   { id: 'rain', unit: '場', name: '暴雨', intlName: '大雨', detail: '暴雨嗰日做咗疏水。同一場雨跨幾日都係一次。' },
-  { id: 'heat', unit: '個', name: '酷熱', detail: '酷熱嗰日做咗酷熱澆水，先算捱過。' },
+  { id: 'heat', unit: '個', name: '酷熱天氣警告', intlName: '酷熱', detail: '酷熱天氣警告嗰日做咗酷熱澆水，先算捱過。', intlDetail: '酷熱嗰日做咗酷熱澆水，先算捱過。' },
   { id: 'cold', unit: '個', name: '寒冷', detail: '寒冷嗰日做咗保暖，先算捱過。' },
 ] as const;
 export type WeatherTrackId = (typeof WX_TRACKS)[number]['id'];
@@ -214,7 +214,7 @@ export const REVIVE_HEALTH = 30;
 
 /* ---------- Care actions ---------- */
 export const CARE = {
-  /** 澆水 fills up to 泥土飽和 (100) only; at ≥ 100 it does nothing and does not use up a turn. */
+  /** 澆水 fills up to 泥土飽和 (100). At ≥ 100 it is locked for the day and does not use a turn, until moisture drops. */
   water: { amount: 15, perDay: 3 },
   drain: { amount: -10, perDay: 3 },
   fertilize: { amount: 25, perDay: 1 },
@@ -272,7 +272,7 @@ export const WX_NUM = {
 export const HK_HOT_MAX_C = 33;
 
 /** v15 regional names outside HK (rules identical). */
-export const INTL_LABELS: Partial<Record<WeatherEventId, string>> = { typhoon1: '烈風', typhoon8: '暴風', rainstorm: '大雨', blackrain: '豪雨' };
+export const INTL_LABELS: Partial<Record<WeatherEventId, string>> = { hot: '酷熱', typhoon1: '烈風', typhoon8: '暴風', rainstorm: '大雨', blackrain: '豪雨' };
 /** 應急行動 names: HK / outside HK. */
 export const EMERGENCY_NAMES = {
   heatWater: { hk: '酷熱澆水', intl: '酷熱澆水' },

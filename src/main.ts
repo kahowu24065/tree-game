@@ -371,6 +371,7 @@ function view(input: SceneInput): View {
     forecast: presentedDays(),
     night: input.daylight < 0.45,
     todayEvents: todayEvents(),
+    nowEvents: manual() ? todayEvents() : liveEvents(),
     todayEvent: pickEvent(todayEvents()),
     preview: previewNight(state, today(), todayEvents(), meta),
     countdown: countdown(),
@@ -651,7 +652,7 @@ function checkDyingExpiry(): void {
 }
 
 /**
- * v12: apply today's 酷熱／暴雨／黑雨 water the moment they are seen (HKO warning on refresh, reopening the app, or
+ * v12: apply today's 酷熱／毛毛雨／暴雨／黑雨 water the moment they are seen (HKO warning on refresh, reopening the app, or
  * developer manual weather). Each applies once per day (flags in the save); returns true when something changed.
  */
 function syncWarningWater(): boolean {
@@ -1142,6 +1143,7 @@ document.addEventListener('click', (event) => {
     if (el.closest('#status-card') && state.started && !state.over) openDrawer('care');
     return;
   }
+  if (target.getAttribute('aria-disabled') === 'true') return;
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;
   if (target.dataset.species) {

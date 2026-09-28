@@ -26,10 +26,10 @@ describe('v12 照顧：澆水上限、疏水 3 次', () => {
     expect(s.care.water).toBe(1);
     const r = water(s);
     expect(r.ok).toBe(false);
-    expect(r.message).toBe('泥土已經飽和，唔使再澆');
+    expect(r.message).toBe('水分去到 100，今日唔使再澆。水分跌咗先可以再澆。');
     expect(s.care.water).toBe(1);
     s.moisture = 120;
-    expect(water(s).message).toBe('泥土已經飽和，唔使再澆');
+    expect(water(s).message).toBe('水分去到 100，今日唔使再澆。水分跌咗先可以再澆。');
     expect(s.moisture).toBe(120);
     expect(s.care.water).toBe(1);
     s.moisture = 40;
@@ -81,6 +81,10 @@ describe('v12 自然流失同落雨日', () => {
     applyWarningWater(s, D, ['drizzle', 'rainstorm'], null, NOW);
     expect(s.moisture).toBe(110);
     expect(settleDay(s, D, ['drizzle', 'rainstorm'], null, NOW).settlement.wAfter).toBe(110);
+    const later = game({ moisture: 80 });
+    applyWarningWater(later, D, ['rainstorm'], null, NOW);
+    expect(applyWarningWater(later, D, ['drizzle'], null, NOW)).toEqual([]);
+    expect(later.moisture).toBe(100);
   });
 });
 
@@ -118,9 +122,15 @@ describe('v12 即時警告', () => {
     expect(rainAdd(40, 20, 10)).toBe(60);
   });
 
-  it('100 + 毛毛雨晚 → 105', () => {
-    const s = game({ moisture: 100 });
-    expect(settleDay(s, D, ['drizzle'], null, NOW).settlement.wAfter).toBe(105);
+  it('毛毛雨即時 +10，當晚唔再加；100 → 105', () => {
+    const s = game({ moisture: 80 });
+    const hits = applyWarningWater(s, D, ['drizzle'], null, NOW);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.message).toContain('毛毛雨！水分 +10，而家 90');
+    expect(s.moisture).toBe(90);
+    expect(applyWarningWater(s, D, ['drizzle'], null, NOW)).toEqual([]);
+    expect(settleDay(s, D, ['drizzle'], null, NOW).settlement.wAfter).toBe(90);
+    expect(settleDay(game({ moisture: 100 }), D, ['drizzle'], null, NOW).settlement.wAfter).toBe(105);
     expect(settleDay(game({ moisture: 97 }), D, ['drizzle'], null, NOW).settlement.wAfter).toBe(105);
   });
 

@@ -10,7 +10,6 @@ import {
   GROWTH_TAU_DAYS,
   MILESTONE_TIER_SHARE,
   type MilestoneTier,
-  RAIN_OVER_CAP,
   W_MAX,
   W_NIGHT_LOSS,
   W_SATURATED,
@@ -77,18 +76,14 @@ export interface NightWater {
 }
 
 /**
- * The night's water change (before the health score): −10 natural loss (×0.9 with the 一級徽章), none on a rain day;
- * 毛毛雨 adds +10 (at most +5 above 100) unless 暴雨／黑雨 already watered the day.
+ * The night's water change (before the health score): −10 natural loss (×0.9 with the 一級徽章), none on a rain day.
+ * 毛毛雨／暴雨／黑雨 add their water when the rain is first seen, not here.
  */
 export function nightWater(w: number, events: readonly WeatherEventId[], waterSaver: boolean): NightWater {
   if (!isRainDay(events)) {
     const loss = waterSaver ? W_NIGHT_LOSS * 0.9 : W_NIGHT_LOSS;
     const wAfter = clampW(round1(w - loss));
     return { wAfter, kind: 'loss', delta: round1(wAfter - w) };
-  }
-  if (events.includes('drizzle') && !events.includes('rainstorm') && !events.includes('blackrain')) {
-    const wAfter = rainAdd(w, WEATHER_EVENTS.drizzle.dW, RAIN_OVER_CAP.drizzle);
-    return { wAfter, kind: 'drizzle', delta: round1(wAfter - w) };
   }
   return { wAfter: w, kind: 'rain', delta: 0 };
 }

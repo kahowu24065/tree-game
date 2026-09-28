@@ -90,7 +90,7 @@ export function mapWarning(group: string, raw: { code?: string; name?: string; t
     return { ...base, short: '暴雨警告', kind: 'heavy-rain', tone: 'amber' };
   }
   if (group === 'WMSGNL') return { ...base, short: '強烈季候風', kind: 'gale', tone: 'amber' };
-  if (group === 'WHOT') return { ...base, short: '酷熱', kind: null, tone: 'red' };
+  if (group === 'WHOT') return { ...base, short: '酷熱天氣警告', kind: null, tone: 'red' };
   if (group === 'WCOLD') return { ...base, short: '寒冷', kind: null, tone: 'blue' };
   if (group === 'WTS') return { ...base, short: '雷暴', kind: null, tone: 'yellow' };
   if (group === 'WFIRE') return { ...base, short: code === 'WFIRER' ? '紅色火災' : '黃色火災', kind: null, tone: code === 'WFIRER' ? 'red' : 'yellow' };

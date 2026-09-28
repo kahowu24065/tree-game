@@ -111,11 +111,13 @@ export interface DayRecord {
   hko: boolean;
 }
 
-/** v12: instant weather-warning water effects already applied on a date (each at most once a day). */
+/** v12: instant weather water effects already applied on a date (each at most once a day). */
 export interface WaterFx {
   hot: boolean;
   /** 暴雨 and 黑雨 share one application. */
   rain: boolean;
+  /** 毛毛雨 +10, skipped when 暴雨／黑雨 already cover the day. */
+  drizzle?: boolean;
 }
 
 export interface GameState {

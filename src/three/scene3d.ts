@@ -22,6 +22,10 @@ export type Quality = 'low' | 'high';
 
 const ELEVATION = Math.PI / 4;
 const BASE_AZIMUTH = 0.32;
+/** After this long with no touch, drag, key or scroll, the overview turns on its own. */
+const IDLE_MS = 5000;
+/** One clockwise turn of the view (tree stays centred) every 90 seconds. */
+const IDLE_SPIN = -(Math.PI * 2) / 90;
 
 function overcastOf(input: SceneInput): number {
   const c = input.cond;
@@ -93,6 +97,8 @@ export class Scene3D {
   private nextFlash = 0;
   private dragAz = 0;
   private dragEl = 0;
+  /** Extra azimuth from the idle showcase. Separate from dragAz so a long spin is not clamped. */
+  private idleAz = 0;
   private dragging: { x: number; y: number; az: number; el: number; orbit?: boolean } | null = null;
   /** v10: orbit around a followed animal (one-finger drag), relative to the automatic follow angle. */
   private followOrbit = 0;
@@ -105,7 +111,7 @@ export class Scene3D {
   private lastFocusPos = new THREE.Vector3();
   private focusDelta = new THREE.Vector3();
   private lastFocusRef: unknown = null;
-  private lastDrag = 0;
+  private lastDrag = performance.now();
   private quality: Quality;
   private thumbs = new Map<string, string>();
   private width = 1;
@@ -262,7 +268,19 @@ export class Scene3D {
       starPos.set([Math.cos(u) * Math.cos(v) * 350, Math.sin(v) * 350, Math.sin(u) * Math.cos(v) * 350], i * 3);
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    this.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: '#fffbe8', size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+    this.stars = new THREE.Points(
+      starGeo,
+      new THREE.PointsMaterial({
+        color: '#fffef2',
+        size: 2.8,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0,
+        fog: false,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
     this.scene.add(this.stars);
 
     // 爆發生長 green glow: motes rising around the tree.
@@ -806,6 +824,15 @@ export class Scene3D {
       },
       { passive: false },
     );
+    // Buttons, the sheet and keys count as operating the screen, not only a drag on the island.
+    const poke = () => {
+      this.lastDrag = performance.now();
+    };
+    window.addEventListener('pointerdown', poke, { capture: true });
+    window.addEventListener('pointerup', poke, { capture: true });
+    window.addEventListener('pointercancel', poke, { capture: true });
+    window.addEventListener('wheel', poke, { capture: true, passive: true });
+    window.addEventListener('keydown', poke, { capture: true });
   }
 
   private startDrag(x: number, y: number): { x: number; y: number; az: number; el: number; orbit?: boolean } {
@@ -1047,6 +1074,7 @@ export class Scene3D {
     this.followZoom = 1;
     this.dragAz = 0;
     this.dragEl = 0;
+    this.idleAz = 0;
     this.resetFollowCam();
   }
 
@@ -1334,8 +1362,8 @@ export class Scene3D {
     const skyMidDay = new THREE.Color('#cde8f6').lerp(new THREE.Color('#b8c2ca'), over).lerp(new THREE.Color('#687380'), 0.5 * sk);
     const dusk = new THREE.Color('#f3b27a');
     skyMidDay.lerp(dusk, goldenish * 0.55 * (1 - over));
-    const skyTopNight = new THREE.Color('#0f1d3a');
-    const skyMidNight = new THREE.Color('#27365c').lerp(new THREE.Color('#2a2f38'), over * 0.6);
+    const skyTopNight = new THREE.Color('#16284a');
+    const skyMidNight = new THREE.Color('#31456e').lerp(new THREE.Color('#2a2f38'), over * 0.6);
     const top = skyTopNight.clone().lerp(skyTopDay, day);
     const mid = skyMidNight.clone().lerp(skyMidDay, day);
     this.skyMat.uniforms.top!.value.copy(top);
@@ -1348,14 +1376,15 @@ export class Scene3D {
     this.heatK += ((hotNow ? 1 : 0) - this.heatK) * (1 - Math.exp(-dt * 0.8));
     const sunWarm = new THREE.Color('#ffe7bf').lerp(new THREE.Color('#ffb066'), goldenish * 0.7);
     if (input.cond.hot) sunWarm.lerp(new THREE.Color('#ffd28a'), 0.3);
-    const moon = new THREE.Color('#a9bcf2');
+    const moon = new THREE.Color('#c5d4ff');
     this.sun.color.copy(moon.clone().lerp(sunWarm, day));
-    this.sun.intensity = (0.7 * night + day * 2.6) * (1 - over * 0.72) * (1 - 0.55 * sk) * (1 + this.heatK * 0.12);
+    // Night uses the same light as moonlight on the island: a bit brighter than before, still well under daylight.
+    this.sun.intensity = (1.35 * night + day * 2.6) * (1 - over * 0.55) * (1 - 0.55 * sk) * (1 + this.heatK * 0.12);
     this.sun.color.lerp(new THREE.Color('#ffcf87'), this.heatK * 0.45);
-    this.hemi.color.copy(new THREE.Color('#7086bd').lerp(new THREE.Color('#fff2da'), day).lerp(new THREE.Color('#c7cdd3'), over * 0.5));
-    this.hemi.groundColor.copy(new THREE.Color('#2c3a33').lerp(new THREE.Color('#78905a'), day));
-    this.hemi.intensity = (0.75 + day * 0.55) * (1 - 0.38 * sk);
-    this.fill.intensity = 0.25 + day * 0.2;
+    this.hemi.color.copy(new THREE.Color('#9aafdf').lerp(new THREE.Color('#fff2da'), day).lerp(new THREE.Color('#c7cdd3'), over * 0.5));
+    this.hemi.groundColor.copy(new THREE.Color('#4a5c56').lerp(new THREE.Color('#78905a'), day));
+    this.hemi.intensity = (1.05 + day * 0.35) * (1 - 0.28 * sk);
+    this.fill.intensity = 0.42 + day * 0.08;
 
     // Lightning in typhoons and thunderstorms.
     if (storming && !input.reducedMotion) {
@@ -1461,7 +1490,7 @@ export class Scene3D {
       const r = c.low ? Math.max(c.r, islandR / KC + 3 + c.r * 0.3) : c.r + cd * 0.35;
       c.mesh.position.set(Math.cos(c.a) * r * KC, (c.y + (c.low ? 0 : over * 2)) * KC, Math.sin(c.a) * r * KC);
     });
-    (this.stars.material as THREE.PointsMaterial).opacity = night * (1 - over * 0.9);
+    (this.stars.material as THREE.PointsMaterial).opacity = night * night * (1 - over * 0.4) * (1 - sk * 0.8);
     this.stars.visible = night > 0.02;
     (this.sea.material as THREE.MeshStandardMaterial).color.set('#58b6e0').lerp(new THREE.Color('#5d7482'), over * 0.8).lerp(new THREE.Color('#122036'), night * 0.7);
 
@@ -1486,11 +1515,12 @@ export class Scene3D {
     if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
     this.zoom += (this.zoomGoal - this.zoom) * ez;
     this.panOff.lerp(this.panGoal, ez);
-    if (!this.dragging && !this.isZoomed() && !this.followRef && performance.now() - this.lastDrag > 5000) {
-      this.dragAz *= 1 - Math.min(1, dt * 0.6);
-      this.dragEl *= 1 - Math.min(1, dt * 0.6);
+    const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
+    if (handsOff && performance.now() - this.lastDrag > IDLE_MS) {
+      if (!this.isZoomed()) this.dragEl *= 1 - Math.min(1, dt * 0.6);
+      if (!input.reducedMotion) this.idleAz += dt * IDLE_SPIN;
     }
-    const az = BASE_AZIMUTH + this.dragAz + Math.sin(t * 0.05) * 0.03 * motion;
+    const az = BASE_AZIMUTH + this.dragAz + this.idleAz + Math.sin(t * 0.05) * 0.03 * motion;
     const fxGoal = this.fall && !this.fall.reduced ? 1 : 0;
     this.fxCam += (fxGoal - this.fxCam) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.8));
     const el = ELEVATION + this.dragEl - this.fxCam * 0.3;
@@ -1590,6 +1620,8 @@ export class Scene3D {
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
+    // Moonlight from high and to one side, so the island top reads as lit rather than a flat dim.
+    sunDir.lerp(new THREE.Vector3(-0.22, 0.9, 0.38).normalize(), night * (1 - this.heatK));
     if (this.heatK > 0.001) {
       // 酷熱: light comes from the top-right of the screen, down onto the tree.
       const right = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));

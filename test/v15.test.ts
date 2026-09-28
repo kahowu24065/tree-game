@@ -230,8 +230,10 @@ describe('v15 地區名稱', () => {
     expect(emergencyName('rainDrain', 'intl')).toBe('大雨疏水');
     expect(eventLabel('thunder', 'intl')).toBe('狂風雷暴');
     expect(eventLabel('cold', 'intl')).toBe('寒冷');
+    expect(eventLabel('hot', 'hk')).toBe('酷熱天氣警告');
     expect(eventLabel('hot', 'intl')).toBe('酷熱');
     expect(regionalize('做「暴雨疏水」；黑雨、高級颱風', 'intl')).toBe('做「大雨疏水」；豪雨、暴風');
+    expect(regionalize('酷熱天氣警告生效，記得酷熱澆水', 'intl')).toBe('酷熱生效，記得酷熱澆水');
   });
 
   it('定位拒絕（fallback）同揀咗嘅地點當香港；GPS 喺外地先係外地', () => {

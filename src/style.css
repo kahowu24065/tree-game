@@ -373,7 +373,17 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 
 .weather-card.hot {
-  background: linear-gradient(135deg, rgba(255, 246, 225, 0.88), rgba(255, 228, 190, 0.74));
+  background: linear-gradient(135deg, rgba(255, 228, 220, 0.94), rgba(255, 176, 160, 0.88));
+  border-color: rgba(214, 64, 48, 0.95);
+  box-shadow: 0 0 0 3px rgba(214, 64, 48, 0.18), var(--shadow);
+}
+
+.weather-card.severe.hot {
+  animation: severe-pulse 2.4s ease-in-out infinite;
+}
+
+.weather-card.hot .wx-line {
+  color: #b3321f;
 }
 
 @keyframes severe-pulse {
@@ -562,13 +572,15 @@ body.sheet-open .hud > .sheet-backdrop {
   position: absolute;
   right: calc(var(--pad) + var(--safe-r));
   top: calc(var(--pad) + var(--safe-t) + 244px);
-  bottom: calc(var(--dock-h) + 70px);
+  /* Clear the closed 成長日誌 handle (it sits ~28px above the dock) so the stage name is not covered. */
+  bottom: calc(var(--dock-h) + 40px);
   width: 64px;
   max-height: 300px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  overflow: visible;
   text-align: center;
   color: #fff;
   text-shadow: 0 1px 3px rgba(20, 40, 50, 0.55);
@@ -589,10 +601,30 @@ body.sheet-open .hud > .sheet-backdrop {
   opacity: 0.25;
 }
 
+.rail.compact {
+  gap: 2px;
+}
+
+.rail.compact .rail-top small,
+.rail.compact .rail-bottom small {
+  display: none;
+}
+
+.rail[hidden] {
+  display: none;
+}
+
+.rail-top,
+.rail-bottom {
+  flex: none;
+}
+
 .rail-track {
+  --rail-w: 8px;
   position: relative;
-  flex: 1;
-  width: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: var(--rail-w);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.45);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 2px 8px rgba(20, 40, 50, 0.15);
@@ -608,29 +640,31 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 
 .rail-marker {
+  --knob-gap: 14px;
   position: absolute;
-  right: 14px;
+  right: var(--knob-gap);
   transform: translateY(50%);
-  background: var(--glass-strong);
-  color: var(--ink);
-  text-shadow: none;
-  border-radius: 10px;
-  padding: 3px 7px;
-  box-shadow: var(--shadow);
+  background: none;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(20, 40, 50, 0.55);
+  padding: 0;
+  box-shadow: none;
   white-space: nowrap;
+  text-align: right;
 }
 
 .rail-marker::after {
   content: '';
   position: absolute;
-  right: -11px;
+  /* Sit on the track centerline: the label's right edge is --knob-gap left of the track's right edge. */
+  left: calc(100% + var(--knob-gap) - var(--rail-w) / 2);
   top: 50%;
   width: 10px;
   height: 10px;
-  margin-top: -5px;
   border-radius: 50%;
   background: #fff;
   border: 3px solid var(--green);
+  transform: translate(-50%, -50%);
 }
 
 .rail-marker b {
@@ -638,7 +672,7 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 
 .rail-marker small {
-  color: var(--ink-soft);
+  color: #fff;
   font-size: 10px;
 }
 
@@ -876,7 +910,7 @@ body.sheet-open .hud > .sheet-backdrop {
   display: flex;
   flex-direction: column;
   transform: translateY(calc(100% - 42px));
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s;
+  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, bottom 0.32s, height 0.32s;
   z-index: 3;
   overflow: hidden;
 }
@@ -886,6 +920,8 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 
 .sheet[data-state='open'] {
+  bottom: 0;
+  height: calc(min(62vh, 560px) + var(--dock-h) - 14px);
   transform: translateY(0);
 }
 
@@ -937,7 +973,7 @@ body.sheet-open .hud > .sheet-backdrop {
   flex: 1;
   transition: opacity 0.2s;
   overflow-y: auto;
-  padding: 4px 14px 28px;
+  padding: 4px 14px calc(var(--dock-h) + 12px);
   overscroll-behavior: contain;
 }
 
@@ -1091,7 +1127,7 @@ body.sheet-open .sheet-backdrop {
   transform: translate(-50%, 104%);
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   border-radius: 24px 24px 0 0;
-  background: rgba(250, 252, 250, 0.9);
+  background: var(--glass);
   z-index: 7;
   display: flex;
   flex-direction: column;
@@ -1140,7 +1176,7 @@ body.sheet-open .sheet-backdrop {
   gap: 4px;
   padding: 8px 0 10px;
   margin-right: 40px;
-  background: linear-gradient(rgba(250, 252, 250, 0.98) 80%, rgba(250, 252, 250, 0));
+  background: none;
 }
 
 .tabs button {
@@ -1254,23 +1290,39 @@ body.sheet-open .sheet-backdrop {
   margin: 0 2px 10px;
 }
 
+.event-card .emerg-row {
+  margin-top: 8px;
+}
+
 .actions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+  margin: 0 0 12px;
 }
 
 .act {
   border-radius: 16px;
-  padding: 10px 4px 8px;
+  padding: 10px 12px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
+  text-align: left;
   font-weight: 700;
   font-size: 14px;
   color: var(--tone);
   background: var(--tone-bg);
+}
+
+.act-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.act-copy small {
+  display: block;
 }
 
 .act-ic svg {
@@ -1817,6 +1869,11 @@ body.sheet-open .sheet-backdrop {
   padding: 3px;
 }
 
+.dev-seg.time {
+  grid-template-columns: 1fr 1fr 1fr;
+  margin-top: 6px;
+}
+
 .dev-seg button {
   padding: 7px 4px;
   border-radius: 10px;
@@ -2170,11 +2227,6 @@ body.dying::after {
   }
 }
 
-@media (max-height: 700px) {
-  .rail {
-    display: none;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -3150,6 +3202,21 @@ button.emerg-act.done {
   font-weight: 600;
 }
 
+.status-facts {
+  margin: -2px 0 6px;
+  display: grid;
+  gap: 1px;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.status-facts span:last-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .species-pick .sthumb {
   max-width: 72px;
 }
@@ -3351,17 +3418,17 @@ body.sheet-open .animal-toast.show {
 /* Settings: right end of the 成長日誌 title row. A sibling of the drag handle, so tapping it never drags the panel. */
 .sheet-gear {
   position: absolute;
-  top: 2px;
-  right: 10px;
-  width: 32px;
-  height: 32px;
+  top: 9px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
   background: rgba(255, 255, 255, 0.75);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   z-index: 1;
 }
 .sheet-gear svg {
-  width: 19px;
-  height: 19px;
+  width: 15px;
+  height: 15px;
 }
 .sheet-gear:active {
   transform: scale(0.94);

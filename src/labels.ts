@@ -35,7 +35,12 @@ export function emergencyName(id: EmergencyId, region: Region = current): string
 /** Rewrite HK names inside a sentence (tips, help) for the region. */
 export function regionalize(text: string, region: Region = current): string {
   if (region !== 'intl') return text;
-  return text.replaceAll('初級颱風', INTL_LABELS.typhoon1!).replaceAll('高級颱風', INTL_LABELS.typhoon8!).replaceAll('暴雨', INTL_LABELS.rainstorm!).replaceAll('黑雨', INTL_LABELS.blackrain!);
+  return text
+    .replaceAll('酷熱天氣警告', INTL_LABELS.hot!)
+    .replaceAll('初級颱風', INTL_LABELS.typhoon1!)
+    .replaceAll('高級颱風', INTL_LABELS.typhoon8!)
+    .replaceAll('暴雨', INTL_LABELS.rainstorm!)
+    .replaceAll('黑雨', INTL_LABELS.blackrain!);
 }
 
 export function weatherTrack(id: WeatherTrackId) {

@@ -222,7 +222,7 @@ export interface SettleResult {
 
 /* ---------- v12 water: instant warnings, the night's plan (shared by settlement and the 今晚預計 preview) ---------- */
 
-export type WarningWaterEvent = 'hot' | 'rainstorm' | 'blackrain';
+export type WarningWaterEvent = 'hot' | 'rainstorm' | 'blackrain' | 'drizzle';
 
 export interface WarningHit {
   event: WarningWaterEvent;
@@ -236,7 +236,7 @@ export interface WarningHit {
   dying: boolean;
 }
 
-const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: '酷熱天氣警告', rainstorm: '暴雨警告', blackrain: '黑雨警告' };
+const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: '酷熱天氣警告', rainstorm: '暴雨警告', blackrain: '黑雨警告', drizzle: '毛毛雨' };
 
 /** The tree dies (v14: the only way a game ends). v16: `fallSeen: false` = the death animation is still to play. */
 function killTree(state: GameState, date: string, time: string): void {
@@ -315,9 +315,9 @@ function enterDying(state: GameState, date: string, nowMs: number, why: string, 
 }
 
 /**
- * v12: 酷熱 −20／暴雨、黑雨 +20 hit 水分 the moment the warning is first seen, once per calendar day each
- * (暴雨 and 黑雨 share one application; a cancelled and reissued warning is not applied again). Rain fills up to 100,
- * then at most +10 beyond. Settlement calls this too, so a warning seen while the app was closed still counts.
+ * 酷熱 −20、暴雨／黑雨 +20、純毛毛雨 +10 hit 水分 the moment the rain or warning is first seen, once per calendar day
+ * (暴雨 and 黑雨 share one application; 毛毛雨 is skipped when either of those is also on). Rain fills up to 100,
+ * then at most +10 (+5 for 毛毛雨) beyond. Settlement calls this too, so a day the app stayed closed still counts once.
  */
 export function applyWarningWater(
   state: GameState,
@@ -332,7 +332,8 @@ export function applyWarningWater(
   const hot = events.includes('hot');
   const rain: WarningWaterEvent | null = events.includes('blackrain') ? 'blackrain' : events.includes('rainstorm') ? 'rainstorm' : null;
   const fx = state.waterFx[date] ?? { hot: false, rain: false };
-  if ((!hot || fx.hot) && (!rain || fx.rain)) return [];
+  const drizzle = events.includes('drizzle') && !rain && !fx.rain;
+  if ((!hot || fx.hot) && (!rain || fx.rain) && (!drizzle || fx.drizzle)) return [];
   state.waterFx = { ...state.waterFx, [date]: { ...fx } };
   const mark = state.waterFx[date]!;
   const hits: WarningHit[] = [];
@@ -363,6 +364,12 @@ export function applyWarningWater(
     }
     state.moisture = rainAdd(before, amount, RAIN_OVER_CAP.heavy);
     push(rain, before, toN);
+  }
+  if (drizzle && !mark.drizzle) {
+    mark.drizzle = true;
+    const before = state.moisture;
+    state.moisture = rainAdd(before, WEATHER_EVENTS.drizzle.dW, RAIN_OVER_CAP.drizzle);
+    push('drizzle', before, 0);
   }
   const keys = Object.keys(state.waterFx).sort();
   while (keys.length > 21) delete state.waterFx[keys.shift()!];
@@ -484,7 +491,7 @@ function careOn(state: GameState, date: string | null): Care | null {
 }
 
 /**
- * The night in order (設計書 v13): first the water change (natural loss −10 or 毛毛雨), then
+ * The night in order (設計書 v13): first the water change (natural loss −10, or none on a rain day), then
  * H_new = H_old + W_score + N_score + 天氣分(熱) + 天氣分(雨) + 天氣分(風) + 應急獎勵 − 蟲害.
  * 熱／寒／雨: flat −10／−10／−10 (黑雨 −15) unless 酷熱澆水／保暖／暴雨疏水 was done that day (then 0 and +3 each;
  * n ≥ 2 actions = 3n × 0.75).
@@ -632,7 +639,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   if (plan.water.kind === 'rain') notes.push('落雨日：今晚水分冇流失');
   if (plan.water.kind === 'drizzle') notes.push(`毛毛雨：水分 ${sgn(plan.water.delta)}，冇流失`);
   if (plan.residentN) notes.push(`長駐動物施肥 +${plan.residentN} 養分`);
-  if (plan.heat) notes.push(plan.heat.handled ? '酷熱：做咗酷熱澆水，唔扣健康' : `酷熱：冇做酷熱澆水 −${plan.heat.base}`);
+  if (plan.heat) notes.push(plan.heat.handled ? `${eventLabel('hot')}：做咗酷熱澆水，唔扣健康` : `${eventLabel('hot')}：冇做酷熱澆水 −${plan.heat.base}`);
   if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖，唔扣健康' : `寒冷：冇做保暖 −${plan.cold.base}`);
   if (plan.rain) notes.push(plan.rain.handled ? `${eventLabel(plan.rain.event)}：做咗${emergencyName('rainDrain')}，唔扣健康` : `${eventLabel(plan.rain.event)}：冇做${emergencyName('rainDrain')} −${plan.rain.base}`);
   if (plan.emergencyBonus) notes.push(`應急獎勵 ${emergencyBonusText(plan.emergencyCount)}`);
@@ -1089,7 +1096,7 @@ export function performAction(state: GameState, action: CareAction): ActionResul
   const title = { water: '已澆水', fertilize: '已施肥', deworm: '已除蟲', drain: '已疏水' }[action];
   if (action === 'water') {
     // Saturated soil: watering does nothing and does not use up one of today's turns.
-    if (state.moisture >= W_SATURATED) return { ok: false, message: '泥土已經飽和，唔使再澆' };
+    if (state.moisture >= W_SATURATED) return { ok: false, message: '水分去到 100，今日唔使再澆。水分跌咗先可以再澆。' };
     state.care.water += 1;
     const before = state.moisture;
     state.moisture = waterAdd(before, CARE.water.amount);
@@ -1367,7 +1374,7 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
   }
   if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
   if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
-  if (plan.heat && !plan.heat.handled) return `酷熱警告生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
+  if (plan.heat && !plan.heat.handled) return `${eventLabel('hot')}生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
   if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（喺樹根周圍鋪覆蓋物，每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
   if (plan.rain && !plan.rain.handled) return `${eventLabel(plan.rain.event)}警告生效：做「${emergencyName('rainDrain')}」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
   if (countdown && WEATHER_EVENTS[countdown.event].category === 'wind') {

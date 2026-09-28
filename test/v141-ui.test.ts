@@ -20,7 +20,7 @@ function view(over: Partial<View['wx']> = {}): View {
     state, meta: {} as View['meta'], today: D, tab: 'care', place: '沙田', placeNote: '', statusLine: '天氣啱啱更新過',
     cond: { code: 63, tempC: 26, tempMax: 28, precipMm: 3, windKmh: 20, gustKmh: 40, hot: false, raining: true, stormKind: null },
     forecast: [{ date: D, code: 63, tempMax: 28, tempMin: 24, precipMm: 40, precipProb: 90, windKmh: 20, gustKmh: 40 } as View['forecast'][number]],
-    night: false, todayEvents: ['landslip', 'rainstorm'], todayEvent: 'landslip', preview: previewNight(state, D, ['landslip'], null),
+    night: false, todayEvents: ['landslip', 'rainstorm'], nowEvents: ['landslip', 'rainstorm'], todayEvent: 'landslip', preview: previewNight(state, D, ['landslip'], null),
     countdown: { event: 'landslip', hours: 0, active: true, source: '天文台' }, manual: false, minutesToSettle: 300, wx,
   };
 }
