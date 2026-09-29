@@ -4,6 +4,7 @@ import { REMINDER_MS, stepScope } from '../src/alerts.js';
 import { deviceMessage, dropMessageFor, levelsFromWarnsum, localDate, messageFor, reminderFor, shouldNotify } from '../src/warnings.js';
 import { parseState } from '../src/tokens.js';
 import { cellKey, currentEventsIntl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from '../src/intl.js';
+import { warnsumFromSmg } from '../src/smg.js';
 
 const Z = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
 const T0 = Date.parse('2026-09-27T02:00:00Z');
@@ -106,13 +107,30 @@ test('landslip (WL): issue, reminder, cancel', () => {
   assert.deepEqual(off.drops, [{ category: 'landslip', from: 1, to: 0 }]);
 });
 
+test('SMG warnings become the same levels as HKO, and a cancelled alert does not', () => {
+  const on = levelsFromWarnsum(warnsumFromSmg({
+    typhoon: '<TropicalCyclone><Warncode>3</Warncode><Action>ISSUE</Action><Status>1</Status><Inforce>1</Inforce><Description>三號強風信號</Description></TropicalCyclone>',
+    rain: '<Rainstorm><Warncode>YELLOW</Warncode><Action>ISSUE</Action><Status>1</Status><Description>黃色暴雨警告信號</Description></Rainstorm>',
+    temp: '<item><title>黃色高溫提示</title><description>酷熱</description></item>',
+  }));
+  assert.deepEqual(on, { ...Z, heat: 1, rain: 1, typhoon: 2 });
+  const off = levelsFromWarnsum(warnsumFromSmg({
+    typhoon: '<TropicalCyclone><Action>NIL</Action><Status>0</Status><Inforce>0</Inforce><Description>現時並沒有熱帶氣旋信號。</Description></TropicalCyclone>',
+    temp: '<item><title>黃色高溫提示</title><description>黃色高溫提示已經取消。</description></item>',
+  }));
+  assert.deepEqual(off, Z);
+});
+
 test('parseState validates and rounds the region to 0.5°', () => {
   assert.equal(parseState({ day: 'x' }), null);
   assert.equal(parseState({ day: '2026-09-27', tz: 'Not/AZone' }), null);
   const s = parseState({ day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: 'yes' }, region: { lat: 35.68, lon: 139.77 }, isHK: false, rUnlocked: true, alive: true }, 5);
-  assert.deepEqual(s, { day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: false, reinforce: false, warm: false }, region: { lat: 35.5, lon: 140 }, isHK: false, rUnlocked: true, alive: true, tree: 'ok', resist: null, at: 5 });
+  assert.deepEqual(s, { day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: false, reinforce: false, warm: false }, region: { lat: 35.5, lon: 140 }, isHK: false, isMO: false, rUnlocked: true, alive: true, tree: 'ok', resist: null, at: 5 });
   assert.equal(parseState({ day: '2026-09-27', tree: 'dying', resist: 33.6 }).resist, 34);
   assert.equal(parseState({ day: '2026-09-27', isHK: false }).isHK, true, 'no region → treated as HK');
+  const mo = parseState({ day: '2026-09-27', region: { lat: 22, lon: 113.5 }, isHK: true, isMO: true });
+  assert.equal(mo.isMO, true);
+  assert.equal(mo.isHK, false, 'Macau is not on the HKO poll');
 });
 
 test('non-HK: Open-Meteo → game events → levels', () => {

@@ -128,7 +128,7 @@ export interface GameState {
   rules?: number;
   /** Tree species (any of the 9; its 紀錄高度 R drives growth). */
   species: SpeciesId;
-  /** v14 樹齡: nights settled since planting (restarts with a new tree). */
+  /** v14 樹齡: nights settled since planting. The card shows this plus the planting day, so a new tree reads 第 1 日. */
   ageDays: number;
   /** v14 milestones this tree reached (樹齡 1個月…3年 and 超越世界紀錄). */
   milestones: Partial<Record<MilestoneId, MilestoneAward>>;

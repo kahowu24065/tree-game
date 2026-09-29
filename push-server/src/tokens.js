@@ -64,7 +64,9 @@ export function parseState(body, now = Date.now()) {
     tz,
     done: { heat: bool(d.heat), drain: bool(d.drain), reinforce: bool(d.reinforce), warm: bool(d.warm) },
     region,
-    isHK: body.isHK !== false || !region,
+    isMO: body.isMO === true,
+    // Macau is its own fast poll (SMG). Old clients that only send isHK stay on the HKO poll.
+    isHK: body.isMO === true ? false : body.isHK !== false || !region,
     rUnlocked: body.rUnlocked === true,
     alive: body.alive !== false,
     tree: ['ok', 'dying', 'dead'].includes(body.tree) ? body.tree : body.alive === false ? 'dead' : 'ok',

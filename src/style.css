@@ -95,6 +95,15 @@ body.night .glass {
   inset: 0;
   pointer-events: none;
   z-index: 2;
+  transition: opacity 1.2s ease;
+}
+
+/* Opening: nothing on screen until the seedling has broken the soil. */
+html.preplant .hud,
+html.preplant #dev-root,
+html.preplant #animal-markers {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .hud > * {
@@ -605,11 +614,6 @@ body.sheet-open .hud > .sheet-backdrop {
   gap: 2px;
 }
 
-.rail.compact .rail-top small,
-.rail.compact .rail-bottom small {
-  display: none;
-}
-
 .rail[hidden] {
   display: none;
 }
@@ -702,6 +706,51 @@ body.sheet-open .hud > .sheet-backdrop {
 .rail-top.beyond small:first-child {
   color: #ffe08a;
   font-weight: 700;
+}
+
+.coach {
+  padding: 10px 12px 6px;
+  border-radius: 16px;
+  pointer-events: auto;
+  color: var(--ink);
+}
+.coach p {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.coach ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.coach li {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.coach li.done {
+  opacity: 0.5;
+}
+.coach .texty {
+  margin: 4px 0 2px;
+  padding: 0;
+  font-size: 12px;
+}
+.coach-pulse {
+  animation: coach-pulse 1.3s ease-in-out infinite;
+  outline: 2px solid rgba(214, 152, 20, 0.95);
+  outline-offset: 3px;
+}
+@keyframes coach-pulse {
+  50% { outline-color: rgba(214, 152, 20, 0.25); }
+}
+body.tree-fx .coach {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Zoom / follow: back to the overview. Fades in only after a camera gesture, then fades out. */
@@ -995,6 +1044,93 @@ body.sheet-open .hud > .sheet-backdrop {
 
 body.sheet-open .sheet-backdrop {
   opacity: 1;
+}
+
+.cal {
+  margin: 2px 0 12px;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 8px;
+}
+
+.cal-nav b {
+  font-size: 16px;
+}
+
+.cal-nav button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.cal-nav button:disabled {
+  opacity: 0.3;
+}
+
+.cal-week,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  justify-items: center;
+}
+
+.cal-week span {
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding-bottom: 4px;
+}
+
+.cal-day {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  margin: 2px 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.cal-day.up {
+  background: #c9e8bf;
+}
+
+.cal-day.down {
+  background: #f6c9c4;
+}
+
+.cal-day.flat {
+  background: #f4f5f3;
+}
+
+.cal-day.on {
+  box-shadow: inset 0 0 0 2px rgba(63, 154, 75, 0.55);
+}
+
+.cal-day.today::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  transform: translateX(-50%);
+}
+
+.cal-day:disabled {
+  opacity: 0.28;
 }
 
 .log-day {
@@ -1630,6 +1766,10 @@ body.sheet-open .sheet-backdrop {
   gap: 6px;
 }
 
+.miles + .miles {
+  margin-top: 16px;
+}
+
 .miles li {
   background: #fff;
   border-radius: 14px;
@@ -1662,10 +1802,26 @@ body.sheet-open .sheet-backdrop {
   place-items: center;
   padding: 20px;
   background: rgba(20, 35, 45, 0.35);
+  opacity: 0;
+  transition: opacity 0.42s ease, background 0.42s ease;
+}
+
+.modal.in {
+  opacity: 1;
 }
 
 .modal[hidden] {
   display: none;
+}
+
+.modal.leaving {
+  opacity: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.modal.leaving:has(.modal-card.celebrate) {
+  background: rgba(20, 35, 45, 0.35);
 }
 
 .modal-card {
@@ -1675,6 +1831,29 @@ body.sheet-open .sheet-backdrop {
   border-radius: 24px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.9);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.42s ease, transform 0.42s ease;
+}
+
+.modal.in .modal-card {
+  opacity: 1;
+  transform: none;
+}
+
+.modal.leaving .modal-card,
+.modal.in .modal-card.swap {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+/* Milestone and achievement cards fade with the whole window, scrim included. */
+.modal:has(.modal-card.celebrate) .modal-card,
+.modal.leaving:has(.modal-card.celebrate) .modal-card,
+.modal.in:has(.modal-card.celebrate) .modal-card.swap {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 .modal-card h2 {
@@ -2065,6 +2244,10 @@ body.sheet-open .sheet-backdrop {
 
 .bar.off .bar-val {
   color: var(--red);
+}
+
+.bar.mid .bar-val {
+  color: var(--yellow);
 }
 
 .bar.shield.off .bar-val {
@@ -3249,6 +3432,16 @@ body.cold #scene {
 
 .weather-card.cold {
   background: linear-gradient(135deg, rgba(236, 245, 255, 0.9), rgba(205, 225, 248, 0.78));
+  border-color: rgba(90, 160, 220, 0.95);
+  box-shadow: 0 0 0 3px rgba(47, 134, 201, 0.18), var(--shadow);
+}
+
+.weather-card.severe.cold {
+  animation: rain-pulse 2.4s ease-in-out infinite;
+}
+
+.weather-card.cold .wx-line {
+  color: #1a5f96;
 }
 
 /* Dock: 澆水／疏水 and 施肥／除蟲 share a column (same 72 px footprint as the big buttons). */

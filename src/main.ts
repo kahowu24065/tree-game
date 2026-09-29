@@ -13,6 +13,7 @@ import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
+import { playCelebrate, playControl, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -35,6 +36,7 @@ import {
   refreshUnlocks,
   reinforce,
   setLogClock,
+  shownAge,
   triggerPest,
   visualReinforcement,
   type CareAction,
@@ -42,6 +44,7 @@ import {
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, isleAward, loadGrove, saveGrove } from './grove';
+import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, saveCoach, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
@@ -59,19 +62,26 @@ import {
   renderPanel,
   weatherPageHtml,
   renderSheet,
+  openLogCalendar,
+  selectLogDay,
+  moveLogMonth,
   setThumbnailer,
   settingsModal,
   exportSaveModal,
   importSaveModal,
   startModal,
+  nameModal,
+  lessonModal,
   stormModal,
   windExplainerModal,
+  coachCard,
   toast,
   flashWater,
   togglePreview,
   updateModal,
   setAlbumMode,
   setUiClock,
+  type LessonId,
   type Pick,
   type View,
 } from './ui';
@@ -87,6 +97,7 @@ import {
   withHkoDays,
   stampDays,
   inHongKong,
+  inMacau,
   nearHongKong,
   isRainCode,
   isSnowCode,
@@ -99,6 +110,7 @@ import {
   type WeatherSnapshot,
 } from './weather';
 import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
+import { fetchSmg, withSmgDays } from './smg';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { isNative } from './native/platform';
@@ -124,6 +136,10 @@ setLogClock(() => {
 });
 let meta = loadMeta();
 let state: GameState = loadGame() ?? createGame(formatDateInTz(new Date(), timezone));
+let coach: Coach = loadCoach();
+/** pick: HUD hidden, far islands. arrive: camera pull and sprout. null: playing. */
+let plantingShow: 'pick' | 'arrive' | null = null;
+let lesson: { id: LessonId; page: number } | null = null;
 const loadedGrove = loadGrove(state);
 let home = loadedGrove.home;
 let second: GameState | null = loadedGrove.second;
@@ -136,7 +152,7 @@ let tab: TabId = 'care';
 let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
 let weather: WeatherSnapshot = initialWeather();
 let weatherLoading = weather.provider === 'sim';
-setLabelRegion(regionFor(weather.source, nearHongKong(weather.lat, weather.lon)));
+setLabelRegion(regionFor(weather.source, nearHongKong(weather.lat, weather.lon), inMacau(weather.lat, weather.lon)));
 let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
@@ -216,15 +232,20 @@ function presentedDays() {
   return presentForecast(weather.daily, today());
 }
 
-function hkActive(snapshot: WeatherSnapshot = weather): boolean {
-  return Boolean(snapshot.hko) && usesHko(snapshot);
+function usesSmg(snapshot: WeatherSnapshot = weather): boolean {
+  return snapshot.source === 'geo' && inMacau(snapshot.lat, snapshot.lon);
 }
 
-/** Events happening right now according to live weather (HKO warnings in HK). */
+/** Official warnings (HKO or SMG) decide severe weather, rather than model numbers. */
+function officialActive(snapshot: WeatherSnapshot = weather): boolean {
+  return Boolean(snapshot.hko) && (usesHko(snapshot) || usesSmg(snapshot));
+}
+
+/** Events happening right now according to live weather (HKO in HK, SMG in Macau). */
 function liveEvents(): WeatherEventId[] {
   if (weather.provider === 'sim' && !weather.hko) return [];
   const day = weather.daily.find((d) => d.date === today());
-  return currentEvents({ hk: usesHko(weather), warnings: weather.hko?.warnings, current: weather.current, today: day });
+  return currentEvents({ hk: officialActive(), warnings: weather.hko?.warnings, current: weather.current, today: day });
 }
 
 /** Events the day is settled with (manual developer weather wins). */
@@ -288,7 +309,7 @@ function countdown(): Countdown | null {
     minutesToMidnight: 24 * 60 - clockMinutes(timezone),
     manual: manual() ? dev.forecast : null,
     nowMs: Date.now(),
-    activeSource: manual() ? '手動天氣' : hkActive() ? '天文台' : '即時天氣',
+    activeSource: manual() ? '手動天氣' : usesSmg() ? '氣象局' : officialActive() ? '天文台' : '即時天氣',
   });
 }
 
@@ -371,7 +392,7 @@ function sceneInput(): SceneInput {
 
 function view(input: SceneInput): View {
   const { place, note } = placeLabel();
-  const hk = hkActive();
+  const hk = officialActive();
   return {
     state,
     meta,
@@ -398,6 +419,7 @@ function view(input: SceneInput): View {
       fetchedAt: weather.fetchedAt,
       updated: clockOf(weather.fetchedAt),
       hkoUsed: hk,
+      bureau: usesSmg() ? 'smg' : usesHko(weather) ? 'hko' : undefined,
       warnings: hk ? weather.hko!.warnings : [],
       messages: hk ? weather.hko!.messages : [],
       situation: hk ? weather.hko!.situation : '',
@@ -413,10 +435,52 @@ function view(input: SceneInput): View {
   };
 }
 
+function coachVisible(): boolean {
+  return coachOpen(coach) && plantingShow === null && state.started !== false && !state.over && !(isle === 1 && !second);
+}
+
+/** Checklist under the weather card, and a pulse on the next action. */
+function syncCoach(): void {
+  const el = document.getElementById('coach');
+  const show = coachVisible();
+  if (el) {
+    el.hidden = !show;
+    if (show) {
+      const html = coachCard(coach);
+      if (el.dataset.html !== html) {
+        el.innerHTML = html;
+        el.dataset.html = html;
+      }
+    }
+  }
+  document.querySelectorAll('.coach-pulse').forEach((n) => n.classList.remove('coach-pulse'));
+  const focus = show ? coachFocus(coach) : null;
+  if (focus === 'water') document.querySelector('#dock [data-action="water"]')?.classList.add('coach-pulse');
+  if (focus === 'feed') document.querySelector('#dock [data-action="fertilize"]')?.classList.add('coach-pulse');
+}
+
+function finishCoach(step: 'water' | 'feed' | 'health' | 'carbon' | 'skip'): void {
+  const next = markCoach(coach, step);
+  if (next === coach) return;
+  const finished = !coach.done && next.done && step !== 'skip';
+  coach = next;
+  saveCoach(coach);
+  render();
+  if (finished) toast('健康會影響今晚長高幾多。跟住現實天氣打理，棵樹先會長得好。');
+}
+
+function beginCoach(): void {
+  const next = armCoach(coach);
+  if (next === coach) return;
+  coach = next;
+  saveCoach(coach);
+}
+
 function render(): void {
   const input = sceneInput();
   const v = view(input);
   renderChrome(v);
+  syncCoach();
   renderSheet(state, today());
   if (drawer && !drawer.hidden) renderPanel(v);
   if (wxPage && !wxPage.hidden) renderWeatherPage(v);
@@ -475,7 +539,7 @@ async function importSave(): Promise<void> {
   const s = res.payload.save;
   const when = res.payload.at ? `（${new Date(res.payload.at).toLocaleDateString('en-CA')} 匯出）` : '';
   const height = s.heightCm >= 100 ? `${(s.heightCm / 100).toFixed(1)} 米` : `${Math.round(s.heightCm)} 厘米`;
-  if (!window.confirm(`匯入「${s.treeName || '棵樹'}」${when}：樹齡 ${s.ageDays} 日、高 ${height}${s.over ? '（已枯死）' : ''}。\n而家嘅存檔會被取代，確定？`)) return;
+  if (!window.confirm(`匯入「${s.treeName || '棵樹'}」${when}：樹齡 ${shownAge(s)} 日、高 ${height}${s.over ? '（已枯死）' : ''}。\n而家嘅存檔會被取代，確定？`)) return;
   importing = true;
   clearGrove();
   localStorage.setItem(SAVE_KEY, JSON.stringify(s));
@@ -556,12 +620,13 @@ function plantSecond(species?: SpeciesId): void {
   isle = 1;
   state = second;
   plantingSecond = false;
-  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), hkActive());
+  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), officialActive());
   const fresh = grantIsle('plant');
+  beginCoach();
   persist();
   closeModal();
   render();
-  toast(fresh ? `${state.treeName}種好喇。成就：第二棵樹。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
+  toast(fresh ? `${state.treeName}種好喇。成就：第二棵樹。` : coachOpen(coach) ? `${state.treeName}種好喇。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
   syncWarningWater();
 }
 
@@ -589,7 +654,8 @@ function scheduleReminders(background: boolean): void {
         warm: done('warmCover'),
       },
       region: { lat: weather.lat, lon: weather.lon },
-      isHK: regionFor(weather.source, nearHongKong(weather.lat, weather.lon)) === 'hk',
+      isHK: usesHko(weather) || usesSmg(weather),
+      isMO: usesSmg(weather),
       rUnlocked: Boolean(state.windUnlocked),
       alive: state.started && !state.over,
       tree: state.over ? 'dead' : state.dying ? 'dying' : 'ok',
@@ -625,7 +691,8 @@ function handleOver(): boolean {
     if (isle === 1 && state.milestones?.record && grantIsle('record')) lines.push('成就：新島破紀錄');
     persist();
     const recordHint = isle === 0 && awards.some((a) => a?.id === 'record') ? '向左滑去第二座空島，可以再種一棵。鏡頭自轉嗰陣都會見到其他空島。' : '';
-    openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather, recordHint) : weatherModal(state, meta, weather));
+    playCelebrate();
+    openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather, recordHint) : weatherModal(state, meta, weather), 'celebrate');
     return true;
   }
   const lines = [...bookMilestones(meta, state), ...bookWeather(meta, state), ...bookGameEnd(meta, state)];
@@ -761,7 +828,7 @@ function syncWarningWater(): boolean {
 function applyWeather(snapshot: WeatherSnapshot): void {
   const before = today();
   weather = snapshot;
-  setLabelRegion(usesHko(snapshot) ? 'hk' : 'intl');
+  setLabelRegion(usesHko(snapshot) || usesSmg(snapshot) ? 'hk' : 'intl');
   timezone = snapshot.timezone || timezone;
   if (snapshot.origin === 'live') saveWeatherCache(snapshot);
   statusLine =
@@ -774,10 +841,10 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   if (snapshot.provider !== 'sim' || snapshot.hko) {
     const events = liveEvents();
     const had = state.dayEvents[today()]?.events ?? [];
-    recordEvents(state, today(), events, hkActive(snapshot));
+    recordEvents(state, today(), events, officialActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
-    if (fresh.length && state.started && !manual() && !watered) toast(`${hkActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
+    if (fresh.length && state.started && !manual() && !watered) toast(`${usesSmg(snapshot) ? '氣象局' : officialActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
@@ -805,7 +872,7 @@ function clockOf(ms: number): string {
 }
 
 function usesHko(snapshot: WeatherSnapshot): boolean {
-  return regionFor(snapshot.source, nearHongKong(snapshot.lat, snapshot.lon)) === 'hk';
+  return !usesSmg(snapshot) && regionFor(snapshot.source, nearHongKong(snapshot.lat, snapshot.lon)) === 'hk';
 }
 
 let refreshing: Promise<void> | null = null;
@@ -848,8 +915,9 @@ function refreshWeather(forceLocate = false): Promise<void> {
 }
 
 /**
- * Real weather first: Open-Meteo for the player's spot (plus HKO in/near Hong Kong); if Open-Meteo is down,
- * HKO alone; then the last good snapshot; simulated weather only when all of that fails.
+ * Real weather first: Open-Meteo for the player's spot, plus HKO in/near Hong Kong or SMG inside Macau.
+ * If Open-Meteo is down, the bureau alone; then the last good snapshot; simulated weather only when all of that fails.
+ * Macau is refreshed on the same timer as Hong Kong. Everywhere else is unchanged.
  */
 async function loadWeather(forceLocate: boolean): Promise<void> {
   const manual = PLACES.find((p) => p.id === placeChoice);
@@ -859,76 +927,144 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     : reuseGeo
       ? { lat: weather.lat, lon: weather.lon, source: 'geo' as const }
       : await locate(8000);
-  const hk = loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon);
-  const [om, hkoRes, placeRes] = await Promise.allSettled([
+  const mo = loc.source === 'geo' && inMacau(loc.lat, loc.lon);
+  const hk = !mo && (loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon));
+  const [om, hkoRes, smgRes, placeRes] = await Promise.allSettled([
     fetchForecast(loc.lat, loc.lon),
     hk ? fetchHko(loc.lat, loc.lon) : Promise.resolve(null),
+    mo ? fetchSmg(loc.lat, loc.lon) : Promise.resolve(null),
     loc.source === 'geo' ? reverseGeocode(loc.lat, loc.lon) : Promise.resolve(null),
   ]);
   const hko = hkoRes.status === 'fulfilled' ? hkoRes.value : null;
+  const smg = smgRes.status === 'fulfilled' ? smgRes.value : null;
+  const official = mo ? smg?.data ?? null : hko;
   const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
-  const place = manual?.name ?? found?.name ?? (loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
+  const place = manual?.name ?? found?.name ?? (mo ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
   const district = manual?.name ?? found?.district;
   let base: ForecastResult | null = om.status === 'fulfilled' ? om.value : null;
   let provider: WeatherProvider = 'open-meteo';
   const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : '未知錯誤') : undefined;
-  if (!base && hko) {
-    base = hkoForecast(hko, today());
-    provider = 'hko';
+  if (!base && official) {
+    base = hkoForecast(official, today());
+    provider = mo ? 'smg' : 'hko';
   }
   if (!base) {
     const cached = loadWeatherCache();
     if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS) {
-      applyWeather({ ...cached, origin: 'cache', error, hko: hko ?? cached.hko, daily: hko && hk ? withHkoDays(cached.daily, hko, today()) : cached.daily });
+      const cachedOfficial = !mo || (cached.source === 'geo' && inMacau(cached.lat, cached.lon)) ? cached.hko : null;
+      const kept = official ?? cachedOfficial;
+      const daily = kept ? withHkoDays(mo ? withSmgDays(cached.daily, kept) : cached.daily, kept, today()) : cached.daily;
+      applyWeather({ ...cached, origin: 'cache', error, hko: kept, daily, lat: loc.lat, lon: loc.lon, source: loc.source, place });
       return;
     }
-    // Last resort: simulated numbers, but still pass along any real HKO warnings.
-    applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko, choice: choiceKey() });
+    // Last resort: simulated numbers, but still pass along any real bureau warnings.
+    applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko: official, lat: loc.lat, lon: loc.lon, source: loc.source, place, choice: choiceKey() });
     return;
   }
   const snapshot: WeatherSnapshot = {
     lat: loc.lat,
     lon: loc.lon,
-    timezone: base.timezone,
+    timezone: mo ? 'Asia/Macau' : base.timezone,
     place,
     source: loc.source,
     origin: 'live',
     fetchedAt: Date.now(),
     current: { ...base.current },
-    daily: stampDays(base.daily, !hk, base.normals),
+    daily: stampDays(base.daily, !(hk || mo), base.normals),
     normals: base.normals ?? null,
-    provider,
-    hko,
+    provider: mo && smg ? 'smg' : provider,
+    hko: official,
     district,
     rainInHours: base.rainInHours,
     choice: choiceKey(),
-    error: provider === 'hko' ? error : undefined,
+    error: provider === 'hko' || (mo && smg && om.status === 'rejected') ? error : undefined,
   };
-  if (hko?.current && hk) {
-    // Prefer what the Observatory actually measured nearby over model values.
-    if (hko.current.tempC !== null) {
-      snapshot.current.tempC = hko.current.tempC;
-      snapshot.station = hko.current.station;
+  if (official?.current && (hk || (mo && smg))) {
+    // Prefer what the bureau actually measured nearby over model values.
+    if (official.current.tempC !== null) {
+      snapshot.current.tempC = official.current.tempC;
+      snapshot.station = official.current.station;
     }
-    if (hko.current.icon) {
-      snapshot.current.code = hkoIconToWmo(hko.current.icon);
-      snapshot.conditionText = hkoIconLabel(hko.current.icon);
+    if (official.current.icon) {
+      snapshot.current.code = hkoIconToWmo(official.current.icon);
+      snapshot.conditionText = hkoIconLabel(official.current.icon);
     }
-    if (hko.current.humidity !== null) snapshot.current.humidity = hko.current.humidity;
-    const mm = districtRain(hko, district);
-    if (mm !== null) {
-      // Measured rain in the player's district beats the model's "current precipitation".
-      snapshot.current.precipMm = Math.min(8, mm);
-    } else if (hko.current.icon && !hkoIconRain(hko.current.icon)) {
-      snapshot.current.precipMm = 0;
+    if (official.current.humidity !== null) snapshot.current.humidity = official.current.humidity;
+    if (smg) {
+      if (smg.windKmh !== null) snapshot.current.windKmh = smg.windKmh;
+      if (smg.gustKmh !== null) snapshot.current.gustKmh = smg.gustKmh;
+      if (smg.precipMm !== null) snapshot.current.precipMm = Math.min(8, smg.precipMm);
+      else if (official.current.icon && !hkoIconRain(official.current.icon)) snapshot.current.precipMm = 0;
+    } else {
+      const mm = districtRain(official, district);
+      if (mm !== null) {
+        // Measured rain in the player's district beats the model's "current precipitation".
+        snapshot.current.precipMm = Math.min(8, mm);
+      } else if (official.current.icon && !hkoIconRain(official.current.icon)) {
+        snapshot.current.precipMm = 0;
+      }
     }
   }
-  if (hko && hk) snapshot.daily = withHkoDays(snapshot.daily, hko, today());
+  if (official && (hk || (mo && smg))) {
+    if (mo && smg) snapshot.daily = withSmgDays(snapshot.daily, official);
+    snapshot.daily = withHkoDays(snapshot.daily, official, today());
+  }
   applyWeather(snapshot);
 }
 
 function openStart(): void {
   openModal(startModal('世界之樹', meta, false, pick));
+}
+
+function openName(): void {
+  openModal(nameModal(plantingSecond ? '第二棵' : '世界之樹'));
+}
+
+/** Species card is up, the HUD is hidden, and the camera sits on the far islands. */
+function beginSpeciesPick(): void {
+  plantingShow = 'pick';
+  lesson = null;
+  document.documentElement.classList.add('preplant');
+  document.documentElement.classList.remove('hud-in');
+  scene3d?.showFarIslands();
+  openStart();
+}
+
+function revealHud(): void {
+  plantingShow = null;
+  document.documentElement.classList.remove('preplant');
+  document.documentElement.classList.add('hud-in');
+  beginCoach();
+  render();
+  toast(coachOpen(coach) ? `${state.treeName}種好喇。先澆一次水。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
+  if (pendingNote) {
+    const message = pendingNote;
+    pendingNote = '';
+    openModal(stormModal(message));
+  }
+}
+
+/** The name card fades away before the camera starts moving. */
+function dismissModal(then: () => void): void {
+  closeModal(then);
+}
+
+function openLesson(id: LessonId): void {
+  lesson = { id, page: 0 };
+  openModal(lessonModal(id, 0), 'lesson');
+}
+
+function finishLesson(): void {
+  const id = lesson?.id;
+  lesson = null;
+  closeModal();
+  if (!id) return;
+  if (id === 'health') {
+    finishCoach('health');
+    return;
+  }
+  finishCoach(id === 'water' ? 'water' : 'feed');
+  if (coach.water && coach.feed && !coach.health && coachOpen(coach)) openLesson('health');
 }
 
 function startGame(species?: SpeciesId): void {
@@ -941,24 +1077,28 @@ function startGame(species?: SpeciesId): void {
   const wasStarted = state.started && !state.over;
   if (wasStarted) {
     state.treeName = name;
-  } else {
-    state = newGame(meta, realToday(), name, species);
-    tab = 'care';
-    // newGame wipes dayEvents. The weather card still shows a warning already loaded
-    // (酷熱天氣警告 → 酷熱澆水); record it now or the status-card button stays hidden
-    // until the next weather refresh (up to 30 minutes).
-    if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), hkActive());
+    persist();
+    closeModal();
+    render();
+    return;
   }
+  state = newGame(meta, realToday(), name, species);
+  tab = 'care';
+  // newGame wipes dayEvents. The weather card still shows a warning already loaded
+  // (酷熱天氣警告 → 酷熱澆水); record it now or the status-card button stays hidden
+  // until the next weather refresh (up to 30 minutes).
+  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), officialActive());
   persist();
-  closeModal();
-  render();
-  if (!wasStarted) toast(`${state.treeName}種好喇。今日先澆水、施肥。`);
   syncWarningWater();
-  if (pendingNote) {
-    const message = pendingNote;
-    pendingNote = '';
-    openModal(stormModal(message));
-  }
+  plantingShow = 'arrive';
+  document.documentElement.classList.add('preplant');
+  document.documentElement.classList.remove('hud-in');
+  scene3d?.showFarIslands();
+  render();
+  dismissModal(() => {
+    if (scene3d) scene3d.beginArrival(reducedMotion, revealHud);
+    else window.setTimeout(revealHud, reducedMotion ? 0 : 700);
+  });
 }
 
 /* ---------- Drawer and growth-log sheet ---------- */
@@ -1037,7 +1177,10 @@ function setSheet(open: boolean): void {
   sheet.style.transform = '';
   sheetHandle?.setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('sheet-open', open);
-  if (open) renderSheet(state, today());
+  if (open) {
+    openLogCalendar(today());
+    renderSheet(state, today());
+  }
 }
 
 function bindSheetDrag(): void {
@@ -1112,6 +1255,8 @@ function doAction(action: string, target: HTMLElement): void {
     toast(result.message);
     if (result.ok) target.classList.add('pop');
     if (result.ok && (action === 'water' || action === 'fertilize')) scene3d?.playCare(action);
+    if (result.ok && action === 'water' && coachOpen(coach) && !coach.water) openLesson('water');
+    if (result.ok && action === 'fertilize' && coachOpen(coach) && !coach.feed) openLesson('feed');
     return;
   }
   if (action === 'heat-water' || action === 'rain-drain' || action === 'warm-cover') {
@@ -1148,6 +1293,24 @@ function doAction(action: string, target: HTMLElement): void {
     case 'retry-weather':
       toast('再試緊攞真實天氣…');
       void refreshWeather(false);
+      return;
+    case 'coach-skip':
+      lesson = null;
+      finishCoach('skip');
+      return;
+    case 'pick-species':
+      openName();
+      return;
+    case 'back-species':
+      openModal(startModal(plantingSecond ? '第二棵' : '世界之樹', meta, false, pick));
+      return;
+    case 'lesson-next':
+      if (!lesson) return;
+      lesson = { id: lesson.id, page: lesson.page + 1 };
+      updateModal(lessonModal(lesson.id, lesson.page));
+      return;
+    case 'lesson-done':
+      finishLesson();
       return;
     case 'locate':
       placeChoice = 'geo';
@@ -1252,13 +1415,17 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-species], [data-album-mode], [data-guide], [data-notify]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-cal], [data-cal-nav]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
-    if (el.closest('#status-card') && state.started && !state.over) openDrawer('care');
+    if (el.closest('#status-card') && state.started && !state.over) {
+      playControl();
+      openDrawer('care');
+    }
     return;
   }
   if (target.getAttribute('aria-disabled') === 'true') return;
+  if (target.dataset.sound !== '0' && target.dataset.sound !== '1') playControl(target.dataset.action);
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;
   if (target.dataset.species) {
@@ -1327,6 +1494,29 @@ document.addEventListener('click', (event) => {
     localStorage.setItem(QUALITY_KEY, quality);
     scene3d?.setQuality(quality);
     openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+    return;
+  }
+  if (target.dataset.sound === '0' || target.dataset.sound === '1') {
+    setSoundEnabled(target.dataset.sound === '1');
+    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+    return;
+  }
+  if (target.dataset.cal) {
+    selectLogDay(target.dataset.cal);
+    renderSheet(state, today());
+    const body = document.getElementById('sheet-body');
+    const head = body?.querySelector('.log-day');
+    if (body && head) {
+      const top = head.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+      body.scrollTop = Math.max(0, top - 8);
+    }
+    return;
+  }
+  if (target.dataset.calNav) {
+    moveLogMonth(target.dataset.calNav === 'next' ? 1 : -1, today());
+    renderSheet(state, today());
+    const body = document.getElementById('sheet-body');
+    if (body) body.scrollTop = 0;
     return;
   }
   if (target.dataset.action) doAction(target.dataset.action, target);
@@ -1489,6 +1679,8 @@ if (DEV_PANEL) {
     reset: () => {
       clearGame();
       clearGrove();
+      clearCoach();
+      coach = freshCoach();
       state = createGame(realToday());
       home = state;
       second = null;
@@ -1501,7 +1693,7 @@ if (DEV_PANEL) {
       setSheet(false);
       persist();
       render();
-      openStart();
+      beginSpeciesPick();
     },
     realDate: () => {
       state.virtualToday = null;
@@ -1600,7 +1792,7 @@ const VIEW_BTN_MS = 2800;
 /** Fade 「返回全景」 in only while the player is adjusting a zoomed or follow view. */
 function syncViewButton(): void {
   if (!scene3d) return;
-  if (!hintShown && state.started && !state.over && document.getElementById('modal')?.hidden) {
+  if (!hintShown && plantingShow === null && state.started && !state.over && document.getElementById('modal')?.hidden) {
     hintShown = true;
     localStorage.setItem('sekai-tree-zoom-hint', '1');
     const hint = document.getElementById('zoom-hint');
@@ -1618,7 +1810,7 @@ function syncViewButton(): void {
     btn.innerHTML = `${ICONS.locate}<span>${v.following ? `跟緊${esc(v.following)}・返回全景` : '返回全景'}</span>`;
     if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
   }
-  const want = v.active && performance.now() - scene3d.viewNudgedAt() < VIEW_BTN_MS;
+  const want = v.active && plantingShow === null && performance.now() - scene3d.viewNudgedAt() < VIEW_BTN_MS;
   if (want && btn.hidden) {
     btn.hidden = false;
     btn.classList.remove('on');
@@ -1637,7 +1829,7 @@ function syncAnimalHud(time: number): void {
   const busy = scene3d.fxBusy();
   // v16: the note cards step aside while a collapse / death plays (they come back once it is over).
   if (document.body.classList.contains('tree-fx') !== busy) document.body.classList.toggle('tree-fx', busy);
-  animalHud.setEnabled(state.started && !state.over && !busy && Boolean(document.getElementById('modal')?.hidden));
+  animalHud.setEnabled(plantingShow === null && state.started && !state.over && !busy && Boolean(document.getElementById('modal')?.hidden));
   // v10: following an animal (marker, toast, list or a direct tap) counts as seeing it: its 新 badge goes everywhere.
   const uid = scene3d.followingUid();
   if (uid !== lastFollowUid) {
@@ -1655,6 +1847,7 @@ function syncAnimalHud(time: number): void {
 
 function frame(time: number): void {
   const input = sceneInput();
+  syncAmbience(input.daylight < 0.45, manual() ? todayEvents() : liveEvents());
   drawScene(input, time);
   syncViewButton();
   syncAnimalHud(time);
@@ -1668,6 +1861,7 @@ function frame(time: number): void {
 }
 
 document.addEventListener('visibilitychange', () => {
+  setPageAudible(!document.hidden);
   if (document.hidden) {
     scheduleReminders(true);
     return;
@@ -1697,7 +1891,8 @@ if (isNative()) {
   scheduleReminders(false);
   void syncPush(notifyEnabled());
 }
-if (!state.started) openStart();
+if (!state.started) beginSpeciesPick();
+else document.documentElement.classList.remove('preplant');
 requestAnimationFrame(frame);
 if (usesDeviceLocation()) {
   if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);

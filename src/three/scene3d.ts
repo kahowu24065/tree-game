@@ -81,6 +81,10 @@ export class Scene3D {
   private animalsKey = '';
   private growFrom = 1;
   private growStart = 0;
+  /** Opening shot: hold a far view, pull in, then let the seedling break the soil. */
+  private seedPhase: 'far' | 'pull' | 'sprout' | 'settle' | null = null;
+  private seedT = 0;
+  private onSeed: (() => void) | null = null;
   private clouds: { mesh: THREE.Mesh; r: number; a: number; y: number; speed: number; low: boolean }[] = [];
   private cloudMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, transparent: true, opacity: 0.94, emissive: '#ffffff', emissiveIntensity: 0.35 });
   private stars: THREE.Points;
@@ -662,9 +666,10 @@ export class Scene3D {
       this.deadLog = fx;
       this.pivot.add(fx.root);
     }
-    const hideTree = Boolean(input.bare) || Boolean(this.deadLog) || Boolean(this.fall && (this.fall.mode !== 'collapse' || !this.fallSwapped));
+    const holdSeed = this.seedPhase === 'far' || this.seedPhase === 'pull';
+    const hideTree = holdSeed || Boolean(input.bare) || Boolean(this.deadLog) || Boolean(this.fall && (this.fall.mode !== 'collapse' || !this.fallSwapped));
     tree.group.visible = !hideTree;
-    this.animals.root.visible = !input.bare && !this.fall && !this.deadLog && !input.dead;
+    this.animals.root.visible = !holdSeed && !input.bare && !this.fall && !this.deadLog && !input.dead;
     // Health look (continuous, no rebuild).
     const look = healthLook(input.health, Boolean(input.dying), Boolean(input.dead));
     healthUniforms.uWither.value = look.wither;
@@ -767,6 +772,7 @@ export class Scene3D {
     const c = this.canvas;
     c.style.touchAction = 'none';
     c.addEventListener('pointerdown', (e) => {
+      if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle') return;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         c.setPointerCapture(e.pointerId);
@@ -777,7 +783,7 @@ export class Scene3D {
       if (this.pointers.size === 1) {
         this.dragging = this.startDrag(e.clientX, e.clientY);
         this.tap = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, az: this.dragAz, el: this.dragEl };
-      } else if (this.pointers.size === 2) {
+      } else if (this.pointers.size === 2 && !this.seedPhase) {
         // Second finger: pinch-zoom / two-finger pan instead of rotating.
         this.dragging = null;
         this.tap = null;
@@ -837,6 +843,7 @@ export class Scene3D {
       'wheel',
       (e) => {
         e.preventDefault();
+        if (this.seedPhase) return;
         const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
         this.zoomBy(Math.exp(clamp(e.deltaY * unit, -200, 200) * 0.0022), e.clientX, e.clientY);
         this.lastDrag = performance.now();
@@ -951,8 +958,63 @@ export class Scene3D {
     return { bias: best.bias, cap: Math.max(skip * 1.2, best.cap * 0.9) };
   }
 
+  /** Seedling rises out of the soil after the camera has arrived. Applied after framing so the shot stays put. */
+  private stepSprout(tree: TreeBuild, dt: number): void {
+    if (this.seedPhase !== 'sprout') return;
+    this.seedT += dt;
+    const u = clamp(this.seedT / 1.6, 0, 1);
+    const e = 1 - (1 - u) ** 3;
+    const bury = Math.max(0.28, tree.height * 1.05);
+    tree.group.scale.multiplyScalar(0.12 + 0.88 * e);
+    tree.group.position.y = (1 - e) * -bury;
+    this.leafLoop.group.scale.setScalar(tree.group.scale.x);
+    if (u >= 1) {
+      tree.group.position.y = 0;
+      this.seedPhase = 'settle';
+      this.seedT = 0;
+    }
+  }
+
+  /** Just far enough to see the whole starting island, with a little sea around the shore. */
+  private farZoom(): number {
+    const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
+    return Math.max(1.25, (islandR * 3.6) / Math.max(0.3, this.camDist));
+  }
+
+  /** Closer than the overview: the soil the seedling will break. */
+  private readonly groundZoom = 0.62;
+
+  /** Empty-island vista while the player is still choosing a tree. */
+  showFarIslands(): void {
+    this.seedPhase = 'far';
+    this.onSeed = null;
+    this.panGoal.set(0, 0, 0);
+    this.panOff.set(0, 0, 0);
+    this.zoomGoal = this.farZoom();
+    this.zoom = this.zoomGoal;
+  }
+
+  /** After the name card closes: glide in from the vista, then the seedling breaks the soil. */
+  beginArrival(reduced: boolean, done: () => void): void {
+    this.panGoal.set(0, 0, 0);
+    if (reduced) {
+      this.seedPhase = null;
+      this.onSeed = null;
+      this.zoom = this.zoomGoal = 1;
+      const tree = this.tree;
+      if (tree) tree.group.position.y = 0;
+      done();
+      return;
+    }
+    this.seedPhase = 'pull';
+    this.seedT = 0;
+    this.onSeed = done;
+    this.zoomGoal = this.groundZoom;
+  }
+
   /** Zoom by `factor` (<1 = closer), keeping the point under (x, y) fixed on screen. */
   zoomBy(factor: number, x?: number, y?: number): void {
+    if (this.seedPhase) return;
     if (!Number.isFinite(factor) || factor <= 0) return;
     if (this.followRef || this.follow) {
       this.followZoom = clamp(this.followZoom * factor, 0.35, 8);
@@ -1636,12 +1698,40 @@ export class Scene3D {
     this.camDist += (want - this.camDist) * (dt === 0 ? 1 : k);
     this.camTargetY += (wantY - this.camTargetY) * (dt === 0 ? 1 : k);
     // Zoom / pan ease toward the player's goal; the overview recentres itself.
+    // The planting shot uses a much slower glide, then hands the camera back.
     const ez = dt === 0 ? 1 : 1 - Math.exp(-dt * 9);
-    if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
-    this.zoom += (this.zoomGoal - this.zoom) * ez;
-    this.panOff.lerp(this.panGoal, ez);
+    if (this.seedPhase === 'far') {
+      this.zoomGoal = this.farZoom();
+      this.zoom = this.zoomGoal;
+    } else if (this.seedPhase === 'pull') {
+      const slow = dt === 0 ? 1 : 1 - Math.exp(-dt * 0.85);
+      this.zoom += (this.groundZoom - this.zoom) * slow;
+      this.zoomGoal = this.zoom;
+      this.panGoal.multiplyScalar(1 - slow);
+      if (this.zoom <= this.groundZoom + 0.05) {
+        this.zoom = this.zoomGoal = this.groundZoom;
+        this.seedPhase = 'sprout';
+        this.seedT = 0;
+      }
+    } else if (this.seedPhase === 'settle') {
+      const back = dt === 0 ? 1 : 1 - Math.exp(-dt * 1.6);
+      this.zoom += (1 - this.zoom) * back;
+      this.zoomGoal = this.zoom;
+      if (this.zoom >= 0.98) {
+        this.zoom = this.zoomGoal = 1;
+        this.seedPhase = null;
+        const done = this.onSeed;
+        this.onSeed = null;
+        if (done) queueMicrotask(done);
+      }
+    } else {
+      if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
+      this.zoom += (this.zoomGoal - this.zoom) * ez;
+    }
+    this.panOff.lerp(this.panGoal, this.seedPhase === 'pull' ? (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.05)) : ez);
     const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
-    if (handsOff && performance.now() - this.lastDrag > IDLE_MS) {
+    const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle';
+    if (handsOff && !planting && performance.now() - this.lastDrag > IDLE_MS) {
       if (!this.isZoomed()) this.dragEl *= 1 - Math.min(1, dt * 0.6);
       if (!input.reducedMotion) this.idleAz += dt * IDLE_SPIN;
     }
@@ -1769,6 +1859,7 @@ export class Scene3D {
 
     this.updateCareFx(input, tree, t, dt, night, camAz);
     this.updateRain(rain, wind, dt, target);
+    this.stepSprout(tree, dt);
     this.renderer.render(this.scene, this.camera);
     this.drawRays(input, t);
   }

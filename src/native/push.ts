@@ -16,6 +16,8 @@ export interface PushState {
   done: { heat: boolean; drain: boolean; reinforce: boolean; warm: boolean };
   region: { lat: number; lon: number };
   isHK: boolean;
+  /** Inside Macau: the server polls SMG on the same cadence as HKO, not the slower cell poll. */
+  isMO?: boolean;
   rUnlocked: boolean;
   alive: boolean;
   /** v1.4: tree condition for the push text (dead / 瀕死 trees still get every warning). */

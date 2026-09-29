@@ -1,17 +1,19 @@
-import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
+import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, H_MULT_TIERS, N_DAILY_USE, N_FACTOR, N_MALNOURISHED, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_NIGHT_LOSS, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
+import { coachTasks, type Coach } from './coach';
 import { ISLE_AWARDS } from './grove';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
 import { SPECIES, STAGE_NAMES, realAgeDays, speciesDef, speciesTargetCm, stageSampleCm, type SpeciesId } from './data/species';
-import { daysBetween, formatShort, weekdayIndex } from './dates';
+import { formatLong, formatShort, weekdayIndex } from './dates';
+import { soundEnabled } from './audio';
 import { drawAnimal } from './draw-animals';
 import { type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import type { HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
-import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, type NightPlan } from './sim';
+import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -50,6 +52,8 @@ export interface WeatherView {
   fetchedAt: number;
   updated: string;
   hkoUsed: boolean;
+  /** Which bureau the warnings came from. Macau uses SMG; absent means HKO when hkoUsed. */
+  bureau?: 'hko' | 'smg';
   warnings: HkoWarning[];
   messages: string[];
   situation: string;
@@ -210,7 +214,7 @@ export function previewGrowthText(p: NightPlan): string {
 /** v14 「樹齡 12 日 · 下個里程碑：1個月」. */
 export function ageText(state: GameState): string {
   const next = nextMilestone(state);
-  return `樹齡 ${state.ageDays || 0} 日${next ? ` · 下個里程碑：${next.label}` : ''}`;
+  return `樹齡 ${shownAge(state)} 日${next ? ` · 下個里程碑：${next.label}` : ''}`;
 }
 
 /** v14 % of 紀錄高度 (can pass 100%). */
@@ -355,6 +359,85 @@ export function noteToggle(): void {
 }
 
 /** Top-left weather card (with the place picker), status card, height rail, note stack and dock. */
+/** First-day checklist: water, then fertilize. The pages after each tap explain the numbers. */
+export function coachCard(c: Coach): string {
+  const rows = coachTasks(c)
+    .map((t) => `<li class="${t.done ? 'done' : ''}"><span aria-hidden="true">${t.done ? '✓' : '○'}</span>${esc(t.label)}</li>`)
+    .join('');
+  return `<p>撳發光嘅掣，認識點樣照顧。</p><ol>${rows}</ol><button type="button" class="texty" data-action="coach-skip">知道喇</button>`;
+}
+
+export type LessonId = 'water' | 'feed' | 'health';
+
+/** A stat change, with the unit: +10點 / −10點. */
+function pts(n: number): string {
+  return `${n > 0 ? '+' : ''}${n}點`;
+}
+
+/** Pages shown after the first 澆水, the first 施肥, and once both are done. */
+export function lessonPages(id: LessonId): { title: string; body: string }[] {
+  if (id === 'water') {
+    const [lo, hi] = W_OPTIMAL;
+    const dry = W_TIERS.find((t) => t.tone === 'dry')!;
+    const rot = W_TIERS.filter((t) => t.tone !== 'ok' && t.tone !== 'dry');
+    const hot = WEATHER_EVENTS.hot;
+    const rain = WEATHER_EVENTS.rainstorm;
+    const drizzle = WEATHER_EVENTS.drizzle;
+    return [
+      {
+        title: '水分',
+        body: `水分最佳範圍係 ${lo} 到 ${hi}。澆水每日 ${CARE.water.perDay} 次，一次 ${pts(CARE.water.amount)}，最多澆到 ${W_SATURATED}（泥土飽和）。疏水每日 ${CARE.drain.perDay} 次，一次 ${pts(CARE.drain.amount)}。`,
+      },
+      {
+        title: '水分點樣變',
+        body: `每晚泥土會自然流失 ${pts(-W_NIGHT_LOSS)}水分；落雨嗰晚唔流失。毛毛雨水分 ${pts(drizzle.dW)}，暴雨或者黑雨一出就 ${pts(rain.dW)}。水分過咗 ${W_SATURATED} 就開始積水，要撳疏水排走。`,
+      },
+      {
+        title: '水分同健康',
+        body: `水分 ${lo}–${hi}，當晚健康 ${pts(W_TIERS.find((t) => t.tone === 'ok')!.score)}。低過 ${lo}（${dry.label}）健康 ${pts(dry.score)}。${rot[0]!.label}（${hi + 1}–${rot[0]!.max}）健康 ${pts(rot[0]!.score)}，${rot[1]!.label}（${rot[0]!.max + 1}–${rot[1]!.max}）健康 ${pts(rot[1]!.score)}，${rot[2]!.label}（${rot[1]!.max + 1} 或以上）健康 ${pts(rot[2]!.score)}。去到 ${W_MAX} 就即刻瀕死。`,
+      },
+      {
+        title: '酷熱澆水',
+        body: `酷熱天氣警告一出，水分即刻 ${pts(hot.dW)}。撳「${emergencyName('heatWater')}」可以額外澆一次，水分 ${pts(EMERGENCY.heatWater.amount)}；做咗就唔扣 ${hot.damage}點健康，仲有應急獎勵 ${pts(EMERGENCY.bonus)}。呢一下唔計入每日 ${CARE.water.perDay} 次，水分去到 ${W_SATURATED} 都做得。酷熱會令泥土乾，所以要澆水；水太多先至疏水，暴雨就要做「暴雨疏水」。`,
+      },
+    ];
+  }
+  if (id === 'feed') {
+    const [lo, hi] = N_OPTIMAL;
+    return [
+      {
+        title: '施肥',
+        body: `施肥一次養分 ${pts(CARE.fertilize.amount)}，每日最多 ${CARE.fertilize.perDay} 次。養分唔使日日補，夠用就可以隔幾日先施。`,
+      },
+      {
+        title: '養分同健康',
+        body: `養分 ${lo}–${hi}，當晚健康 ${pts(N_FACTOR.good)}。${N_MALNOURISHED}–${lo - 1} 唔加唔減。低過 ${N_MALNOURISHED} 係營養不良，健康 ${pts(N_FACTOR.bad)}。棵樹每晚自己用 ${N_DAILY_USE}點養分。`,
+      },
+    ];
+  }
+  const fast = H_MULT_TIERS[0]!;
+  const normal = H_MULT_TIERS[1]!;
+  const weak = H_MULT_TIERS[2]!;
+  return [
+    {
+      title: '健康同樹高',
+      body: `健康度會影響今晚長高幾多。${fast.min} 或以上可以長到平常嘅 ${fast.mult} 倍，${normal.min}–${fast.min - 1} 正常，${weak.min}–${normal.min - 1} 幾乎停低（×${weak.mult}），低過 ${weak.min} 仲會縮水。跟住現實天氣細心打理：酷熱記得澆水，雨水太多就疏水，養分低先施肥。水分同養分留喺最佳範圍，棵樹先會長得高。今晚結算先會再長高。`,
+    },
+  ];
+}
+
+export function lessonModal(id: LessonId, page: number): string {
+  const pages = lessonPages(id);
+  const i = Math.max(0, Math.min(page, pages.length - 1));
+  const cur = pages[i]!;
+  const last = i === pages.length - 1;
+  const step = pages.length > 1 ? `<p class="fine">第 ${i + 1} / ${pages.length} 頁</p>` : '';
+  const btn = last
+    ? `<button type="button" class="primary" data-action="lesson-done">知道喇</button>`
+    : `<button type="button" class="primary" data-action="lesson-next">下一頁</button>`;
+  return `<p class="eyebrow">照顧</p><h2>${esc(cur.title)}</h2><p>${esc(cur.body)}</p>${step}${btn}`;
+}
+
 export function renderChrome(view: View): void {
   const { state, cond } = view;
   const card = document.getElementById('weather-card');
@@ -382,15 +465,15 @@ export function renderChrome(view: View): void {
       <button type="button" class="status-head" data-open="care"><b>樹木狀態</b>${icon('chevronRight')}</button>
       <p class="status-sub">${esc(state.treeName)} · ${esc(speciesDef(state.species).name)}${esc(stage.name)}</p>
       <p class="status-facts">
-        <span>樹齡 ${state.ageDays || 0} 日 = </span>
+        <span>樹齡 ${shownAge(state)} 日 = </span>
         <span>真實樹齡 ${realAgeDays(state.heightCm, state.species)} 日</span>
-        <span>碳吸收量<br>約 ${carbonKg(state.heightCm, state.species)} 公斤 CO₂／年</span>
+        <span class="carbon-fact">碳吸收量<br>約 ${carbonKg(state.heightCm, state.species)} 公斤 CO₂／年</span>
       </p>
       <div class="bars">
         ${statBar('H', '健康', state.health, [50, 100], 'health', state.dying ? '瀕死' : '')}
         <div class="night-row">${night?.chip ?? ''}</div>
         ${waterBar(state.moisture)}
-        ${statBar('N', '養分', state.nutrients, N_OPTIMAL, 'food')}
+        ${statBar('N', '養分', state.nutrients, N_OPTIMAL, 'food', '', N_MALNOURISHED)}
         ${statBar('R', '抗風', state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked')}
       </div>
       ${state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : ''}
@@ -564,9 +647,10 @@ function sourceLabel(wx: WeatherView): string {
   if (wx.overridden) return '手動天氣（開發者）';
   if (wx.provider === 'sim') {
     if (wx.loading) return '攞緊真實天氣…';
-    return `模擬天氣・撳一下重試${wx.hkoUsed ? '（天文台警告係真嘅）' : ''}`;
+    const note = wx.bureau === 'smg' && wx.hkoUsed ? '（氣象局警告係真嘅）' : wx.hkoUsed ? '（天文台警告係真嘅）' : '';
+    return `模擬天氣・撳一下重試${note}`;
   }
-  const names = wx.provider === 'hko' ? '天文台' : wx.hkoUsed ? 'Open-Meteo／天文台' : 'Open-Meteo';
+  const names = wx.bureau === 'smg' && wx.hkoUsed ? '地球物理氣象局' : wx.provider === 'hko' ? '天文台' : wx.hkoUsed ? 'Open-Meteo／天文台' : 'Open-Meteo';
   if (wx.origin === 'cache') return `上次天氣 ${esc(wx.updated)}・${names}`;
   return `即時天氣・${names}${wx.updated ? ` · ${esc(wx.updated)}` : ''}${wx.loading ? ' · 更新緊' : ''}`;
 }
@@ -586,10 +670,12 @@ export function warnIcon(w: HkoWarning): string {
   return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path d="M10 5.5v5.5M10 13.8v.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
 }
 
-function statBar(key: string, label: string, value: number, band: readonly [number, number], tone: string, flag = ''): string {
+function statBar(key: string, label: string, value: number, band: readonly [number, number], tone: string, flag = '', warnAt?: number): string {
   const v = Math.round(Math.max(0, Math.min(100, value)));
   const ok = v >= band[0] && v <= band[1];
-  return `<div class="bar ${tone} ${ok ? 'ok' : 'off'}" title="${label} 最佳 ${band[0]}–${band[1]}">
+  const mid = !ok && warnAt !== undefined && v >= warnAt;
+  const state = ok ? 'ok' : mid ? 'mid' : 'off';
+  return `<div class="bar ${tone} ${state}" title="${label} 最佳 ${band[0]}–${band[1]}">
     <span class="bar-key">${key}</span><span class="bar-label">${label}</span>
     <span class="bar-track"><span class="bar-band" style="left:${band[0]}%;width:${band[1] - band[0]}%"></span><span class="bar-fill" style="width:${v}%"></span></span>
     <b class="bar-val">${flag ? esc(flag) : v}</b>
@@ -628,35 +714,100 @@ const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }
 
 let sheetKey = '';
 
+/** Visible month (YYYY-MM) and the day whose log is open. Empty day means the calendar only. */
+let calMonth = '';
+let calDay = '';
+
+export function openLogCalendar(today: string): void {
+  calMonth = today.slice(0, 7);
+  calDay = '';
+  sheetKey = '';
+}
+
+export function selectLogDay(ymd: string): void {
+  calDay = ymd;
+  calMonth = ymd.slice(0, 7);
+  sheetKey = '';
+}
+
+export function moveLogMonth(delta: number, today: string): void {
+  const base = calMonth || today.slice(0, 7);
+  const [y, m] = base.split('-').map(Number);
+  const dt = new Date(Date.UTC(y!, (m ?? 1) - 1 + delta, 1));
+  const next = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
+  if (next > today.slice(0, 7)) return;
+  calMonth = next;
+  if (!calDay.startsWith(calMonth)) calDay = '';
+  sheetKey = '';
+}
+
+function daysInMonth(ym: string): number {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+}
+
+/** up: health rose or held 100. down: health fell. flat: unchanged and still under 100. */
+export function healthDayMark(entries: LogEntry[], isToday: boolean, healthNow: number): 'up' | 'down' | 'flat' | '' {
+  const settle = entries.find((e) => e.kind === 'settle') ?? entries.find((e) => /健康\s*\d+\s*→\s*\d+/.test(e.text));
+  const match = settle?.text.match(/健康\s*(\d+)\s*→\s*(\d+)/);
+  if (match) {
+    const before = Number(match[1]);
+    const after = Number(match[2]);
+    if (after < before) return 'down';
+    if (after > before || after >= 100) return 'up';
+    return 'flat';
+  }
+  if (!isToday) return '';
+  return healthNow >= 100 ? 'up' : 'flat';
+}
+
+export function logCalendarHtml(log: LogEntry[], today: string, month: string, day: string, healthNow = 0): string {
+  const [y, m] = month.split('-').map(Number);
+  const count = daysInMonth(month);
+  const lead = weekdayIndex(`${month}-01`);
+  const byDate = new Map<string, LogEntry[]>();
+  for (const entry of log) {
+    const list = byDate.get(entry.date) ?? [];
+    list.push(entry);
+    byDate.set(entry.date, list);
+  }
+  const cells: string[] = [];
+  for (let i = 0; i < lead; i++) cells.push('<span></span>');
+  for (let d = 1; d <= count; d++) {
+    const ymd = `${month}-${String(d).padStart(2, '0')}`;
+    const mark = ymd > today ? '' : healthDayMark(byDate.get(ymd) ?? [], ymd === today, healthNow);
+    const cls = ['cal-day', mark, ymd === today ? 'today' : '', ymd === day ? 'on' : ''].filter(Boolean).join(' ');
+    cells.push(`<button type="button" class="${cls}" data-cal="${ymd}"${ymd === today ? ' aria-current="date"' : ''}${ymd > today ? ' disabled' : ''}>${d}</button>`);
+  }
+  const rows = day ? log.filter((e) => e.date === day) : [];
+  const detail = !day
+    ? ''
+    : rows.length
+      ? `<h4 class="log-day">${esc(formatLong(day))}</h4><ol class="log-list">${rows.map((row) => logRow(row)).join('')}</ol>`
+      : `<h4 class="log-day">${esc(formatLong(day))}</h4><p class="empty">呢日未有紀錄。</p>`;
+  return `
+    <div class="cal">
+      <div class="cal-nav">
+        <button type="button" data-cal-nav="prev" aria-label="上個月">‹</button>
+        <b>${y}年${m}月</b>
+        <button type="button" data-cal-nav="next" aria-label="下個月"${month >= today.slice(0, 7) ? ' disabled' : ''}>›</button>
+      </div>
+      <div class="cal-week">${WEEK.map((w) => `<span>${w}</span>`).join('')}</div>
+      <div class="cal-grid">${cells.join('')}</div>
+    </div>
+    ${detail}`;
+}
+
 export function renderSheet(state: GameState, today: string): void {
   const body = document.getElementById('sheet-body');
   const title = document.getElementById('sheet-title');
   if (!body) return;
-  const key = `${today}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}`;
-  if (title) {
-    const todays = state.log.filter((e) => e.date === today).length;
-    title.innerHTML = `成長日誌${todays ? `<small>今日 ${todays} 則</small>` : ''}`;
-  }
+  if (title) title.textContent = '成長日誌';
+  if (!calMonth || calMonth > today.slice(0, 7)) calMonth = today.slice(0, 7);
+  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}`;
   if (key === sheetKey) return;
   sheetKey = key;
-  if (!state.log.length) {
-    body.innerHTML = '<p class="empty">仲未有紀錄。澆水、施肥或者等動物來訪，都會寫低喺度。</p>';
-    return;
-  }
-  let lastDate = '';
-  const parts: string[] = [];
-  for (const entry of state.log) {
-    if (entry.date !== lastDate) {
-      if (lastDate) parts.push('</ol>');
-      lastDate = entry.date;
-      const diff = daysBetween(entry.date, today);
-      const label = diff === 0 ? '今日' : diff === 1 ? '昨日' : `${formatShort(entry.date)}（${WEEK[weekdayIndex(entry.date)] ?? ''}）`;
-      parts.push(`<h4 class="log-day">${esc(label)}</h4><ol class="log-list">`);
-    }
-    parts.push(logRow(entry));
-  }
-  parts.push('</ol>');
-  body.innerHTML = parts.join('');
+  body.innerHTML = logCalendarHtml(state.log, today, calMonth, calDay, state.health);
 }
 
 function logRow(entry: LogEntry): string {
@@ -913,12 +1064,15 @@ export function weatherPageHtml(view: View): string {
       ? `<ul class="hko-warns">${wx.warnings.map((w) => `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(w.name)}</b></span></li>`).join('')}</ul>`
       : '<p>而家冇天氣警告生效。</p>';
     warns += `${wx.messages.length ? `<p class="fine">${wx.messages.map(esc).join('<br>')}</p>` : ''}${wx.situation ? `<p class="fine">${esc(wx.situation)}</p>` : ''}`;
+  } else if (wx.bureau === 'smg') {
+    warns = '<p>地球物理氣象局暫時攞唔到，以下預報嚟自 Open-Meteo。</p>';
   } else {
     warns = `<p>${wx.overridden ? '手動天氣（開發者）：冇真實警告。' : '你喺香港以外，冇天文台警告；以下預報嚟自 Open-Meteo。'}</p>`;
   }
   const cd = view.countdown;
   const soon = cd && !wx.overridden ? `<p class="fine wx-soon">${icon('warn')}${cd.active ? '而家' : '預報'}：${esc(ev(cd.event).label)} · ${esc(hoursText(cd.hours))}（${esc(cd.source)}）</p>` : '';
-  const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? '香港天文台・生效中警告' : '天氣警告'}</p>${warns}${soon}</article>`;
+  const office = wx.bureau === 'smg' ? '地球物理氣象局・生效中警告' : '香港天文台・生效中警告';
+  const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? office : '天氣警告'}</p>${warns}${soon}</article>`;
   const rows = view.forecast
     .map((day) => {
       const today = day.date === view.today ? ' today' : '';
@@ -926,7 +1080,7 @@ export function weatherPageHtml(view: View): string {
         <span class="day-art">${weatherArt(day.code, false, false, day.hkoIcon)}</span>
         <div><strong>${day.date === view.today ? '今日' : `星期${WEEK[weekdayIndex(day.date)] ?? ''}`}</strong><span>${esc(formatShort(day.date))}</span></div>
         <div><b>${esc(dayLabel(day))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
-        ${wx.hkoDays[day.date] ? `<p class="hko-day">天文台：${esc(wx.hkoDays[day.date]!)}</p>` : ''}
+        ${wx.hkoDays[day.date] ? `<p class="hko-day">${wx.bureau === 'smg' ? '氣象局' : '天文台'}：${esc(wx.hkoDays[day.date]!)}</p>` : ''}
       </article>`;
     })
     .join('');
@@ -1032,7 +1186,7 @@ function milestoneTab(view: View): string {
     return `<li class="${got ? 'done' : ''}"><strong>${esc(m.label)}（${m.days} 日）</strong><span>${got ? esc(awardTier(got)) : age < m.days ? `仲有 ${m.days - age} 日` : ''}</span><p>${got ? `${esc(got.date)} · ${esc(formatHeight(got.heightCm))}（紀錄 ${Math.round(got.share * 100)}%）${got.retro ? ' · v14 補發' : ''}` : `照顧 ×1 預計約 ${exp}%：金 ≥ ${Math.round(exp * 0.98)}%、銀 ≥ ${Math.round(exp * 0.88)}%，其他銅`}${m.perk ? `・附送${esc(BADGES[m.perk].name)}` : ''}</p></li>`;
   }).join('');
   const rec = state.milestones?.record;
-  const recRow = `<li class="${rec ? 'done' : ''}"><strong>${esc(RECORD_MILESTONE.label)}</strong><span>${rec ? TIER_ICON.record : `${pct}%`}</span><p>${rec ? `${esc(rec.date)} · ${esc(formatHeight(rec.heightCm))}（樹齡 ${rec.ageDays} 日）` : `長過 ${esc(formatHeight(R))}（${esc(sp.name)}真實紀錄 ${sp.maxM} 米取整）`}</p></li>`;
+  const recRow = `<li class="${rec ? 'done' : ''}"><strong>${esc(RECORD_MILESTONE.label)}</strong><span>${rec ? TIER_ICON.record : `${pct}%`}</span><p>${rec ? `${esc(rec.date)} · ${esc(formatHeight(rec.heightCm))}（樹齡 ${shownAge({ ageDays: rec.ageDays, started: true })} 日）` : `長過 ${esc(formatHeight(R))}（${esc(sp.name)}真實紀錄 ${sp.maxM} 米取整）`}</p></li>`;
   const collection = meta.milestones?.length
     ? `<ol class="miles">${meta.milestones
         .slice()
@@ -1092,7 +1246,7 @@ function achievementTab(view: View): string {
     ? `<ol class="miles">${collected
         .slice()
         .reverse()
-        .map((m) => `<li class="done"><strong>${esc(weatherAchievementCopy(m.id).title)}</strong><span>已拎</span><p>${esc(m.treeName)}（${esc(speciesDef(m.species).name)}）· ${esc(m.date)} · 樹齡 ${m.ageDays} 日</p></li>`)
+        .map((m) => `<li class="done"><strong>${esc(weatherAchievementCopy(m.id).title)}</strong><span>已拎</span><p>${esc(m.treeName)}（${esc(speciesDef(m.species).name)}）· ${esc(m.date)} · 樹齡 ${shownAge({ ageDays: m.ageDays, started: true })} 日</p></li>`)
         .join('')}</ol>`
     : '<p class="fine">未有成就。</p>';
   const earnedIsle = new Set((meta.isle ?? []).map((a) => a.id));
@@ -1103,6 +1257,7 @@ function achievementTab(view: View): string {
   return `
     <h3 class="sub">島嶼</h3>
     <ol class="miles">${isles}</ol>
+    <h3 class="sub">天氣</h3>
     <ol class="miles">${groups}</ol>
     <h3 class="sub">成就收藏</h3>
     ${collection}
@@ -1174,12 +1329,13 @@ export function toast(message: string): void {
   toastTimer = window.setTimeout(() => el.classList.remove('show'), 3600);
 }
 
-export function openModal(inner: string, cls = ''): void {
-  const modal = document.getElementById('modal');
-  if (!modal) return;
-  modal.innerHTML = `<div class="modal-card glass ${cls}" role="dialog" aria-modal="true">${inner}</div>`;
-  modal.hidden = false;
-  paintThumbs();
+let modalTick = 0;
+
+function modalFadeMs(): number {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 420;
+}
+
+function focusModal(modal: HTMLElement): void {
   const field = modal.querySelector('input');
   if (field instanceof HTMLInputElement) {
     field.focus();
@@ -1189,19 +1345,61 @@ export function openModal(inner: string, cls = ''): void {
   }
 }
 
-/** Re-render the open modal without moving focus (season / species picker). */
-export function updateModal(inner: string): void {
-  const card = document.querySelector('#modal .modal-card');
-  if (!card) return openModal(inner);
-  card.innerHTML = inner;
-  paintThumbs();
-}
-
-export function closeModal(): void {
+export function openModal(inner: string, cls = ''): void {
   const modal = document.getElementById('modal');
   if (!modal) return;
-  modal.hidden = true;
-  modal.innerHTML = '';
+  const tick = ++modalTick;
+  const paint = () => {
+    if (tick !== modalTick) return;
+    modal.innerHTML = `<div class="modal-card glass ${cls}" role="dialog" aria-modal="true">${inner}</div>`;
+    modal.hidden = false;
+    modal.classList.remove('leaving', 'in');
+    paintThumbs();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (tick !== modalTick) return;
+      modal.classList.add('in');
+      focusModal(modal);
+    }));
+  };
+  if (!modal.hidden && modal.classList.contains('in')) {
+    modal.classList.remove('in');
+    modal.classList.add('leaving');
+    window.setTimeout(paint, modalFadeMs());
+  } else {
+    paint();
+  }
+}
+
+/** Re-render the open modal without moving focus (season / species picker, lesson pages). */
+export function updateModal(inner: string): void {
+  const card = document.querySelector<HTMLElement>('#modal .modal-card');
+  if (!card) return openModal(inner);
+  const tick = ++modalTick;
+  card.classList.add('swap');
+  window.setTimeout(() => {
+    if (tick !== modalTick) return;
+    card.innerHTML = inner;
+    paintThumbs();
+    requestAnimationFrame(() => card.classList.remove('swap'));
+  }, modalFadeMs() ? 180 : 0);
+}
+
+export function closeModal(then?: () => void): void {
+  const modal = document.getElementById('modal');
+  if (!modal || modal.hidden) {
+    then?.();
+    return;
+  }
+  const tick = ++modalTick;
+  modal.classList.remove('in');
+  modal.classList.add('leaving');
+  window.setTimeout(() => {
+    if (tick !== modalTick) return;
+    modal.hidden = true;
+    modal.innerHTML = '';
+    modal.classList.remove('leaving', 'in');
+    then?.();
+  }, modalFadeMs());
 }
 
 export interface Pick {
@@ -1236,12 +1434,21 @@ export function startModal(current: string, meta: MetaState, rename: boolean, pi
     <div class="species-pick">${cards}</div>
     <p class="species-blurb"><b>${esc(chosen.name)}</b>：${esc(chosen.blurb)}</p>
     <p class="fine">紀錄高度 ${chosen.targetM} 米（真實紀錄 ${chosen.maxM} 米）・頭一晚基本生長約 ${baseDailyGrowth(R, START.heightCm).toFixed(0)} 厘米・照顧 ×1 一年約 ${Math.round(expectedShare(365) * chosen.targetM)} 米</p>
+    <button type="button" class="primary" data-action="pick-species">下一步</button>`;
+}
+
+/** Name comes after the species is chosen, on its own page. */
+export function nameModal(current: string): string {
+  return `
+    <p class="eyebrow">世界之樹</p>
+    <h2>為棵樹改名</h2>
+    <p>個名之後都可以喺設定改。</p>
     <label>樹的名字<input id="tree-name" maxlength="12" value="${esc(current)}" autocomplete="off" /></label>
-    <button type="button" class="primary" data-action="start-game">種${esc(chosen.name)}</button>`;
+    <button type="button" class="primary" data-action="start-game">種低</button>
+    <button type="button" class="texty" data-action="back-species">返回揀樹</button>`;
 }
 
 export function overModal(state: GameState, meta: MetaState, lines: string[]): string {
-  const over = state.over!;
   const got = lines.length ? `<ul class="badges">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
   const kept = Object.values(state.milestones ?? {}).length;
   const wxKept = Object.keys(state.wx?.awards ?? {}).length;
@@ -1249,9 +1456,9 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
   return `
     <p class="eyebrow">結算</p>
     <h2>${esc(state.treeName)}枯死咗</h2>
-    <p>樹齡 ${state.ageDays || over.days} 日，高 ${esc(formatHeight(state.heightCm))}（紀錄高度 ${recordPct(state)}%），碳吸收量約 ${carbonKg(state.heightCm, state.species)} 公斤／年。</p>
+    <p>樹齡 ${shownAge(state)} 日，高 ${esc(formatHeight(state.heightCm))}（紀錄高度 ${recordPct(state)}%），碳吸收量約 ${carbonKg(state.heightCm, state.species)} 公斤／年。</p>
     ${got}
-    <p>${keptLine}再種一棵，樹齡由 0 開始。</p>
+    <p>${keptLine}再種一棵，樹齡由第 1 日開始。</p>
     <p class="fine">能力徽章：一級 ${meta.badges['1']}・二級 ${meta.badges['2']}・三級 ${meta.badges['3']}</p>
     <button type="button" class="primary" data-action="new-game">再種一棵</button>`;
 }
@@ -1348,6 +1555,7 @@ export function locationModal(current: string): string {
 
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
 export function settingsModal(treeName: string, quality: 'low' | 'high', threeD: boolean, notify: boolean | null = null): string {
+  const soundOn = soundEnabled();
   return `
     <p class="eyebrow">設定</p>
     <h2>${esc(treeName)}</h2>
@@ -1360,6 +1568,13 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
       <div class="seg">
         <button type="button" class="${quality === 'low' ? 'on' : ''}" data-quality="low" ${threeD ? '' : 'disabled'}>慳電</button>
         <button type="button" class="${quality === 'high' ? 'on' : ''}" data-quality="high" ${threeD ? '' : 'disabled'}>精緻</button>
+      </div>
+    </div>
+    <div class="setting-row">
+      <span>聲音</span>
+      <div class="seg">
+        <button type="button" class="${soundOn ? 'on' : ''}" data-sound="1" aria-pressed="${soundOn}">開</button>
+        <button type="button" class="${soundOn ? '' : 'on'}" data-sound="0" aria-pressed="${!soundOn}">關</button>
       </div>
     </div>
     ${
@@ -1442,7 +1657,7 @@ export function railHtml(state: GameState): string {
     return `
       <span class="rail-top ${p > 0.9 ? 'dim' : ''}"><small>下一階段</small><b>${esc(formatHeight(stage.nextCm))}</b><small>${esc(next.name)}</small></span>
       <span class="rail-track"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span><span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>${pct}</small></span></span>
-      <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
+      <span class="rail-bottom"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
   }
   const beyond = state.heightCm > target;
   const top = beyond ? niceCeilCm(state.heightCm * 1.15) : target;
@@ -1453,5 +1668,5 @@ export function railHtml(state: GameState): string {
   return `
       <span class="rail-top ${!beyond && p > 0.9 ? 'dim' : ''} ${beyond ? 'beyond' : ''}"><small>${beyond ? '超越紀錄' : '紀錄高度'}</small><b>${esc(formatHeight(top))}</b><small>${beyond ? '冇上限' : '可以繼續長'}</small></span>
       <span class="rail-track ${beyond ? 'beyond' : ''}"><span class="rail-fill" style="height:${(p * 100).toFixed(1)}%"></span>${tick}<span class="rail-marker" style="bottom:${(p * 100).toFixed(1)}%"><b>${esc(formatHeight(state.heightCm))}</b><small>${pct}</small></span></span>
-      <span class="rail-bottom ${p < 0.14 ? 'dim' : ''}"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
+      <span class="rail-bottom"><b>${esc(formatHeight(stage.minCm))}</b><small>${esc(stage.name)}</small></span>`;
 }

@@ -10,7 +10,7 @@ export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
 
 /** Where the numbers came from: Open-Meteo model data, HKO observations/forecast, or the built-in simulation. */
-export type WeatherProvider = 'open-meteo' | 'hko' | 'sim';
+export type WeatherProvider = 'open-meteo' | 'hko' | 'smg' | 'sim';
 
 export interface WeatherSnapshot {
   lat: number;
@@ -71,16 +71,31 @@ interface OpenMeteoDaily {
   sunset?: string[];
 }
 
+/**
+ * Hong Kong only. HKO stations and warnings cover this territory.
+ * West of Sha Tau Kok the Sham Chun River is the border, so Shenzhen just north of Lo Wu is outside.
+ */
 export function inHongKong(lat: number, lon: number): boolean {
-  return lat >= 22.13 && lat <= 22.58 && lon >= 113.82 && lon <= 114.45;
+  if (lat < 22.15 || lat > 22.56 || lon < 113.83 || lon > 114.45) return false;
+  if (lon <= 114.14 && lat > 22.53) return false;
+  return true;
 }
 
-/** Hong Kong plus Shenzhen/Macau/Pearl River Delta edge, where HKO warnings are still the relevant ones. */
+/**
+ * Macau SAR only (peninsula, Taipa, Cotai, Coloane, and the University of Macau campus).
+ * Tight on purpose so Zhuhai and Hengqin stay on Open-Meteo.
+ */
+export function inMacau(lat: number, lon: number): boolean {
+  return lat >= 22.106 && lat <= 22.217 && lon >= 113.528 && lon <= 113.605;
+}
+
+/** Same as Hong Kong. Shenzhen, Zhuhai and the rest of the delta use Open-Meteo; HKO does not observe them. */
 export function nearHongKong(lat: number, lon: number): boolean {
-  return lat >= 21.8 && lat <= 22.9 && lon >= 113.3 && lon <= 114.7;
+  return inHongKong(lat, lon);
 }
 
 export function describePlace(lat: number, lon: number, timezone: string): string {
+  if (inMacau(lat, lon) || timezone === 'Asia/Macau') return '澳門';
   if (inHongKong(lat, lon) || timezone === 'Asia/Hong_Kong') return '香港';
   const city = timezone.split('/').pop()?.replaceAll('_', ' ');
   return city || '當地';

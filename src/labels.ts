@@ -17,8 +17,9 @@ export function labelRegion(): Region {
   return current;
 }
 
-/** Region of a location: HK / near-HK / fallback / chosen HK place = 'hk'; a real GPS fix elsewhere = 'intl'. */
-export function regionFor(source: string, nearHk: boolean): Region {
+/** Region of a location: Hong Kong / Macau / fallback / chosen HK place = 'hk'; a real GPS fix elsewhere = 'intl'. */
+export function regionFor(source: string, nearHk: boolean, inMo = false): Region {
+  if (inMo) return 'hk';
   return source !== 'geo' || nearHk ? 'hk' : 'intl';
 }
 

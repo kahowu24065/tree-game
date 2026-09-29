@@ -239,7 +239,8 @@ describe('v15 地區名稱', () => {
   it('定位拒絕（fallback）同揀咗嘅地點當香港；GPS 喺外地先係外地', () => {
     expect(regionFor('fallback', false)).toBe('hk');
     expect(regionFor('manual', false)).toBe('hk');
-    expect(regionFor('geo', nearHongKong(22.54, 114.05))).toBe('hk'); // 深圳
+    expect(regionFor('geo', nearHongKong(22.31, 114.23))).toBe('hk'); // 觀塘
+    expect(regionFor('geo', nearHongKong(22.54, 114.05))).toBe('intl'); // 深圳：天文台冇觀測，跟 Open-Meteo
     expect(regionFor('geo', nearHongKong(51.5, -0.12))).toBe('intl'); // London
     expect(regionFor('geo', nearHongKong(25.2, 55.27))).toBe('intl'); // Dubai
   });

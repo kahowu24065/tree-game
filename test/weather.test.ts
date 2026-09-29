@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
 import { dayEvent, hkoWarningEvents, severeCountdown } from '../src/events';
-import { condFromForecast, dayLabel, districtRain, isRainCode, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, nearHongKong, parseOpenMeteo } from '../src/weather';
+import { condFromForecast, dayLabel, districtRain, isRainCode, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, inMacau, nearHongKong, parseOpenMeteo } from '../src/weather';
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')) as unknown;
 
@@ -151,8 +151,16 @@ describe('地名', () => {
   it('香港用分區名，香港附近判斷正確', () => {
     expect(parseBigDataCloud(fixture('bdc-shatin.json'))).toEqual({ name: '沙田區', district: '沙田區' });
     expect(parseBigDataCloud({ countryCode: 'JP', city: '東京', localityInfo: { administrative: [] } })).toEqual({ name: '東京' });
-    expect(nearHongKong(22.54, 114.05)).toBe(true);
+    expect(nearHongKong(22.31, 114.23)).toBe(true); // 觀塘
+    expect(nearHongKong(22.5, 114.13)).toBe(true); // 上水
+    expect(nearHongKong(22.54, 114.05)).toBe(false); // 深圳
+    expect(nearHongKong(22.27, 113.57)).toBe(false); // 珠海
     expect(nearHongKong(35.68, 139.76)).toBe(false);
+    expect(inMacau(22.198, 113.544)).toBe(true);
+    expect(inMacau(22.124, 113.565)).toBe(true);
+    expect(nearHongKong(22.198, 113.544)).toBe(false);
+    expect(inMacau(22.27, 113.57)).toBe(false);
+    expect(inMacau(22.12, 113.48)).toBe(false);
   });
 });
 

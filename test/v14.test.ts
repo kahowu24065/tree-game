@@ -202,7 +202,7 @@ describe('v14 樹齡里程碑', () => {
 
   it('狀態文字：樹齡同下個里程碑、% 紀錄高度（可以過 100%）', () => {
     const s = tree('banyan', { ageDays: 12, heightCm: 900 });
-    expect(ageText(s)).toBe('樹齡 12 日 · 下個里程碑：1個月');
+    expect(ageText(s)).toBe('樹齡 13 日 · 下個里程碑：1個月');
     expect(recordPct(s)).toBe(30);
     s.heightCm = 3300;
     expect(recordPct(s)).toBe(110);

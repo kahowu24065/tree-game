@@ -1,5 +1,6 @@
 // 世界之樹 push relay.
 //  • HK devices: polls HKO warnsum; a warning issued / upgraded → push.
+//  • Macau devices (isMO): polls SMG on the same interval as HKO.
 //  • Other devices: per 0.5° cell, Open-Meteo + the game's own rules (src/intl.js) every ~20 min → push new events.
 //  • v1.4: downgrades / cancellations push as info; dead / 瀕死 trees still get warnings (with a state line);
 //    wind warnings before 青年樹 become real-life safety notices; the action push / 2 h reminder is skipped once
@@ -11,6 +12,7 @@ import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderF
 import { cellKey, currentEventsIntl, forecastUrl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
 import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
+import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
 
 const PORT = Number(process.env.PORT || 8080);
@@ -27,6 +29,7 @@ const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 const store = new TokenStore(path.join(DATA, 'tokens.json'));
 const fcm = await createSender();
 let lastPoll = null;
+let lastSmgPoll = null;
 let lastCellPoll = null;
 let lastError = null;
 
@@ -51,15 +54,24 @@ if (!alerts) {
   if (legacy) alerts.hk = stepScope(null, legacy, Date.now()).state;
 }
 alerts.cells ??= {};
+alerts.mo ??= null;
 
-const isHkDevice = (r) => !r.state || r.state.isHK;
+const isMoDevice = (r) => r.state?.isMO === true;
+const isHkDevice = (r) => !isMoDevice(r) && (!r.state || r.state.isHK);
+
+const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
+const SMG_HOST = { xml: 'https://xml.smg.gov.mo', rss: 'https://rss.smg.gov.mo' };
+
+function forSmg(msg) {
+  return { ...msg, title: msg.title.replaceAll('天文台', '地球物理氣象局'), body: msg.body.replaceAll('天文台', '地球物理氣象局') };
+}
 
 /** Send `base` (issue / reminder / drop) to the devices that should get it, grouped by their personalised text. */
-async function push(records, kind, base, hk) {
+async function push(records, kind, base, hk, localize = (m) => m) {
   const groups = new Map();
   for (const r of records) {
     if (!shouldNotify(r.state, base.category, Date.now(), kind)) continue;
-    const msg = deviceMessage(base, r.state, kind, hk);
+    const msg = localize(deviceMessage(base, r.state, kind, hk));
     const key = `${msg.title}\n${msg.body}`;
     if (!groups.has(key)) groups.set(key, { msg, tokens: [] });
     groups.get(key).tokens.push(r.token);
@@ -92,12 +104,38 @@ async function pollHko() {
   }
 }
 
+async function pollSmg() {
+  try {
+    const load = async (host, file) => {
+      const res = await fetch(`${SMG_HOST[host]}/${file}`, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`SMG ${file} ${res.status}`);
+      return res.text();
+    };
+    const [typhoon, rain, temp] = await Promise.all([
+      load('xml', 'c_typhoon.xml'),
+      load('xml', 'c_rainstorm.xml'),
+      load('rss', 'c_temperatureAlert_rss.xml'),
+    ]);
+    const levels = levelsFromWarnsum(warnsumFromSmg({ typhoon, rain, temp }));
+    const { state, fresh, reminders, drops } = stepScope(alerts.mo, levels, Date.now());
+    alerts.mo = state;
+    writeJson(ALERTS_FILE, alerts);
+    const mo = store.records().filter(isMoDevice);
+    for (const w of fresh) await push(mo, 'issue', messageFor(w), true, forSmg);
+    for (const w of drops) await push(mo, 'drop', dropMessageFor(w), true, forSmg);
+    for (const w of reminders) await push(mo, 'reminder', reminderFor(w), true, forSmg);
+    lastSmgPoll = new Date().toISOString();
+  } catch (e) {
+    console.error('[smg]', String(e?.message ?? e));
+  }
+}
+
 async function pollCells() {
   const now = Date.now();
   const byCell = new Map();
   for (const r of store.records()) {
     const s = r.state;
-    if (!s || s.isHK || !s.region || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
+    if (!s || s.isHK || s.isMO || !s.region || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
     const key = cellKey(s.region.lat, s.region.lon);
     if (!byCell.has(key)) byCell.set(key, []);
     byCell.get(key).push(r);
@@ -129,12 +167,12 @@ async function pollCells() {
 
 // Simple per-IP rate limit for the device endpoints: 30 requests / 10 min.
 const hits = new Map();
-function limited(ip) {
+function limited(ip, cap = 30) {
   const now = Date.now();
   const list = (hits.get(ip) ?? []).filter((t) => now - t < 600_000);
   list.push(now);
   hits.set(ip, list);
-  return list.length > 30;
+  return list.length > cap;
 }
 setInterval(() => {
   const now = Date.now();
@@ -175,6 +213,21 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, CORS);
     return res.end();
   }
+  if (req.method === 'GET' && url.pathname.startsWith('/smg/')) {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    if (limited(ip, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
+    const rel = url.pathname.slice('/smg/'.length);
+    const host = rel.split('/')[0];
+    if (!SMG_ALLOW.has(rel) || !SMG_HOST[host]) return send(res, 404, { ok: false });
+    try {
+      const upstream = await fetch(`${SMG_HOST[host]}/${rel.slice(host.length + 1)}`, { signal: AbortSignal.timeout(12_000) });
+      const text = await upstream.text();
+      res.writeHead(upstream.ok ? 200 : upstream.status, { 'content-type': 'application/xml; charset=utf-8', ...CORS });
+      return res.end(text);
+    } catch (e) {
+      return send(res, 502, { ok: false, error: String(e?.message ?? e) });
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/health') {
     const recs = store.records();
     return send(res, 200, {
@@ -184,6 +237,7 @@ const server = http.createServer(async (req, res) => {
       withState: recs.filter((r) => r.state).length,
       cells: Object.keys(alerts.cells).length,
       lastPoll,
+      lastSmgPoll,
       lastCellPoll,
       lastError,
       levels: alerts.hk?.levels ?? null,
@@ -216,8 +270,10 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { ok: false });
 });
 
-server.listen(PORT, HOST, () => console.log(`[server] http://${HOST}:${PORT} · ${store.size} devices · HKO every ${POLL_MS / 1000}s, cells every ${CELL_POLL_MS / 60000} min`));
+server.listen(PORT, HOST, () => console.log(`[server] http://${HOST}:${PORT} · ${store.size} devices · HKO and SMG every ${POLL_MS / 1000}s, cells every ${CELL_POLL_MS / 60000} min`));
 await pollHko();
+void pollSmg();
 setInterval(pollHko, POLL_MS);
+setInterval(() => void pollSmg(), POLL_MS);
 setTimeout(() => void pollCells(), 30_000);
 setInterval(() => void pollCells(), CELL_POLL_MS);

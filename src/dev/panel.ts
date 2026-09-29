@@ -7,6 +7,7 @@ import type { DevApi } from '../main';
 import { settlementCard } from '../ui';
 import { esc } from '../util';
 import { eventLabel } from '../labels';
+import { shownAge } from '../sim';
 import { SPECIES, STAGE_NAMES, type SpeciesId } from '../data/species';
 import { ANIMALS, CATEGORY_LABEL } from '../data/animals';
 
@@ -100,7 +101,7 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
         <button type="button" data-dev="fx-dying">瀕死</button>
         <button type="button" class="danger" data-dev="fx-death">枯死（動畫）</button>
       </div>
-      <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米・樹齡 ${s.ageDays || 0} 日・里程碑 ${Object.keys(s.milestones ?? {}).join('、') || '冇'}</p>
+      <p class="dev-note">倒塌 ${s.collapses || 0}/2${s.doubleRDate ? `・雙倍加固日 ${esc(s.doubleRDate)}` : ''}${s.doubleRPending ? '・雙倍加固待開始' : ''}・高度 ${Math.round(s.heightCm)} 厘米・樹齡 ${shownAge(s)} 日・里程碑 ${Object.keys(s.milestones ?? {}).join('、') || '冇'}</p>
       <h4 class="dev-h">樹種・生長階段預覽</h4>
       <div class="dev-row">
         <label>樹種 <select data-dev-species><option value="">（存檔：${esc(SPECIES.find((x) => x.id === s.species)?.name ?? '')}）</option>${SPECIES.map((x) => `<option value="${x.id}" ${d.preview.species === x.id ? 'selected' : ''}>${esc(x.name)}（紀錄 ${x.targetM} 米）</option>`).join('')}</select></label>

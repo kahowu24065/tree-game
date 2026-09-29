@@ -156,7 +156,7 @@ export const GROWTH_FLOOR_SHARE = 0.0002;
 export type AgeMilestoneId = 'm30' | 'm90' | 'm182' | 'm365' | 'm730' | 'm1095';
 export type MilestoneId = AgeMilestoneId | 'record';
 export type MilestoneTier = 'gold' | 'silver' | 'bronze';
-/** 樹齡里程碑 (age = nights settled since planting). `perk`: the old perk badge (一級／二級／三級) it also grants. */
+/** 樹齡里程碑 (stored age = nights settled; the card shows the planting day as day 1). `perk`: the old perk badge (一級／二級／三級) it also grants. */
 export const AGE_MILESTONES: readonly { id: AgeMilestoneId; days: number; label: string; perk?: 1 | 2 | 3 }[] = [
   { id: 'm30', days: 30, label: '1個月' },
   { id: 'm90', days: 90, label: '3個月', perk: 1 },

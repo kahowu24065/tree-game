@@ -858,6 +858,12 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   return { settlement, messages, died, revived, milestones };
 }
 
+/** Player-facing 樹齡. The planting day is day 1; each settled night adds one. Unplanted games stay at 0. */
+export function shownAge(state: { ageDays?: number; started?: boolean }): number {
+  const nights = state.ageDays || 0;
+  return state.started === false ? nights : nights + 1;
+}
+
 /** v14: the next age milestone not reached yet (null after 3年). */
 export function nextMilestone(state: GameState): (typeof AGE_MILESTONES)[number] | null {
   return AGE_MILESTONES.find((m) => !state.milestones?.[m.id] && m.days > (state.ageDays || 0)) ?? AGE_MILESTONES.find((m) => !state.milestones?.[m.id]) ?? null;

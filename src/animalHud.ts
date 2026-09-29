@@ -1,5 +1,6 @@
 import type { AnimalArrival, AnimalMarker } from './three/animals3d';
 import type { AnimalCategory, LookKind, Motion } from './data/animals';
+import { playAnimal } from './audio';
 import { esc } from './util';
 
 /**
@@ -234,7 +235,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   }
 
   function hudRects(): Rect[] {
-    const ids = ['weather-card', 'status-card', 'rail', 'sheet', 'dock', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint'];
+    const ids = ['weather-card', 'status-card', 'rail', 'sheet', 'dock', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint', 'coach'];
     const out: Rect[] = [];
     for (const id of ids) {
       const el = document.getElementById(id);
@@ -313,6 +314,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
 
   function updateToast(time: number): void {
     const fresh = scene.takeArrivals();
+    if (fresh[0]) playAnimal(fresh[0].category, fresh[0].motion);
     if (fresh.length) {
       if (!pending.length) pendingSince = time;
       pending.push(...fresh);

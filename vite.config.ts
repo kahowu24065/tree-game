@@ -26,7 +26,16 @@ export default defineConfig(({ mode }) => {
     base: './',
     plugins: [devPanelSwitch(devPanel)],
     define: { __DEV_PANEL__: JSON.stringify(devPanel) },
-    server: { host: '0.0.0.0', port: 4327, strictPort: true },
+    server: {
+      host: '0.0.0.0',
+      port: 4327,
+      strictPort: true,
+      // SMG does not send CORS headers. Dev only; production uses the push server or the Android app.
+      proxy: {
+        '/smg/xml': { target: 'https://xml.smg.gov.mo', changeOrigin: true, rewrite: (p) => p.replace(/^\/smg\/xml/, '') },
+        '/smg/rss': { target: 'https://rss.smg.gov.mo', changeOrigin: true, rewrite: (p) => p.replace(/^\/smg\/rss/, '') },
+      },
+    },
     preview: { host: '0.0.0.0', port: 4327, strictPort: true },
     build: { outDir: 'dist', assetsDir: 'assets', chunkSizeWarningLimit: 1000 },
   };
