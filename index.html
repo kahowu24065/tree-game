@@ -7,11 +7,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#8fcbf0" />
     <meta name="description" content="一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。" />
-    <title>一日一樹</title>
-    <script type="module" crossorigin src="./assets/index-CbzcW5Yy.js"></script>
+    <title>世界之樹</title>
+    <style>html.preplant .hud,html.preplant #dev-root{opacity:0;pointer-events:none}</style>
+    <script>
+      try {
+        var raw = localStorage.getItem('sekai-tree-v2');
+        var started = raw && JSON.parse(raw).started;
+        if (!started) document.documentElement.classList.add('preplant');
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-CpviCEeP.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/dist-HTnr3vf7.js">
-    <link rel="modulepreload" crossorigin href="./assets/ui-CxxPGp9Q.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-C03JHEQM.css">
+    <link rel="modulepreload" crossorigin href="./assets/ui-DKzlw_0Z.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-ByaK7-1t.css">
   </head>
   <body>
     <canvas id="scene" aria-label="今日的樹同天空"></canvas>
@@ -19,6 +27,7 @@
       <div class="left-col">
         <div class="glass weather-card" id="weather-card"></div>
         <div id="note-slot" class="note-slot"></div>
+        <aside id="coach" class="glass coach" hidden></aside>
       </div>
       <section class="glass status-card" id="status-card" aria-label="樹木狀態"></section>
       <button type="button" class="rail" id="rail" data-open="milestones" aria-label="高度進度同里程"></button>
