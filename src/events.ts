@@ -8,6 +8,9 @@ import { isRainCode, type HourPoint } from './weather';
 /**
  * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告或強烈季候風 → 狂風雷暴;
  * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷; v1.4 山泥傾瀉警告 (WL) → 山泥傾瀉.
+ * v1.4.14 Taiwan (中央氣象署, groups TW*, code = group + level; same table as push-server eventsFromCwa):
+ * 海上颱風警報 → 初級颱風; 海上陸上颱風警報 → 高級颱風; 大雨 → 暴雨; 豪雨／大豪雨／超大豪雨 → 黑雨;
+ * 陸上強風 黃 → 初級颱風、橙 → 狂風雷暴、紅 → 高級颱風; 低溫 → 寒冷; 高溫資訊 → 酷熱; 濃霧只顯示.
  */
 export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
@@ -18,8 +21,22 @@ export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): W
     else if (w.group === 'WTS' || w.group === 'WMSGNL') out.add('thunder');
     else if (w.group === 'WL') out.add('landslip');
     else if (w.group === 'WTCSGNL') out.add(/^TC(1|3)$/.test(w.code) ? 'typhoon1' : 'typhoon8');
+    else {
+      const tw = twEvent(w);
+      if (tw) out.add(tw);
+    }
   }
   return [...out];
+}
+
+function twEvent(w: Pick<HkoWarning, 'group' | 'code'>): WeatherEventId | null {
+  const level = Number(w.code.replace(/^\D+/, '')) || 1;
+  if (w.group === 'TWTY') return level >= 2 ? 'typhoon8' : 'typhoon1';
+  if (w.group === 'TWRAIN') return level >= 2 ? 'blackrain' : 'rainstorm';
+  if (w.group === 'TWWIND') return level >= 3 ? 'typhoon8' : level === 2 ? 'thunder' : 'typhoon1';
+  if (w.group === 'TWHOT') return 'hot';
+  if (w.group === 'TWCOLD') return 'cold';
+  return null;
 }
 
 /** Temperature inputs for the v15 heat / cold rules. `intl` = outside HK / near-HK; normals from the past 14 days. */

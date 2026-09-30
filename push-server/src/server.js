@@ -5,6 +5,9 @@
 //  • v1.4: downgrades / cancellations push as info; dead / 瀕死 trees still get warnings (with a state line);
 //    wind warnings before 青年樹 become real-life safety notices; the action push / 2 h reminder is skipped once
 //    today's matching 應急行動 is done. HKO 山泥傾瀉警告 (WL) is its own category, handled by 加固.
+//  • 1.4.14 Taiwan devices (isTW): 中央氣象署 warnings per county / town every TW_POLL_MS, non-HK push rules
+//    (safety / tree lines with hk=false, 2 readings to confirm a drop). GET /cwa?lat=&lon= serves the app a
+//    normalised bundle; the CWA key (env CWA_API_KEY) never leaves the server.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +17,7 @@ import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
+import { createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -22,12 +26,15 @@ const POLL_MS = Number(process.env.POLL_MS || 150_000);
 const CELL_POLL_MS = Number(process.env.CELL_POLL_MS || 20 * 60_000);
 const CELL_ACTIVE_MS = 14 * 24 * 3600_000;
 const MAX_CELLS = Number(process.env.MAX_CELLS || 60);
+const TW_POLL_MS = Number(process.env.TW_POLL_MS || 5 * 60_000);
 const HKO = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc';
 const ALERTS_FILE = path.join(DATA, 'alerts.json');
 const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 
 const store = new TokenStore(path.join(DATA, 'tokens.json'));
 const fcm = await createSender();
+const cwa = createCwaClient();
+let lastTwPoll = null;
 let lastPoll = null;
 let lastSmgPoll = null;
 let lastCellPoll = null;
@@ -55,9 +62,11 @@ if (!alerts) {
 }
 alerts.cells ??= {};
 alerts.mo ??= null;
+alerts.tw ??= {};
 
 const isMoDevice = (r) => r.state?.isMO === true;
-const isHkDevice = (r) => !isMoDevice(r) && (!r.state || r.state.isHK);
+const isTwDevice = (r) => r.state?.isTW === true && !isMoDevice(r);
+const isHkDevice = (r) => !isMoDevice(r) && !isTwDevice(r) && (!r.state || r.state.isHK);
 
 const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_forecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
 const SMG_HOST = { xml: 'https://xml.smg.gov.mo', rss: 'https://rss.smg.gov.mo' };
@@ -135,7 +144,7 @@ async function pollCells() {
   const byCell = new Map();
   for (const r of store.records()) {
     const s = r.state;
-    if (!s || s.isHK || s.isMO || !s.region || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
+    if (!s || s.isHK || s.isMO || s.isTW || !s.region || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
     const key = cellKey(s.region.lat, s.region.lon);
     if (!byCell.has(key)) byCell.set(key, []);
     byCell.get(key).push(r);
@@ -163,6 +172,66 @@ async function pollCells() {
   }
   writeJson(ALERTS_FILE, alerts);
   lastCellPoll = new Date().toISOString();
+}
+
+/** Taiwan: one warning check per county / town with an active device; the same stepScope as the Open-Meteo cells. */
+async function pollTw() {
+  if (!cwa.enabled) return;
+  const now = Date.now();
+  const byArea = new Map();
+  for (const r of store.records()) {
+    const s = r.state;
+    if (!s?.isTW || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
+    const key = s.twCounty ? `${s.twCounty}|${s.twTown ?? ''}` : s.region ? `@${s.region.lat},${s.region.lon}` : null;
+    if (!key) continue;
+    if (!byArea.has(key)) byArea.set(key, []);
+    byArea.get(key).push(r);
+  }
+  for (const key of Object.keys(alerts.tw)) if (!byArea.has(key)) delete alerts.tw[key];
+  if (!byArea.size) {
+    lastTwPoll = new Date().toISOString();
+    return;
+  }
+  try {
+    const sets = await cwa.sets(['obs', 'county', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap']);
+    if (!sets.county && !sets.rainCap && !sets.typhoonCap) throw new Error('CWA warning sets unavailable');
+    for (const [key, records] of byArea) {
+      let county;
+      let town;
+      if (key.startsWith('@')) {
+        const [lat, lon] = key.slice(1).split(',').map(Number);
+        const found = await cwa.warningsAt(lat, lon);
+        if (!found) continue;
+        county = found.county;
+        town = found.town;
+      } else [county, town] = key.split('|');
+      const { levels, names } = twLevels(cwaWarnings(sets, county, town, Date.now()));
+      const prev = alerts.tw[key] ?? null;
+      const { state, fresh, reminders, drops } = stepScope(prev, levels, Date.now(), { confirmDrops: 2 });
+      alerts.tw[key] = { ...state, names: { ...(prev?.names ?? {}), ...names } };
+      writeJson(ALERTS_FILE, alerts);
+      for (const x of fresh) await push(records, 'issue', twMessageFor(x, names), false);
+      for (const x of drops) await push(records, 'drop', twDropMessageFor(x, prev?.names, names), false);
+      for (const x of reminders) await push(records, 'reminder', twMessageFor(x, alerts.tw[key].names, true), false);
+    }
+    lastTwPoll = new Date().toISOString();
+  } catch (e) {
+    console.error('[cwa]', String(e?.message ?? e));
+  }
+}
+
+// GET /cwa answers: shared per ~1 km for 5 minutes (the datasets themselves are cached in cwa.js).
+const cwaAnswers = new Map();
+async function cwaAnswer(lat, lon) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const hit = cwaAnswers.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.body;
+  const body = await cwa.bundle(lat, lon);
+  if (body) {
+    if (cwaAnswers.size > 500) cwaAnswers.clear();
+    cwaAnswers.set(key, { at: Date.now(), body });
+  }
+  return body;
 }
 
 // Simple per-IP rate limit for the device endpoints: 30 requests / 10 min.
@@ -215,7 +284,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname.startsWith('/smg/')) {
     const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
-    if (limited(ip, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
+    if (limited(`cwa:${ip}`, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
     const rel = url.pathname.slice('/smg/'.length);
     const host = rel.split('/')[0];
     if (!SMG_ALLOW.has(rel) || !SMG_HOST[host]) return send(res, 404, { ok: false });
@@ -224,6 +293,22 @@ const server = http.createServer(async (req, res) => {
       const text = await upstream.text();
       res.writeHead(upstream.ok ? 200 : upstream.status, { 'content-type': 'application/xml; charset=utf-8', ...CORS });
       return res.end(text);
+    } catch (e) {
+      return send(res, 502, { ok: false, error: String(e?.message ?? e) });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/cwa') {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    if (limited(`cwa:${ip}`, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inTaiwan(lat, lon)) return send(res, 400, { ok: false, error: 'not in Taiwan' });
+    if (!cwa.enabled) return send(res, 503, { ok: false, error: 'CWA not configured' });
+    try {
+      const body = await cwaAnswer(lat, lon);
+      if (!body) return send(res, 404, { ok: false, error: 'no station nearby' });
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=120', ...CORS });
+      return res.end(JSON.stringify(body));
     } catch (e) {
       return send(res, 502, { ok: false, error: String(e?.message ?? e) });
     }
@@ -239,6 +324,9 @@ const server = http.createServer(async (req, res) => {
       lastPoll,
       lastSmgPoll,
       lastCellPoll,
+      lastTwPoll,
+      cwa: cwa.enabled,
+      twAreas: Object.keys(alerts.tw).length,
       lastError,
       levels: alerts.hk?.levels ?? null,
     });
@@ -270,10 +358,12 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { ok: false });
 });
 
-server.listen(PORT, HOST, () => console.log(`[server] http://${HOST}:${PORT} · ${store.size} devices · HKO and SMG every ${POLL_MS / 1000}s, cells every ${CELL_POLL_MS / 60000} min`));
+server.listen(PORT, HOST, () => console.log(`[server] http://${HOST}:${PORT} · ${store.size} devices · HKO and SMG every ${POLL_MS / 1000}s, CWA ${cwa.enabled ? `every ${TW_POLL_MS / 60000} min` : 'off'}, cells every ${CELL_POLL_MS / 60000} min`));
 await pollHko();
 void pollSmg();
 setInterval(pollHko, POLL_MS);
 setInterval(() => void pollSmg(), POLL_MS);
 setTimeout(() => void pollCells(), 30_000);
+setTimeout(() => void pollTw(), 20_000);
+setInterval(() => void pollTw(), TW_POLL_MS);
 setInterval(() => void pollCells(), CELL_POLL_MS);

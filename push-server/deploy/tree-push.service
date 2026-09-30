@@ -11,6 +11,8 @@ Environment=PORT=8091
 Environment=HOST=127.0.0.1
 Environment=DATA_DIR=/var/lib/tree-push
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/tree-push/service-account.json
+# 1.4.14 中央氣象署 key (CWA_API_KEY=…), root-created, owned by treepush, chmod 600. Optional: without it /cwa answers 503.
+EnvironmentFile=-/etc/tree-push/cwa.env
 # Own Node under /opt/tree-push/node, so any system Node used by other apps is left alone.
 ExecStart=/opt/tree-push/node/bin/node src/server.js
 Restart=always

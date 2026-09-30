@@ -252,7 +252,6 @@ function calcTab(): string {
 }
 
 function weatherTab(): string {
-  const intl = labelRegion() === 'intl';
   const L = (id: WeatherEventId) => eventLabel(id, 'hk');
   const rainDrain = () => emergencyName('rainDrain', 'hk');
   const hkRows: string[][] = [
@@ -274,6 +273,19 @@ function weatherTab(): string {
     [eventLabel('typhoon1', 'intl'), `陣風 ≥ ${WX_NUM.typhoon1.gust} 或者平均風 ≥ ${WX_NUM.typhoon1.wind} 公里/時`],
     [eventLabel('typhoon8', 'intl'), `陣風 ≥ ${WX_NUM.typhoon8.gust} 或者平均風 ≥ ${WX_NUM.typhoon8.wind} 公里/時`],
   ];
+  const I = (id: WeatherEventId) => eventLabel(id, 'intl');
+  const twRows: string[][] = [
+    ['海上颱風警報', I('typhoon1'), '加固'],
+    ['海上陸上颱風警報（你嗰個縣市喺警戒區）', I('typhoon8'), '加固'],
+    ['陸上強風特報・黃色燈號', I('typhoon1'), '加固'],
+    ['陸上強風特報・橙色燈號', L('thunder'), '加固'],
+    ['陸上強風特報・紅色燈號', I('typhoon8'), '加固'],
+    ['大雨特報', I('rainstorm'), emergencyName('rainDrain', 'intl')],
+    ['豪雨／大豪雨／超大豪雨特報', I('blackrain'), emergencyName('rainDrain', 'intl')],
+    ['高溫資訊（黃／橙／紅燈號）', I('hot'), emergencyName('heatWater')],
+    ['低溫特報（任何燈號）', L('cold'), emergencyName('warmCover')],
+    ['濃霧特報', '只顯示', '—'],
+  ];
   return [
     h('香港：跟天文台警告'),
     table(['天文台警告', '遊戲事件', '應對', '效果（唔應對）'], hkRows),
@@ -281,10 +293,19 @@ function weatherTab(): string {
       `<b>山泥傾瀉警告</b>（天文台代碼 WL，只限香港）：屬風災類，嚴重程度同一號／三號風球一樣；同風球一齊只計較嚴重嗰個，加固一次兩樣都顧到。`,
       `風災類（雷暴、風球、山泥傾瀉）要${youth}先生效；之前唔傷樹、唔倒塌。`,
       '澳門用地球物理氣象局，同一套：警告同預報都只跟氣象局，唔會混入天文台或者 Open-Meteo。',
+      '臺灣（本島、澎湖、金門、馬祖）用中央氣象署：天氣、預報同警特報都只跟氣象署（見下面）。',
       '攞唔到嗰個來源時，唔會改用另一個來源嘅數字當成警告。',
       '即時水分變化喺警告第一次出現嗰陣計，每日一次。',
     ]),
-    h('香港同澳門以外：跟 Open-Meteo'),
+    h('臺灣：跟中央氣象署警特報'),
+    table(['氣象署警特報', '遊戲事件', '應對'], twRows),
+    ul([
+      '事件效果同上面香港表一樣（例如高級颱風＝八號風球嘅傷害同倒塌門檻）；名稱照用氣象署嘅叫法。',
+      '同一類（風／雨）同時有幾個特報，只計最嚴重嗰個；高溫、低溫可以同風雨一齊成立。',
+      '雨量分級：大雨 → 暴雨；豪雨、大豪雨、超大豪雨 → 黑雨。颱風分兩級：只有海上警報係初級，陸上警報包括你嗰個縣市就係高級。',
+      '讀數用最近嘅氣象署測站，預報用縣市一週預報。大雷雨即時訊息暫時未計。',
+    ]),
+    h('香港、澳門同臺灣以外：跟 Open-Meteo'),
     p(`名稱唔同，規則一樣：酷熱天氣警告＝${eventLabel('hot', 'intl')}、${eventLabel('typhoon1', 'intl')}＝初級颱風、${eventLabel('typhoon8', 'intl')}＝高級颱風、${eventLabel('rainstorm', 'intl')}＝暴雨、${eventLabel('blackrain', 'intl')}＝黑雨；應急行動叫「${emergencyName('rainDrain', 'intl')}」。冇山泥傾瀉。`),
     table(['事件', '門檻'], intlRows),
     p('同一日只取最嚴重嘅風／雨事件，再加埋酷熱、寒冷（可以同時成立）。'),
@@ -292,7 +313,7 @@ function weatherTab(): string {
     ul([
       '天氣卡只標而家生效嘅警告，唔會自己估幾多個鐘後先有警告。',
       '樹木狀態卡嘅「今晚預計」照而家已經生效嘅天氣計，唔計未發生嘅預報。',
-      intl ? '' : '天氣概況頁嘅警告同預報都來自同一個來源：香港係天文台，澳門係地球物理氣象局。',
+      '天氣概況頁嘅警告同預報都來自同一個來源：香港係天文台，澳門係地球物理氣象局，臺灣係中央氣象署。',
     ].filter(Boolean)),
     h('天氣事件總表'),
     eventTableHtml(),
@@ -302,7 +323,7 @@ function weatherTab(): string {
 function pushTab(): string {
   return [
     h('推送（Android app）'),
-    p('設定 → 提醒通知 開咗就會收，app 關咗都收到。香港跟天文台警告、澳門跟地球物理氣象局（都係大約每 2.5 分鐘檢查）；其餘地方按 Open-Meteo 同遊戲一樣嘅門檻（每 20 分鐘檢查）。'),
+    p('設定 → 提醒通知 開咗就會收，app 關咗都收到。香港跟天文台警告、澳門跟地球物理氣象局（都係大約每 2.5 分鐘檢查）；臺灣跟中央氣象署警特報（每 5 分鐘檢查，通知用氣象署嘅名稱，規則同香港以外一樣）；其餘地方按 Open-Meteo 同遊戲一樣嘅門檻（每 20 分鐘檢查）。'),
     h('幾時會推'),
     table(
       ['情況', '會唔會推'],

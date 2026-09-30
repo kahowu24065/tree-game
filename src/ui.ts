@@ -54,8 +54,8 @@ export interface WeatherView {
   fetchedAt: number;
   updated: string;
   hkoUsed: boolean;
-  /** Which bureau the warnings came from. Macau uses SMG; absent means HKO when hkoUsed. */
-  bureau?: 'hko' | 'smg';
+  /** Which bureau the warnings came from. Macau uses SMG, Taiwan CWA; absent means HKO when hkoUsed. */
+  bureau?: 'hko' | 'smg' | 'cwa';
   warnings: HkoWarning[];
   /** False when the bureau warning list failed to load. Missing means the list is known. */
   warningsKnown?: boolean;
@@ -683,16 +683,23 @@ function sourceLabel(wx: WeatherView): string {
   if (wx.overridden) return '手動天氣（開發者）';
   if (wx.provider === 'sim') {
     if (wx.loading) return '攞緊真實天氣…';
-    const note = wx.bureau === 'smg' && wx.hkoUsed ? '（氣象局警告係真嘅）' : wx.hkoUsed ? '（天文台警告係真嘅）' : '';
+    const note = wx.bureau === 'smg' && wx.hkoUsed ? '（氣象局警告係真嘅）' : wx.bureau === 'cwa' && wx.hkoUsed ? '（氣象署警告係真嘅）' : wx.hkoUsed ? '（天文台警告係真嘅）' : '';
     return `模擬天氣・撳一下重試${note}`;
   }
-  const names = wx.bureau === 'smg' ? '地球物理氣象局' : wx.bureau === 'hko' || wx.provider === 'hko' ? '香港天文台' : 'Open-Meteo';
+  const names = wx.bureau === 'smg' ? '地球物理氣象局' : wx.bureau === 'cwa' ? '中央氣象署' : wx.bureau === 'hko' || wx.provider === 'hko' ? '香港天文台' : 'Open-Meteo';
   if (wx.origin === 'cache') return `上次天氣 ${esc(wx.updated)}・${names}`;
   return `即時天氣・${names}${wx.updated ? ` · ${esc(wx.updated)}` : ''}${wx.loading ? ' · 更新緊' : ''}`;
 }
 
 /** Small badge in the spirit of HKO's warning icons (drawn locally, not the official artwork). */
 export function warnIcon(w: HkoWarning): string {
+  // Taiwan (中央氣象署) warnings reuse the same badges.
+  if (w.group === 'TWTY' || w.group === 'TWWIND') {
+    const n = w.group === 'TWTY' ? '颱' : '風';
+    return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5l8.5 16H1.5z" fill="currentColor"/><text x="10" y="15.5" text-anchor="middle" font-size="7.5" font-weight="700" fill="#fff">${n}</text></svg>`;
+  }
+  const alias: Record<string, string> = { TWRAIN: 'WRAIN', TWHOT: 'WHOT', TWCOLD: 'WCOLD' };
+  if (alias[w.group]) return warnIcon({ ...w, group: alias[w.group] });
   if (w.group === 'WTCSGNL') {
     const n = w.code.replace(/^TC(\d+).*/, '$1');
     return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5l8.5 16H1.5z" fill="currentColor"/><text x="10" y="15.5" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${esc(n)}</text></svg>`;
@@ -1110,17 +1117,19 @@ export function weatherPageHtml(view: View): string {
     warns = list + prose || (wx.warningsKnown === false ? '<p>警告暫時攞唔到。</p>' : '<p>而家冇天氣警告生效。</p>');
   } else if (wx.bureau === 'smg') {
     warns = '<p>地球物理氣象局暫時攞唔到。呢度唔會改用其他來源。</p>';
+  } else if (wx.bureau === 'cwa') {
+    warns = '<p>中央氣象署資料暫時攞唔到。呢度唔會改用其他來源。</p>';
   } else if (wx.bureau === 'hko') {
     warns = '<p>香港天文台暫時攞唔到。呢度唔會改用其他來源。</p>';
   } else {
     warns = `<p>${wx.overridden ? '手動天氣（開發者）：冇真實警告。' : '呢度跟 Open-Meteo，冇天文台警告。'}</p>`;
   }
-  const bureauName = wx.bureau === 'smg' ? '地球物理氣象局' : '香港天文台';
+  const bureauName = wx.bureau === 'smg' ? '地球物理氣象局' : wx.bureau === 'cwa' ? '中央氣象署' : '香港天文台';
   const office = wx.warnings.length || extraMessages.length ? `${bureauName}・生效中警告` : bureauName;
   const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? office : '天氣警告'}</p>${warns}</article>`;
   // Hong Kong and Macau only list days that source actually forecast. A padded day would be the game inventing weather.
   const outlook = wx.situation.trim();
-  const bureauForecast = wx.bureau === 'hko' || wx.bureau === 'smg';
+  const bureauForecast = wx.bureau === 'hko' || wx.bureau === 'smg' || wx.bureau === 'cwa';
   const forecastDays = view.forecast.filter((day) => !bureauForecast || wx.hkoDays[day.date]);
   const rows = forecastDays
     .map((day) => {
@@ -1699,7 +1708,7 @@ export function disclaimerModal(): string {
     <p class="eyebrow">免責聲明</p>
     <h2>免責聲明</h2>
     <p>世界之樹係遊戲。畫面入面嘅健康、水分、養分、倒塌同成長，都係玩法，唔代表一棵真樹。</p>
-    <p>天氣嚟自香港天文台、澳門地球物理氣象局或者 Open-Meteo，可能同官方最新消息有分別，唔係出行或者安全指引。惡劣天氣請跟當地氣象部門。</p>
+    <p>天氣嚟自香港天文台、澳門地球物理氣象局、臺灣中央氣象署或者 Open-Meteo，可能同官方最新消息有分別，唔係出行或者安全指引。惡劣天氣請跟當地氣象部門。</p>
     <button type="button" class="primary" data-action="settings">返回</button>
   `;
 }

@@ -10,7 +10,7 @@ export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
 
 /** Where the numbers came from: Open-Meteo model data, HKO observations/forecast, or the built-in simulation. */
-export type WeatherProvider = 'open-meteo' | 'hko' | 'smg' | 'sim';
+export type WeatherProvider = 'open-meteo' | 'hko' | 'smg' | 'cwa' | 'sim';
 
 export interface WeatherSnapshot {
   lat: number;

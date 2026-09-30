@@ -114,6 +114,7 @@ import {
 } from './weather';
 import { fetchHko, fillHkoGaps, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { fetchSmg } from './smg';
+import { cwaArea, fetchCwa, inTaiwan } from './cwa';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
@@ -240,9 +241,14 @@ function usesSmg(snapshot: WeatherSnapshot = weather): boolean {
   return snapshot.source === 'geo' && inMacau(snapshot.lat, snapshot.lon);
 }
 
-/** Official warnings (HKO or SMG) decide severe weather, rather than model numbers. */
+/** v1.4.14: a device location in Taiwan uses 中央氣象署 (via the push server) for weather and warnings. */
+function usesCwa(snapshot: WeatherSnapshot = weather): boolean {
+  return snapshot.source === 'geo' && inTaiwan(snapshot.lat, snapshot.lon);
+}
+
+/** Official warnings (HKO, SMG or CWA) decide severe weather, rather than model numbers. */
 function officialActive(snapshot: WeatherSnapshot = weather): boolean {
-  return Boolean(snapshot.hko) && (usesHko(snapshot) || usesSmg(snapshot));
+  return Boolean(snapshot.hko) && (usesHko(snapshot) || usesSmg(snapshot) || usesCwa(snapshot));
 }
 
 /** Events happening right now according to live weather (HKO in HK, SMG in Macau). */
@@ -313,7 +319,7 @@ function countdown(): Countdown | null {
     minutesToMidnight: 24 * 60 - clockMinutes(timezone),
     manual: manual() ? dev.forecast : null,
     nowMs: Date.now(),
-    activeSource: manual() ? '手動天氣' : usesSmg() ? '氣象局' : officialActive() ? '天文台' : '即時天氣',
+    activeSource: manual() ? '手動天氣' : usesSmg() ? '氣象局' : usesCwa() ? '氣象署' : officialActive() ? '天文台' : '即時天氣',
   });
 }
 
@@ -426,7 +432,7 @@ function view(input: SceneInput): View {
       fetchedAt: weather.fetchedAt,
       updated: clockOf(weather.fetchedAt),
       hkoUsed: hk,
-      bureau: usesSmg() ? 'smg' : usesHko(weather) ? 'hko' : undefined,
+      bureau: usesSmg() ? 'smg' : usesCwa() ? 'cwa' : usesHko(weather) ? 'hko' : undefined,
       warnings: hk ? weather.hko!.warnings : [],
       warningsKnown: hk ? weather.hko!.warningsKnown !== false : true,
       messages: hk ? weather.hko!.messages : [],
@@ -665,6 +671,7 @@ function scheduleReminders(background: boolean): void {
       region: { lat: weather.lat, lon: weather.lon },
       isHK: usesHko(weather) || usesSmg(weather),
       isMO: usesSmg(weather),
+      ...(usesCwa(weather) ? { isTW: true, twCounty: cwaArea()?.county || undefined, twTown: cwaArea()?.town || undefined } : {}),
       rUnlocked: Boolean(state.windUnlocked),
       alive: state.started && !state.over,
       tree: state.over ? 'dead' : state.dying ? 'dying' : 'ok',
@@ -913,7 +920,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     recordEvents(state, today(), events, officialActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
-    if (fresh.length && state.started && !manual() && !watered) toast(`${usesSmg(snapshot) ? '氣象局' : officialActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
+    if (fresh.length && state.started && !manual() && !watered) toast(`${usesSmg(snapshot) ? '氣象局' : usesCwa(snapshot) ? '氣象署' : officialActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
@@ -996,12 +1003,17 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     : reuseGeo
       ? { lat: weather.lat, lon: weather.lon, source: 'geo' as const }
       : await locate(8000);
-  const mo = loc.source === 'geo' && inMacau(loc.lat, loc.lon);
+  const macau = loc.source === 'geo' && inMacau(loc.lat, loc.lon);
+  const tw = loc.source === 'geo' && !macau && inTaiwan(loc.lat, loc.lon);
+  // Macau (SMG) and Taiwan (CWA) share one path: a bureau bundle in the HKO shape plus its own wind / rain readings.
+  const mo = macau || tw;
+  const bureauId: WeatherProvider = tw ? 'cwa' : 'smg';
+  const bureauTz = tw ? 'Asia/Taipei' : 'Asia/Macau';
   const hk = !mo && (loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon));
   const [om, hkoRes, smgRes, placeRes] = await Promise.allSettled([
     fetchForecast(loc.lat, loc.lon),
     hk ? fetchHko(loc.lat, loc.lon) : Promise.resolve(null),
-    mo ? fetchSmg(loc.lat, loc.lon) : Promise.resolve(null),
+    tw ? fetchCwa(loc.lat, loc.lon) : mo ? fetchSmg(loc.lat, loc.lon) : Promise.resolve(null),
     loc.source === 'geo' ? reverseGeocode(loc.lat, loc.lon) : Promise.resolve(null),
   ]);
   const hko = hkoRes.status === 'fulfilled' ? hkoRes.value : null;
@@ -1009,7 +1021,9 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   let official = mo ? smg?.data ?? null : hko;
   if (official && (hk || mo)) official = fillHkoGaps(official, loadWeatherCache()?.hko);
   const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
-  const place = manual?.name ?? found?.name ?? (mo ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
+  // Taiwan: the CWA station's town (the same area its warnings are checked for) beats the reverse geocoder.
+  const cwaPlace = tw && smg ? cwaArea()?.town || cwaArea()?.county || undefined : undefined;
+  const place = manual?.name ?? cwaPlace ?? found?.name ?? (macau ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
   const district = manual?.name ?? found?.district;
   const openMeteo = om.status === 'fulfilled' ? om.value : null;
   let base: ForecastResult | null = hk || mo ? null : openMeteo;
@@ -1025,9 +1039,9 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
           return s ? { ...d, sunrise: s.sunrise, sunset: s.sunset } : d;
         });
       }
-      bureau.timezone = mo ? 'Asia/Macau' : bureau.timezone;
+      bureau.timezone = mo ? bureauTz : bureau.timezone;
       base = bureau;
-      provider = mo ? 'smg' : 'hko';
+      provider = mo ? bureauId : 'hko';
     }
   }
   if (!base) {
@@ -1046,13 +1060,13 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
         hko: kept,
         daily: bureau.daily,
         current: bureau.current,
-        provider: mo ? 'smg' : 'hko',
+        provider: mo ? bureauId : 'hko',
         rainInHours: null,
         lat: loc.lat,
         lon: loc.lon,
         source: loc.source,
         place,
-        timezone: mo ? 'Asia/Macau' : cached.timezone,
+        timezone: mo ? bureauTz : cached.timezone,
       });
       return;
     }
@@ -1062,7 +1076,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const snapshot: WeatherSnapshot = {
     lat: loc.lat,
     lon: loc.lon,
-    timezone: mo ? 'Asia/Macau' : base.timezone,
+    timezone: mo ? bureauTz : base.timezone,
     place,
     source: loc.source,
     origin: 'live',
@@ -1070,7 +1084,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     current: { ...base.current },
     daily: stampDays(base.daily, !(hk || mo), base.normals),
     normals: base.normals ?? null,
-    provider: mo && smg ? 'smg' : provider,
+    provider: mo && smg ? bureauId : provider,
     hko: official,
     district,
     rainInHours: provider === 'open-meteo' ? base.rainInHours : null,

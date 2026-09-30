@@ -18,6 +18,10 @@ export interface PushState {
   isHK: boolean;
   /** Inside Macau: the server polls SMG on the same cadence as HKO, not the slower cell poll. */
   isMO?: boolean;
+  /** v1.4.14 in Taiwan: the server checks 中央氣象署 warnings for this county / town (non-HK push rules). */
+  isTW?: boolean;
+  twCounty?: string;
+  twTown?: string;
   rUnlocked: boolean;
   alive: boolean;
   /** v1.4: tree condition for the push text (dead / 瀕死 trees still get every warning). */

@@ -1,3 +1,4 @@
+import { TW_COUNTIES } from './cwa.js';
 // Device token store: a small JSON file (deduped by token), written atomically.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,8 +66,12 @@ export function parseState(body, now = Date.now()) {
     done: { heat: bool(d.heat), drain: bool(d.drain), reinforce: bool(d.reinforce), warm: bool(d.warm) },
     region,
     isMO: body.isMO === true,
+    // Taiwan (中央氣象署): its own poll by county / town; never the HKO poll or the Open-Meteo cells.
+    isTW: body.isTW === true && body.isMO !== true,
+    twCounty: body.isTW === true && TW_COUNTIES.includes(body.twCounty) ? body.twCounty : null,
+    twTown: body.isTW === true && typeof body.twTown === 'string' && /^[\u4e00-\u9fff]{1,6}$/.test(body.twTown) ? body.twTown : null,
     // Macau is its own fast poll (SMG). Old clients that only send isHK stay on the HKO poll.
-    isHK: body.isMO === true ? false : body.isHK !== false || !region,
+    isHK: body.isMO === true || body.isTW === true ? false : body.isHK !== false || !region,
     rUnlocked: body.rUnlocked === true,
     alive: body.alive !== false,
     tree: ['ok', 'dying', 'dead'].includes(body.tree) ? body.tree : body.alive === false ? 'dead' : 'ok',

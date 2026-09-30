@@ -26,13 +26,24 @@ and the very first run only records the current state.
 | Downgrade / cancel (紅雨轉黃雨, 八號風球轉三號風球, 酷熱天氣警告已取消…) | everyone in scope (info). Non-HK cells need 2 consecutive lower readings (~40 min) so forecasts don't flap |
 - HK categories: 酷熱, 寒冷, 暴雨 (黃／紅／黑), 風球 (1/3/8/9/10), **山泥傾瀉警告 (HKO warnsum `WL`, handled by 加固)**.
 - First run / first sight of a cell only records the state (no pushes).
+- **Taiwan (1.4.14)**: devices sending `isTW` (+ `twCounty`, `twTown`) are polled every `TW_POLL_MS` (5 min) against 中央氣象署
+  per county / town, with the non-HK rules (hk=false texts, 2 lower readings before a drop push). Texts use CWA names
+  (「中央氣象署：豪雨特報」, 「豪雨特報轉大雨特報」, 「大雨特報已解除」). Mapping (same as the app, parity-tested):
+  海上颱風警報 → typhoon L1, 海上陸上颱風警報 (county in area) → L3, 陸上強風 黃/橙/紅 → L1/L2/L3, 大雨 → rain L1,
+  豪雨/大豪雨/超大豪雨 → rain L2, 高溫資訊 → heat, 低溫 → cold, 濃霧 → none.
+  Datasets (src/cwa.js `DATASETS`): O-A0001-001 / O-A0003-001 stations, O-A0002-001 rain, F-D0047-091 county week forecast,
+  W-C0033-001 county hazards, CAP W-C0033-003 (rain) / -004 (低溫) / -005 (高溫資訊) / -006 (陸上強風), W-C0034-001 (typhoon).
 - `/state` also takes `tree` (`ok`/`dying`/`dead`) and `resist` (抗風力) from app 1.4.
 
 ## API
 - `POST /register` `{ token, platform, appVersion }` → `{ ok }` (token 20–4096 chars `[A-Za-z0-9_:.-]`)
 - `POST /unregister` `{ token }`
 - `POST /state` (see above)
-- `GET /health` → FCM on/off, devices, devices with state, cells, last polls, HK levels
+- `GET /health` → FCM on/off, devices, devices with state, cells, last polls, HK levels, `cwa` (key present), `lastTwPoll`, `twAreas`
+- `GET /cwa?lat=&lon=` (1.4.14, Taiwan only, 120 calls / IP / 10 min, answers cached ~5 min per 0.01°) → 中央氣象署 bundle:
+  `{ ok, source:'cwa', county, town, current{station, stationKm, updated, tempC, humidity, windKmh, gustKmh, rainMm1h, weather, icon},
+  forecast[{date, week, text, detail, wind:'N級', tempMax, tempMin, icon, pop, psr}], warnings[{type, level, name, issued, text}], warningsKnown, events }`.
+  400 outside Taiwan, 503 without `CWA_API_KEY`, 404 when no station within 60 km.
 
 Rate limit: 30 device calls per IP per 10 min. Tokens FCM reports as unregistered/invalid are dropped.
 
@@ -43,6 +54,8 @@ Rate limit: 30 device calls per IP per 10 min. Tokens FCM reports as unregistere
 | `PORT` / `HOST` | `8080` / `127.0.0.1` (Caddy terminates HTTPS in front) |
 | `DATA_DIR` | `./data` (`tokens.json`, `last-levels.json`) |
 | `POLL_MS` | `150000` |
+| `CWA_API_KEY` | 中央氣象署 open-data key. On the VM: `/etc/tree-push/cwa.env` (treepush, 600) via `EnvironmentFile`. Never commit / never ship to the client |
+| `TW_POLL_MS` | `300000` |
 
 Push: `sendEachForMulticast` in batches of 500, Android high priority, channel `weather-warnings`.
 
