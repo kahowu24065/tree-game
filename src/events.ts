@@ -10,7 +10,7 @@ import { isRainCode, type HourPoint } from './weather';
  * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷; v1.4 山泥傾瀉警告 (WL) → 山泥傾瀉.
  * v1.4.14 Taiwan (中央氣象署, groups TW*, code = group + level; same table as push-server eventsFromCwa):
  * 海上颱風警報 → 初級颱風; 海上陸上颱風警報 → 高級颱風; 大雨 → 暴雨; 豪雨／大豪雨／超大豪雨 → 黑雨;
- * 陸上強風 黃 → 初級颱風、橙 → 狂風雷暴、紅 → 高級颱風; 低溫 → 寒冷; 高溫資訊 → 酷熱; 濃霧只顯示.
+ * 陸上強風 黃 → 初級颱風、橙 → 狂風雷暴、紅 → 高級颱風; 1.4.15 大雷雨即時訊息 → 狂風雷暴; 低溫 → 寒冷; 高溫資訊 → 酷熱; 濃霧只顯示.
  */
 export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
@@ -34,6 +34,7 @@ function twEvent(w: Pick<HkoWarning, 'group' | 'code'>): WeatherEventId | null {
   if (w.group === 'TWTY') return level >= 2 ? 'typhoon8' : 'typhoon1';
   if (w.group === 'TWRAIN') return level >= 2 ? 'blackrain' : 'rainstorm';
   if (w.group === 'TWWIND') return level >= 3 ? 'typhoon8' : level === 2 ? 'thunder' : 'typhoon1';
+  if (w.group === 'TWTS') return 'thunder';
   if (w.group === 'TWHOT') return 'hot';
   if (w.group === 'TWCOLD') return 'cold';
   return null;

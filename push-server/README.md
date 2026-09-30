@@ -30,9 +30,12 @@ and the very first run only records the current state.
   per county / town, with the non-HK rules (hk=false texts, 2 lower readings before a drop push). Texts use CWA names
   (「中央氣象署：豪雨特報」, 「豪雨特報轉大雨特報」, 「大雨特報已解除」). Mapping (same as the app, parity-tested):
   海上颱風警報 → typhoon L1, 海上陸上颱風警報 (county in area) → L3, 陸上強風 黃/橙/紅 → L1/L2/L3, 大雨 → rain L1,
-  豪雨/大豪雨/超大豪雨 → rain L2, 高溫資訊 → heat, 低溫 → cold, 濃霧 → none.
+  豪雨/大豪雨/超大豪雨 → rain L2, 大雷雨即時訊息 (1.4.15, player's township in the CAP area) → typhoon L2 (狂風雷暴),
+  高溫資訊 → heat, 低溫 → cold, 濃霧 → none.
   Datasets (src/cwa.js `DATASETS`): O-A0001-001 / O-A0003-001 stations, O-A0002-001 rain, F-D0047-091 county week forecast,
   W-C0033-001 county hazards, CAP W-C0033-003 (rain) / -004 (低溫) / -005 (高溫資訊) / -006 (陸上強風), W-C0034-001 (typhoon).
+  大雷雨即時訊息 has no CWA REST dataset: CWA's 雷雨 CAP files are read from the public NCDR active-alerts Atom feed
+  (`https://alerts.ncdr.nat.gov.tw/RssAtomFeeds.ashx`, no key; cached 2 min).
 - `/state` also takes `tree` (`ok`/`dying`/`dead`) and `resist` (抗風力) from app 1.4.
 
 ## API

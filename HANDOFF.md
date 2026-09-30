@@ -79,6 +79,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4 | 玩法面板、山泥傾瀉、推送新規則（枯樹照推、青年樹前安全提示、降級／取消都推） |
 | 1.4.1 | 獨立「天氣概況」頁、樹木狀態 pop box（照顧／圖鑑／里程碑）、玩法內容補齊、修正玩法分頁同通知開關撳唔到 |
 | 1.4.14 | 臺灣用中央氣象署（天氣、預報、警特報都跟氣象署；經 push server `/cwa`，key 只喺 VM）；臺灣警特報推送 |
+| 1.4.15 | 臺灣大雷雨即時訊息 → 狂風雷暴（app＋推送）；夜晚天氣文字唔再講「陽光」；保暖說明補返「防止根部凍傷」 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -152,7 +153,7 @@ Windows 用 `gradlew.bat`。亦可以喺 Android Studio 開 `android/`，Build �
 - 約 2 小時後提醒一次：行動仲未做、做得到先提。
 - 降級／取消（紅雨轉黃雨、八號轉三號、酷熱取消…）：一定推（資訊）。外地要連續兩次較低讀數（約 40 分鐘）先推，防亂跳。
 - 香港類別：酷熱、寒冷、黃／紅／黑雨、風球 1/3/8+、山泥傾瀉（WL）。雷暴警告唔推。
-- 臺灣（1.4.14）：app 送 `isTW`＋縣市／鄉鎮，server 每 5 分鐘查中央氣象署警特報，跟外地規則，通知用氣象署名稱。CWA key 喺 VM `/etc/tree-push/cwa.env`（600，唔好 commit、唔好放入網站）。對照表見 `push-server/README.md`。
+- 臺灣（1.4.14）：app 送 `isTW`＋縣市／鄉鎮，server 每 5 分鐘查中央氣象署警特報，跟外地規則，通知用氣象署名稱。CWA key 喺 VM `/etc/tree-push/cwa.env`（600，唔好 commit、唔好放入網站）。對照表見 `push-server/README.md`。大雷雨即時訊息（1.4.15）唔喺 CWA REST API，係讀 NCDR 民生示警平台公開「生效中示警」Atom feed（`RssAtomFeeds.ashx`，免 key）入面中央氣象署嘅雷雨 CAP。
 
 ### Oracle VM
 - `ubuntu@158.101.140.210`（Ubuntu 22.04 arm64），SSH key 由用戶自己保管（唔喺 repo）。

@@ -17,7 +17,7 @@ import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
-import { createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
+import { WARNING_SETS, createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -193,7 +193,7 @@ async function pollTw() {
     return;
   }
   try {
-    const sets = await cwa.sets(['obs', 'county', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap']);
+    const sets = await cwa.sets(WARNING_SETS);
     if (!sets.county && !sets.rainCap && !sets.typhoonCap) throw new Error('CWA warning sets unavailable');
     for (const [key, records] of byArea) {
       let county;

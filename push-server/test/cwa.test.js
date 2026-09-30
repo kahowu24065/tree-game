@@ -38,6 +38,7 @@ test('rain tiers and the Taiwan → game event table', () => {
   assert.deepEqual(ev('cold', 3), ['cold']);
   assert.deepEqual(ev('heat', 1), ['hot']);
   assert.deepEqual(ev('fog', 1), []);
+  assert.deepEqual(ev('thunder', 1), ['thunder']);
 });
 
 test('county hazards (W-C0033-001) and CAP rain / typhoon', () => {
@@ -63,4 +64,31 @@ test('parseState: isTW devices leave the HKO poll', () => {
   assert.equal(s.isHK, false);
   assert.equal(s.twCounty, '臺北市');
   assert.equal(parseState({ day: '2026-10-01', isTW: true, twCounty: 'x' }).twCounty, null);
+});
+
+test('大雷雨即時訊息: NCDR feed → CWA CAP → thunder (wind level 2, harshest wins)', async () => {
+  const { thunderLinks, parseCapXml } = await import('../src/cwa.js');
+  const atom = `<feed><entry><id>CWA-Weather_thunderstorm_202610011403001</id><title>雷雨</title><author><name>中央氣象署</name></author>
+    <link rel="alternate" href="https://alerts.ncdr.nat.gov.tw/Capstorage/CWA/2026/thunderstorm/a.cap" /><category term="雷雨" /><cap:msgType>Alert</cap:msgType></entry>
+    <entry><id>CWA-Weather_heat_1</id><title>高溫</title><author><name>中央氣象署</name></author><link rel="alternate" href="https://alerts.ncdr.nat.gov.tw/h.cap" /></entry>
+    <entry><id>X-1</id><title>雷雨</title><author><name>某縣政府</name></author><link rel="alternate" href="https://alerts.ncdr.nat.gov.tw/x.cap" /></entry></feed>`;
+  assert.deepEqual(thunderLinks(atom), ['https://alerts.ncdr.nat.gov.tw/Capstorage/CWA/2026/thunderstorm/a.cap']);
+  const cap = `<alert><msgType>Alert</msgType><info><event>雷雨</event><urgency>Expected</urgency><headline>雷雨即時訊息</headline>
+    <effective>2026-10-01T14:03:00+08:00</effective><onset>2026-10-01T14:03:00+08:00</onset><expires>2026-10-01T15:00:00+08:00</expires>
+    <description>氣象署發布大雷雨即時訊息</description><area><areaDesc>臺北市信義區</areaDesc></area><area><areaDesc>新北市新店區</areaDesc></area></info></alert>`;
+  const thunderCap = { records: { info: parseCapXml(cap) } };
+  const at = Date.parse('2026-10-01T14:30:00+08:00');
+  const w = cwaWarnings({ thunderCap }, '臺北市', '信義區', at);
+  assert.deepEqual(w.map((x) => x.name), ['大雷雨即時訊息']);
+  assert.deepEqual(eventsFromCwa(w), ['thunder']);
+  assert.deepEqual(cwaWarnings({ thunderCap }, '臺北市', '中正區', at), []);
+  assert.deepEqual(cwaWarnings({ thunderCap }, '臺北市', '信義區', Date.parse('2026-10-01T15:10:00+08:00')), []);
+  assert.deepEqual(parseCapXml(cap.replace('<msgType>Alert', '<msgType>Cancel')), []);
+  const { levels, names } = twLevels(w);
+  assert.equal(levels.typhoon, 2);
+  assert.equal(twMessageFor({ category: 'typhoon', level: 2 }, names).title, '中央氣象署：大雷雨即時訊息');
+  // With 陸上強風紅色 at the same time the harsher one wins.
+  const both = twLevels([...w, { type: 'wind', level: 3, name: '陸上強風特報（紅色燈號）' }]);
+  assert.equal(both.levels.typhoon, 3);
+  assert.equal(both.names.typhoon, '陸上強風特報（紅色燈號）');
 });

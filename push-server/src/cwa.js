@@ -10,6 +10,10 @@
 //   W-C0033-003  豪(大)雨特報 (CAP)            大雨／豪雨／大豪雨／超大豪雨 with areas
 //   W-C0033-004  低溫特報 (CAP)   W-C0033-005 高溫資訊 (CAP)   W-C0033-006 陸上強風特報 (CAP, 燈號)
 //   W-C0034-001  颱風警報 (CAP)                海上／海上陸上颱風警報, land-warning counties
+//   大雷雨即時訊息 (1.4.15): the CWA REST API has no thunderstorm dataset (apidoc v1 lists only W-C0033-001..006/-010,
+//   W-C0034-001/-005; W-C0033-002 is 天氣特報 text). CWA publishes it as CAP (event 雷雨, eventCode thunderstorm,
+//   township areas) through NCDR 民生示警平台; the public 生效中示警 Atom feed needs no key.
+export const NCDR_ACTIVE_FEED = 'https://alerts.ncdr.nat.gov.tw/RssAtomFeeds.ashx';
 const API = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore';
 
 export const DATASETS = {
@@ -24,7 +28,7 @@ export const DATASETS = {
   windCap: 'W-C0033-006',
   typhoonCap: 'W-C0034-001',
 };
-const TTL = { obs: 10, obsMain: 10, rain: 10, week: 30, county: 3, rainCap: 3, coldCap: 10, heatCap: 10, windCap: 3, typhoonCap: 3 };
+const TTL = { thunderCap: 2, obs: 10, obsMain: 10, rain: 10, week: 30, county: 3, rainCap: 3, coldCap: 10, heatCap: 10, windCap: 3, typhoonCap: 3 };
 
 /** Main island (+ Lanyu, Green Island), Penghu, Kinmen / Lieyu and Matsu. Tight enough to leave Fujian out. */
 export function inTaiwan(lat, lon) {
@@ -141,7 +145,7 @@ function capActive(info, now) {
 /** Does a CAP area list cover the player's county / town? County entries cover every town in it. */
 function covers(info, county, town) {
   return (info.area ?? []).some((a) => {
-    const d = String(a.areaDesc ?? '');
+    const d = String(a.areaDesc ?? '').replaceAll('台', '臺').trim();
     return d === county || (town && d === `${county}${town}`);
   });
 }
@@ -215,6 +219,11 @@ export function cwaWarnings(sets, county, town, now = Date.now()) {
       put(type, COLOR_LEVEL[color], `${title}（${color}燈號）`, info);
     }
   };
+  // 大雷雨即時訊息 (one level; CAP areas are townships, sometimes whole counties).
+  for (const info of capList(sets.thunderCap)) {
+    if (!capActive(info, now) || !covers(info, county, town)) continue;
+    put('thunder', 1, '大雷雨即時訊息', info);
+  }
   lit('wind', sets.windCap, '陸上強風特報');
   lit('cold', sets.coldCap, '低溫特報');
   lit('heat', sets.heatCap, '高溫資訊');
@@ -223,7 +232,7 @@ export function cwaWarnings(sets, county, town, now = Date.now()) {
     const cap = capList(sets.windCap).find((i) => capActive(i, now) && covers(i, county, town));
     if (cap) out.wind = { ...out.wind, text: String(cap.description ?? '') };
   }
-  const order = ['typhoon', 'rain', 'wind', 'heat', 'cold', 'fog'];
+  const order = ['typhoon', 'wind', 'thunder', 'rain', 'heat', 'cold', 'fog'];
   return order.filter((t) => out[t]).map((t) => out[t]);
 }
 
@@ -237,6 +246,7 @@ export function eventsFromCwa(warnings) {
     if (w.type === 'typhoon') out.add(w.level >= 2 ? 'typhoon8' : 'typhoon1');
     else if (w.type === 'rain') out.add(w.level >= 2 ? 'blackrain' : 'rainstorm');
     else if (w.type === 'wind') out.add(w.level >= 3 ? 'typhoon8' : w.level === 2 ? 'thunder' : 'typhoon1');
+    else if (w.type === 'thunder') out.add('thunder');
     else if (w.type === 'heat') out.add('hot');
     else if (w.type === 'cold') out.add('cold');
   }
@@ -290,6 +300,7 @@ export function buildCwa(sets, lat, lon, now = Date.now()) {
 export function createCwaClient({ key = process.env.CWA_API_KEY, fetchImpl = fetch, now = () => Date.now() } = {}) {
   const cache = new Map();
   async function load(name) {
+    if (name === 'thunderCap') return loadThunder();
     const id = DATASETS[name];
     const hit = cache.get(id);
     if (hit && (hit.data || hit.pending) && now() - hit.at < TTL[name] * 60_000) return hit.pending ?? hit.data;
@@ -315,7 +326,45 @@ export function createCwaClient({ key = process.env.CWA_API_KEY, fetchImpl = fet
       throw e;
     }
   }
-  async function sets(names = Object.keys(DATASETS)) {
+  // NCDR feed → CWA 雷雨 CAP files → { records: { info: [...] } } like the CWA CAP datasets.
+  let thunder = null;
+  async function loadThunder() {
+    if (thunder && now() - thunder.at < TTL.thunderCap * 60_000) return thunder.pending ?? thunder.data;
+    const prev = thunder;
+    const pending = (async () => {
+      const res = await fetchImpl(NCDR_ACTIVE_FEED, { signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) throw new Error(`NCDR feed ${res.status}`);
+      const links = thunderLinks(await res.text()).slice(0, 12);
+      const caps = await Promise.allSettled(
+        links.map(async (href) => {
+          const hit = capFiles.get(href);
+          if (hit) return hit;
+          const r = await fetchImpl(href, { signal: AbortSignal.timeout(15_000) });
+          if (!r.ok) throw new Error(`CAP ${r.status}`);
+          const info = parseCapXml(await r.text());
+          capFiles.set(href, info);
+          return info;
+        }),
+      );
+      if (capFiles.size > 200) capFiles.clear();
+      return { records: { info: caps.flatMap((c) => (c.status === 'fulfilled' ? c.value : [])) } };
+    })();
+    thunder = { at: now(), pending, data: prev?.data ?? null };
+    try {
+      const data = await pending;
+      thunder = { at: now(), data, pending: null };
+      return data;
+    } catch (e) {
+      if (prev?.data && now() - prev.at < 30 * 60_000) {
+        thunder = { at: prev.at, data: prev.data, pending: null };
+        return prev.data;
+      }
+      thunder = null;
+      throw e;
+    }
+  }
+  const capFiles = new Map();
+  async function sets(names = [...Object.keys(DATASETS), 'thunderCap']) {
     const got = await Promise.allSettled(names.map(load));
     const out = {};
     names.forEach((n, i) => {
@@ -331,7 +380,7 @@ export function createCwaClient({ key = process.env.CWA_API_KEY, fetchImpl = fet
     },
     /** Warnings only (push poll): needs the county, so one station list plus the warning sets. */
     async warningsAt(lat, lon) {
-      const s = await sets(['obs', 'county', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap']);
+      const s = await sets(WARNING_SETS);
       const st = nearest(s.obs?.records?.Station, lat, lon)[0];
       if (!st || st.km > 60) return null;
       const county = st.s.GeoInfo?.CountyName ?? '';
@@ -339,6 +388,48 @@ export function createCwaClient({ key = process.env.CWA_API_KEY, fetchImpl = fet
       return { county, town, warnings: cwaWarnings(s, county, town, now()) };
     },
   };
+}
+
+/** Datasets the warning list needs (push poll). */
+export const WARNING_SETS = ['obs', 'county', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap', 'thunderCap'];
+
+const xmlText = (block, tag) => {
+  const m = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`).exec(block);
+  return m ? m[1].replace(/^<!\\[CDATA\\[/, '').replace(/\\]\\]>$/, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() : '';
+};
+
+/** CAP links of CWA 雷雨 (大雷雨即時訊息) entries in the NCDR Atom feed. Cancels are skipped. */
+export function thunderLinks(atom) {
+  const out = [];
+  for (const m of String(atom ?? '').matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
+    const e = m[1];
+    const cwa = /中央氣象署/.test(xmlText(e, 'name')) || /^CWA/.test(xmlText(e, 'id'));
+    const thunder = /雷雨/.test(xmlText(e, 'title')) || /term="雷雨"/.test(e) || /thunderstorm/i.test(xmlText(e, 'id'));
+    if (!cwa || !thunder || /Cancel/i.test(xmlText(e, 'cap:msgType'))) continue;
+    const href = /<link[^>]*href="([^"]+)"/.exec(e)?.[1];
+    if (href && /^https:\/\/alerts\.ncdr\.nat\.gov\.tw\//.test(href) && !out.includes(href)) out.push(href);
+  }
+  return out;
+}
+
+/** One CAP 1.2 XML file → info objects in the CWA JSON CAP shape (headline, onset, expires, description, area[]). */
+export function parseCapXml(xml) {
+  const s = String(xml ?? '');
+  if (/<msgType>\s*Cancel\s*<\/msgType>/i.test(s)) return [];
+  return [...s.matchAll(/<info>([\s\S]*?)<\/info>/g)].map((m) => {
+    const b = m[1];
+    return {
+      event: xmlText(b, 'event'),
+      urgency: xmlText(b, 'urgency'),
+      headline: xmlText(b, 'headline'),
+      effective: xmlText(b, 'effective'),
+      onset: xmlText(b, 'onset'),
+      expires: xmlText(b, 'expires'),
+      description: xmlText(b, 'description'),
+      parameter: [],
+      area: [...b.matchAll(/<area>([\s\S]*?)<\/area>/g)].map((a) => ({ areaDesc: xmlText(a[1], 'areaDesc') })),
+    };
+  });
 }
 
 export const TW_COUNTIES = ['基隆市', '臺北市', '新北市', '桃園市', '新竹市', '新竹縣', '苗栗縣', '臺中市', '彰化縣', '南投縣', '雲林縣', '嘉義市', '嘉義縣', '臺南市', '高雄市', '屏東縣', '宜蘭縣', '花蓮縣', '臺東縣', '澎湖縣', '金門縣', '連江縣'];

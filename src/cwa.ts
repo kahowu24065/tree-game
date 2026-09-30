@@ -9,7 +9,7 @@ import { timeoutSignal, type HkoData, type HkoForecastDay, type HkoWarning } fro
 import { PUSH_SERVER } from './native/push';
 import type { StormKind } from './types';
 
-export type CwaWarningType = 'typhoon' | 'rain' | 'wind' | 'heat' | 'cold' | 'fog';
+export type CwaWarningType = 'typhoon' | 'rain' | 'wind' | 'thunder' | 'heat' | 'cold' | 'fog';
 
 export interface CwaRawWarning {
   type: CwaWarningType;
@@ -45,7 +45,7 @@ export function inTaiwan(lat: number, lon: number): boolean {
   return box(21.85, 25.35, 120.0, 122.1) || box(23.1, 23.9, 119.3, 119.8) || box(24.38, 24.54, 118.28, 118.49) || box(24.39, 24.47, 118.205, 118.27) || box(25.93, 26.4, 119.88, 120.52);
 }
 
-const GROUP: Record<CwaWarningType, string> = { typhoon: 'TWTY', rain: 'TWRAIN', wind: 'TWWIND', heat: 'TWHOT', cold: 'TWCOLD', fog: 'TWFOG' };
+const GROUP: Record<CwaWarningType, string> = { typhoon: 'TWTY', rain: 'TWRAIN', wind: 'TWWIND', thunder: 'TWTS', heat: 'TWHOT', cold: 'TWCOLD', fog: 'TWFOG' };
 
 /** One CWA warning → the shared warning shape. The name is CWA's own (e.g. 豪雨特報, 陸上強風特報（橙色燈號）). */
 export function mapCwaWarning(w: CwaRawWarning): HkoWarning | null {
@@ -64,13 +64,14 @@ export function mapCwaWarning(w: CwaRawWarning): HkoWarning | null {
   } else if (w.type === 'wind') {
     kind = level >= 3 ? 'typhoon' : 'gale';
     tone = level >= 3 ? 'red' : level === 2 ? 'amber' : 'yellow';
-  } else if (w.type === 'heat') tone = level >= 3 ? 'red' : level === 2 ? 'amber' : 'yellow';
+  } else if (w.type === 'thunder') tone = 'yellow';
+  else if (w.type === 'heat') tone = level >= 3 ? 'red' : level === 2 ? 'amber' : 'yellow';
   else if (w.type === 'cold') tone = 'blue';
   else tone = 'gray';
   return { ...base, kind, tone };
 }
 
-const ORDER: Record<string, number> = { TWTY: 0, TWWIND: 1, TWRAIN: 2, TWHOT: 3, TWCOLD: 4, TWFOG: 5 };
+const ORDER: Record<string, number> = { TWTY: 0, TWWIND: 1, TWTS: 2, TWRAIN: 3, TWHOT: 4, TWCOLD: 5, TWFOG: 6 };
 
 export function parseCwa(body: CwaResponse, now = Date.now()): CwaBundle {
   const warnings = (body.warnings ?? []).map(mapCwaWarning).filter((w): w is HkoWarning => Boolean(w)).sort((a, b) => (ORDER[a.group] ?? 9) - (ORDER[b.group] ?? 9));

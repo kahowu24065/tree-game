@@ -17,7 +17,7 @@ import { nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, 
 import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
-import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
+import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
@@ -117,7 +117,7 @@ function damageText(id: WeatherEventId, unlocked: boolean): string {
   const d = ev(id);
   if (!d.damage) return '冇傷害';
   if (d.category === 'heat') return `健康 −${d.damage}（做酷熱澆水就唔扣）`;
-  if (d.category === 'cold') return `健康 −${d.damage}（做保暖就唔扣）`;
+  if (d.category === 'cold') return `健康 −${d.damage}（做保暖：樹根周圍鋪覆蓋物保持土溫，防止根部凍傷，就唔扣）`;
   if (d.category === 'rain') return `健康 −${d.damage}（做${emergencyName('rainDrain')}就唔扣）`;
   if (!unlocked) return '青年樹前唔受風災影響';
   return `健康 −${d.damage} × (1 − R/100)・R 低過 ${d.collapseBelow} 會倒塌`;
@@ -629,7 +629,7 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   }
   const signal = !view.manual && cd?.active ? signalLabel(wx.warnings, cd.event) : null;
   const noReading = wx.reading === false && !firstLoad && !view.manual;
-  const label = view.manual ? ev(view.todayEvent).label : signal ?? (cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code));
+  const label = view.manual ? ev(view.todayEvent).label : signal ?? (cd?.active ? ev(cd.event).label : nightLabel(wx.conditionText || weatherLabel(cond.code), view.night));
   let line: string;
   if (cd) {
     const cat = ev(cd.event).category;
@@ -698,7 +698,7 @@ export function warnIcon(w: HkoWarning): string {
     const n = w.group === 'TWTY' ? '颱' : '風';
     return `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5l8.5 16H1.5z" fill="currentColor"/><text x="10" y="15.5" text-anchor="middle" font-size="7.5" font-weight="700" fill="#fff">${n}</text></svg>`;
   }
-  const alias: Record<string, string> = { TWRAIN: 'WRAIN', TWHOT: 'WHOT', TWCOLD: 'WCOLD' };
+  const alias: Record<string, string> = { TWTS: 'WTS', TWRAIN: 'WRAIN', TWHOT: 'WHOT', TWCOLD: 'WCOLD' };
   if (alias[w.group]) return warnIcon({ ...w, group: alias[w.group] });
   if (w.group === 'WTCSGNL') {
     const n = w.code.replace(/^TC(\d+).*/, '$1');
@@ -1089,7 +1089,7 @@ export function weatherPageHtml(view: View): string {
   const { cond, wx } = view;
   const simulated = wx.provider === 'sim' && !wx.overridden;
   const reading = wx.reading !== false;
-  const label = reading ? wx.conditionText || weatherLabel(cond.code) : '';
+  const label = reading ? nightLabel(wx.conditionText || weatherLabel(cond.code), view.night) : '';
   const facts = [
     reading && wx.humidity !== undefined ? `濕度 ${Math.round(wx.humidity)}%` : '',
     !reading || wx.bureau === 'hko' ? '' : `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,

@@ -13,6 +13,7 @@ const ALL: CwaRawWarning[] = [
   ...[1, 2, 3].map((level) => ({ type: 'wind' as const, level, name: '陸上強風特報' })),
   ...[1, 2, 3].map((level) => ({ type: 'heat' as const, level, name: '高溫資訊' })),
   ...[1, 2, 3].map((level) => ({ type: 'cold' as const, level, name: '低溫特報' })),
+  { type: 'thunder', level: 1, name: '大雷雨即時訊息' },
   { type: 'fog', level: 1, name: '濃霧特報' },
 ];
 
@@ -44,5 +45,22 @@ describe('Taiwan / CWA', () => {
     expect(b.data.warnings[0]?.name).toMatch(/^高溫資訊/);
     expect(b.data.warnings[0]?.group).toBe('TWHOT');
     expect(hkoWarningEvents(b.data.warnings)).toEqual(['hot']);
+  });
+});
+
+describe('v1.4.15 night wording', () => {
+  it('sunny words become night clear-sky words after dark, for every source', async () => {
+    const { nightLabel, weatherLabel } = await import('../src/weather');
+    const { hkoIconLabel } = await import('../src/hko');
+    // HKO / SMG / CWA readings all go through HKO icon labels; Open-Meteo through weatherLabel.
+    expect(nightLabel(hkoIconLabel(50), true)).toBe('天晴');
+    expect(nightLabel(hkoIconLabel(51), true)).toBe('天晴間有雲');
+    expect(nightLabel(hkoIconLabel(52), true)).toBe('大致多雲');
+    expect(nightLabel(hkoIconLabel(53), true)).not.toContain('陽光');
+    expect(nightLabel(hkoIconLabel(54), true)).not.toContain('陽光');
+    expect(nightLabel(weatherLabel(2), true)).toBe('天晴間有雲');
+    expect(nightLabel(weatherLabel(0), true)).toBe('天晴');
+    expect(nightLabel(hkoIconLabel(70), true)).toBe('天色良好');
+    expect(nightLabel(hkoIconLabel(50), false)).toBe('陽光充沛');
   });
 });

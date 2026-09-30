@@ -126,6 +126,22 @@ export function weatherLabel(code: number): string {
   return '多雲';
 }
 
+/**
+ * v1.4.15 night wording for the live condition line. HKO icons 50–54 (used by HKO, SMG and CWA readings) and the
+ * Open-Meteo 「間有陽光」 speak of sunshine; after dark the art is already a moon, so the text follows it.
+ */
+const NIGHT_WORDS: [RegExp, string][] = [
+  [/^陽光充沛/, '天晴'],
+  [/^間有陽光/, '天晴間有雲'],
+  [/^短暫陽光/, '大致多雲'],
+  [/^陽光/, '天晴'],
+];
+export function nightLabel(label: string, night: boolean): string {
+  if (!night || !label) return label;
+  for (const [re, word] of NIGHT_WORDS) if (re.test(label)) return label.replace(re, word);
+  return label.replace(/陽光/g, '天晴');
+}
+
 /** Condition wording for a forecast row: HKO's own words when it covers the day. */
 export function dayLabel(day: Pick<ForecastDay, 'code' | 'hkoIcon'>): string {
   return day.hkoIcon !== undefined ? hkoIconLabel(day.hkoIcon) || weatherLabel(day.code) : weatherLabel(day.code);
