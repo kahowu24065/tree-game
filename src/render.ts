@@ -1,4 +1,5 @@
 import { stageFor, stageProgress } from './content';
+import type { NestBuildKind } from './nest';
 import type { SpeciesId } from './data/species';
 import { drawAnimal } from './draw-animals';
 import type { DayCond, Reinforcement, TimeMode } from './types';
@@ -22,6 +23,12 @@ export interface SceneInput {
   /** Every animal seen so far (the 3D scene rotates a random subset). */
   unlocked: string[];
   residents: string[];
+  /** Clutch shown on today's bird. */
+  nest?: 'empty' | 'egg' | 'chick';
+  /** Species that laid the current clutch. */
+  nestBird?: string;
+  /** Island decorations earned by hatched eggs, oldest first. */
+  nestBuilds?: NestBuildKind[];
   /** 0 calm … 1 typhoon: drives tree sway. */
   sway: number;
   cond: DayCond;

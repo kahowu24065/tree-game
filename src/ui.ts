@@ -13,6 +13,7 @@ import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
+import { nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
 import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
@@ -297,6 +298,24 @@ export function clockLeft(ms: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+/** Remaining incubation as HH:MM. Null when there is no egg still waiting to hatch. */
+export function hatchClockText(state: GameState): string | null {
+  if (!state.started || state.over) return null;
+  const at = nestHatchAt(state);
+  if (at == null) return null;
+  const m = Math.max(0, Math.ceil((at - uiNow()) / 60000));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** The card under the weather card. Hidden once the egg has hatched or there is none. */
+export function syncHatchCard(state: GameState): void {
+  const el = document.getElementById('hatch-card');
+  if (!el) return;
+  const text = hatchClockText(state);
+  el.hidden = text == null;
+  if (text) setHtml(el, `孵蛋時間：<b>${text}</b>`);
+}
+
 /** The note cards to show, most urgent first: 瀕死 > 倒塌 (double R day) > the morning note. */
 export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
   const out: NoteCard[] = [];
@@ -558,6 +577,7 @@ export function renderChrome(view: View): void {
   document.body.classList.toggle('dying', Boolean(state.dying) && !state.over);
   document.getElementById('scene')?.setAttribute('aria-label', `${state.treeName}，${weatherLabel(cond.code)}，高 ${formatHeight(state.heightCm)}`);
   document.title = `${state.treeName} · 世界之樹`;
+  syncHatchCard(state);
 }
 
 /**
@@ -1288,9 +1308,23 @@ function achievementTab(view: View): string {
     const got = earnedIsle.has(a.id);
     return `<li class="${got ? 'done' : ''}"><strong>${esc(a.title)}</strong><span>${got ? '已拎' : '未拎'}</span><p>${esc(a.detail)}</p></li>`;
   }).join('');
+  const hatched = state.nest?.hatched ?? 0;
+  const nextEgg = nextNestAwardCount(hatched);
+  const earnedEggs = [...(state.nest?.awards ?? [])].sort((a, b) => a.count - b.count);
+  const gotEggs = earnedEggs.length ? `<p>已拎：${earnedEggs.map((a) => esc(nestAwardTitle(a.count))).join('、')}</p>` : '';
+  const built = nestBuilds(hatched);
+  const nextBuild = nestBuildAt(nextNestBuildCount(hatched));
+  const gotBuilds = built.length ? `<p>島上：${built.map((k) => esc(nestBuildPhrase(k))).join('、')}</p>` : '';
+  const collectedEggs = [...(meta.nest ?? [])].reverse();
+  const eggCollection = collectedEggs.length
+    ? `<ol class="miles">${collectedEggs.map((m) => `<li class="done"><strong>${esc(nestAwardTitle(m.count))}</strong><span>已拎</span><p>${esc(m.treeName)}（${esc(speciesDef(m.species).name)}）· ${esc(m.date)}</p></li>`).join('')}</ol>`
+    : '';
   return `
     <h3 class="sub">島嶼</h3>
     <ol class="miles">${isles}</ol>
+    <h3 class="sub">雀巢</h3>
+    <ol class="miles"><li class="${hatched ? 'done' : ''}"><strong>雀鳥生蛋</strong><span>已孵化 ${hatched} 粒</span><p>健康度 50 或以上，每日一種見過嘅雀會生蛋。6 小時後孵化。第 1 粒同之後每 10 粒，島上多一件裝飾。第 5、15、25 粒，之後都係呢個次序，當晚多長一截。</p><p>下次裝飾：第 ${nextNestBuildCount(hatched)} 粒${nextBuild ? `（${esc(nestBuildPhrase(nextBuild))}）` : ''} · 下次加高：第 ${nextNestHeightCount(hatched)} 粒</p><p>下次成就：${esc(nestAwardTitle(nextEgg))} · ${hatched} / ${nextEgg}</p>${gotBuilds}${gotEggs}</li></ol>
+    ${eggCollection}
     <h3 class="sub">天氣</h3>
     <ol class="miles">${groups}</ol>
     <h3 class="sub">成就收藏</h3>

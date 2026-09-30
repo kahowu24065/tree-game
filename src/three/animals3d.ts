@@ -300,16 +300,32 @@ function owlFig(look: Look): THREE.Group {
 
 function nestFig(): THREE.Group {
   const k = new Kit();
-  k.add('body', new THREE.CylinderGeometry(0.42, 0.26, 0.2, 9, 1, true), '#8a6440', [0, 0.1, 0]);
-  k.add('body', new THREE.TorusGeometry(0.4, 0.08, 4, 10), '#a07448', [0, 0.2, 0], [Math.PI / 2, 0, 0]);
-  k.add('body', new THREE.CircleGeometry(0.3, 9), '#6d4e31', [0, 0.05, 0], [-Math.PI / 2, 0, 0]);
+  k.add('bowl', new THREE.CylinderGeometry(0.42, 0.26, 0.2, 9, 1, true), '#8a6440', [0, 0.1, 0]);
+  k.add('bowl', new THREE.TorusGeometry(0.4, 0.08, 4, 10), '#a07448', [0, 0.2, 0], [Math.PI / 2, 0, 0]);
+  k.add('bowl', new THREE.CircleGeometry(0.3, 9), '#6d4e31', [0, 0.05, 0], [-Math.PI / 2, 0, 0]);
   for (let i = 0; i < 3; i++) {
     const a = i * 2.1;
-    k.add('body', E(0.1, 0.13, 0.1), '#9fd3e6', [Math.cos(a) * 0.13, 0.15, Math.sin(a) * 0.13], [0, 0, 0.3 * (i - 1)]);
+    k.add('eggs', E(0.1, 0.13, 0.1), '#9fd3e6', [Math.cos(a) * 0.13, 0.15, Math.sin(a) * 0.13], [0, 0, 0.3 * (i - 1)]);
   }
+  k.add('chick', E(0.16, 0.14, 0.16), '#f2c14e', [0, 0.18, 0]);
+  k.add('chick', E(0.06, 0.05, 0.05), '#e07a2f', [0.12, 0.24, 0]);
   const g = k.build();
-  g.children.forEach((m) => ((m as THREE.Mesh).material = MAT.double));
+  g.children.forEach((m) => {
+    const mesh = m as THREE.Mesh;
+    if (mesh.material) mesh.material = MAT.double;
+  });
+  const eggs = g.getObjectByName('eggs');
+  const chick = g.getObjectByName('chick');
+  if (eggs) eggs.visible = false;
+  if (chick) chick.visible = false;
   return g;
+}
+
+/** One nest in the branches. Eggs stay here, not on the birds. */
+function clutchNestMesh(): THREE.Group {
+  const nest = template('nest')!.clone();
+  nest.name = 'clutchNest';
+  return nest;
 }
 
 /* ---------- Mammals ---------- */
@@ -1256,6 +1272,10 @@ export class Animals3D {
   private tree: TreeBuild | null = null;
   private pool: string[] = [];
   private residents: string[] = [];
+  private clutch: 'empty' | 'egg' | 'chick' = 'empty';
+  private clutchBird = '';
+  /** One nest on a branch while an egg or chick is waiting. The magpie robin already brings its own. */
+  private clutchNest: THREE.Group | null = null;
   private night = false;
   private weak = false;
   private stage = 0;
@@ -1493,13 +1513,13 @@ export class Animals3D {
   }
 
   /** Follow-cam data for a picked animal, or null once it has left. v10: always one member (chase cam when flying). */
-  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean; flying?: boolean; perched?: boolean; group?: number } | null {
+  focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean; flying?: boolean; perched?: boolean; group?: number; id: string } | null {
     const h = ref as { crew: Crew; member: Member } | null;
     if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
     const c = h.crew;
     const m = h.member;
     const fly = FLYERS.has(c.def.motion);
-    return { pos: m.pos, size: this.dlen(c.def), yaw: m.yaw, outward: fly, flying: fly && m.mode === 'fly', perched: fly && m.mode === 'perch', group: c.members.length };
+    return { pos: m.pos, size: this.dlen(c.def), yaw: m.yaw, outward: fly, flying: fly && m.mode === 'fly', perched: fly && m.mode === 'perch', group: c.members.length, id: c.def.id };
   }
 
   flyerHeights(): { id: string; y: number; ceiling: number; perched: boolean }[] {
@@ -1520,7 +1540,48 @@ export class Animals3D {
   }
 
   /** Update what may appear: every unlocked (seen) animal, the residents, day/night and the tree's stage. */
-  sync(opts: { unlocked: string[]; residents: string[]; tree: TreeBuild; health: number; night: boolean; stage?: number }): void {
+  /** Eggs or a chick stay in one nest on the tree. The magpie robin's own nest is handled separately. */
+  setClutch(phase: 'empty' | 'egg' | 'chick', bird = ''): void {
+    if (this.clutch === phase && this.clutchBird === bird) return;
+    this.clutch = phase;
+    this.clutchBird = bird;
+    for (const c of this.crews) if (c.def.motion === 'nest') this.applyClutch(c);
+    this.syncClutchNest();
+  }
+
+  private syncClutchNest(): void {
+    const tree = this.tree;
+    const onRobin = this.clutchBird === 'magpierobin';
+    const show = Boolean(tree) && this.clutch !== 'empty' && this.clutchBird !== '' && !onRobin;
+    if (!show || !tree) {
+      if (this.clutchNest) this.clutchNest.visible = false;
+      return;
+    }
+    if (!this.clutchNest) {
+      this.clutchNest = clutchNestMesh();
+      this.root.add(this.clutchNest);
+    }
+    this.clutchNest.visible = true;
+    this.clutchNest.traverse((o) => {
+      if (o.name === 'eggs') o.visible = this.clutch === 'egg';
+      if (o.name === 'chick') o.visible = this.clutch === 'chick';
+    });
+    const local = tree.nest ? tree.nest.pos : new THREE.Vector3(tree.trunkRadius * 2, tree.height * 0.58, tree.trunkRadius * 0.4);
+    tree.group.localToWorld(this.clutchNest.position.copy(local));
+    const def = animalById(this.clutchBird);
+    this.clutchNest.scale.setScalar(Math.max(0.22, (def ? this.scaleFor(def) : 0.35) * 1.45));
+  }
+
+  private applyClutch(c: { members: { obj: THREE.Object3D }[] }): void {
+    for (const m of c.members) {
+      m.obj.traverse((o) => {
+        if (o.name === 'eggs') o.visible = this.clutch === 'egg';
+        if (o.name === 'chick') o.visible = this.clutch === 'chick';
+      });
+    }
+  }
+
+  sync(opts: { unlocked: string[]; residents: string[]; tree: TreeBuild; health: number; night: boolean; stage?: number; pinned?: string[] }): void {
     const treeChanged = this.tree !== opts.tree;
     this.tree = opts.tree;
     this.pool = opts.unlocked.filter((id) => animalById(id));
@@ -1544,6 +1605,10 @@ export class Animals3D {
     }
     this.trimToCap();
     for (const id of this.residents) if (!this.crews.some((c) => c.def.id === id && !c.leaving) && this.fits(animalById(id)!)) this.spawn(id, { resident: true });
+    const pin = (opts.pinned ?? []).filter((id) => animalById(id) && !this.residents.includes(id));
+    for (const c of this.crews) if (c.forced && !pin.includes(c.def.id)) this.retire(c);
+    for (const id of pin) if (!this.crews.some((c) => c.def.id === id && !c.leaving)) this.spawn(id, { forced: true });
+    for (const c of this.crews) if (c.def.motion === 'nest') this.applyClutch(c);
     if (nightChanged || stageChanged || this.visibleCrews().length === 0) this.fill();
   }
 
@@ -1625,11 +1690,11 @@ export class Animals3D {
   }
 
   /** Position and on-screen size of a visible member of `id` (for the developer follow-cam). */
-  focus(id: string): { pos: THREE.Vector3; size: number; yaw: number } | null {
+  focus(id: string): { pos: THREE.Vector3; size: number; yaw: number; id: string } | null {
     const c = this.crews.find((x) => x.def.id === id && !x.leaving) ?? this.crews.find((x) => x.def.id === id);
     const m = c?.members[c.members.length > 1 ? 1 : 0];
     if (!c || !m) return null;
-    return { pos: m.pos, size: (c.def.look.kind === 'butterfly' ? (c.def.real.span ?? c.def.real.len) : c.def.real.len) * this.af, yaw: m.yaw };
+    return { pos: m.pos, size: (c.def.look.kind === 'butterfly' ? (c.def.real.span ?? c.def.real.len) : c.def.real.len) * this.af, yaw: m.yaw, id: c.def.id };
   }
 
   caps(): EcoCaps {
@@ -1991,6 +2056,7 @@ export class Animals3D {
     this.crews = this.crews.filter((c) => !c.gone);
     if (this.fly.points.visible) this.updateFireflies(t, night);
     this.updateHints(t, dt);
+    this.syncClutchNest();
   }
 
   /** v9: faint trails behind small flying birds, twinkles on insects — strongest when they are tiny on screen. */
@@ -2304,6 +2370,11 @@ export class Animals3D {
         case 'nest': {
           if (tree.nest) tree.group.localToWorld(m.pos.copy(tree.nest.pos).add(new THREE.Vector3(0, tree.trunkRadius * 0.3, 0)));
           else this.perchWorld(0, m.pos);
+          const show = this.clutchBird === 'magpierobin' ? this.clutch : 'empty';
+          m.obj.traverse((o) => {
+            if (o.name === 'eggs') o.visible = show === 'egg';
+            if (o.name === 'chick') o.visible = show === 'chick';
+          });
           break;
         }
         case 'hollow': {

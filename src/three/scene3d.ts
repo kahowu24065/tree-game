@@ -7,8 +7,10 @@ import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
-import { buildTree, healthUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
+import { buildTree, healthUniforms, peekUniform, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
+import type { NestBuildKind } from '../nest';
+import { buildNestDecor } from './nestDecor3d';
 import { healthLook } from '../treeLook';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
@@ -82,8 +84,11 @@ export class Scene3D {
   private growFrom = 1;
   private growStart = 0;
   /** Opening shot: hold a far view, pull in, then let the seedling break the soil. */
-  private seedPhase: 'far' | 'pull' | 'sprout' | 'settle' | null = null;
+  private seedPhase: 'far' | 'pull' | 'sprout' | 'settle' | 'intro' | null = null;
   private seedT = 0;
+  /** Opening glide: zoom at the moment the hold ends, and seconds spent easing to the normal distance. */
+  private introFrom = 1;
+  private introGlide = -1;
   private onSeed: (() => void) | null = null;
   private clouds: { mesh: THREE.Mesh; r: number; a: number; y: number; speed: number; low: boolean }[] = [];
   private cloudMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, transparent: true, opacity: 0.94, emissive: '#ffffff', emissiveIntensity: 0.35 });
@@ -91,6 +96,10 @@ export class Scene3D {
   private glow: THREE.Points;
   private sparkles: THREE.Points;
   private landmark = new THREE.Group();
+  private nestDecor = new THREE.Group();
+  private nestBlades: THREE.Object3D[] = [];
+  private nestObstacles: { x: number; z: number; r: number }[] = [];
+  private nestKey = '';
   private rain: THREE.LineSegments;
   private rainSeeds: Float32Array;
   private sea: THREE.Mesh;
@@ -126,6 +135,8 @@ export class Scene3D {
   private swellT = -99;
   private follow: string | null = null;
   private followOn = false;
+  /** 0 solid crown … 1 while the nest is being watched. */
+  private nestPeek = 0;
   private followAz = 0;
   private followPos = new THREE.Vector3();
   private heatK = 0;
@@ -343,6 +354,7 @@ export class Scene3D {
     this.landmark.position.set(2.8, 0.05, 2.2);
     this.landmark.visible = false;
     this.land.add(this.landmark);
+    this.land.add(this.nestDecor);
 
     // Rain streaks.
     const n = 900;
@@ -772,7 +784,7 @@ export class Scene3D {
     const c = this.canvas;
     c.style.touchAction = 'none';
     c.addEventListener('pointerdown', (e) => {
-      if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle') return;
+      if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro') return;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         c.setPointerCapture(e.pointerId);
@@ -1012,6 +1024,27 @@ export class Scene3D {
     this.zoomGoal = this.groundZoom;
   }
 
+  /**
+   * Opening an existing tree: glide from the planting vista straight to the normal view.
+   * The tree stays visible. `done` runs once the camera arrives.
+   */
+  beginIntro(reduced: boolean, done: () => void): void {
+    this.panGoal.set(0, 0, 0);
+    this.panOff.set(0, 0, 0);
+    if (reduced) {
+      this.seedPhase = null;
+      this.onSeed = null;
+      this.zoom = this.zoomGoal = 1;
+      done();
+      return;
+    }
+    this.seedPhase = 'intro';
+    this.seedT = 0;
+    this.introGlide = -1;
+    this.onSeed = done;
+    this.zoom = this.zoomGoal = this.farZoom();
+  }
+
   /** Zoom by `factor` (<1 = closer), keeping the point under (x, y) fixed on screen. */
   zoomBy(factor: number, x?: number, y?: number): void {
     if (this.seedPhase) return;
@@ -1139,6 +1172,28 @@ export class Scene3D {
 
   private noteView(): void {
     this.viewNudgeAt = performance.now();
+  }
+
+  /** Fade the crown and branches so a nest on an inner branch can be seen. */
+  private applyNestPeek(on: boolean, dt: number): void {
+    const goal = on ? 1 : 0;
+    this.nestPeek += (goal - this.nestPeek) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 4));
+    if (Math.abs(this.nestPeek - goal) < 0.001) this.nestPeek = goal;
+    peekUniform.uPeek.value = this.nestPeek;
+    const fade = this.nestPeek > 0.04;
+    const group = this.tree?.group;
+    if (!group) return;
+    group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      const part = mesh.userData?.treePart;
+      if ((part !== 'bark' && part !== 'leaf') || !(mesh.material instanceof THREE.Material)) return;
+      const m = mesh.material;
+      if (m.transparent !== fade) {
+        m.transparent = fade;
+        m.depthWrite = !fade;
+        m.needsUpdate = true;
+      }
+    });
   }
 
   /** Whether the player has left the overview (zoomed or following), and who is being followed. */
@@ -1331,11 +1386,12 @@ export class Scene3D {
       this.animalsKey = '';
     }
     const night = input.daylight < 0.35;
-    const akey = `${input.unlocked.join(',')}|${input.residents.join(',')}|${input.health >= 22}|${night}|${input.stage}`;
+    const akey = `${input.unlocked.join(',')}|${input.residents.join(',')}|${input.health >= 22}|${night}|${input.stage}|${input.nest ?? 'empty'}|${input.nestBird ?? ''}`;
     if (akey !== this.animalsKey && this.tree) {
-      this.animals.sync({ unlocked: input.unlocked, residents: input.residents, tree: this.tree, health: input.health, night, stage: input.stage });
+      this.animals.sync({ unlocked: input.unlocked, residents: input.residents, tree: this.tree, health: input.health, night, stage: input.stage, pinned: input.nest && input.nest !== 'empty' && input.nestBird ? [input.nestBird] : [] });
       this.animalsKey = akey;
     }
+    this.animals.setClutch(input.nest ?? 'empty', input.nestBird ?? '');
   }
 
   /** Ground height (island units) under (x, z), read from the rendered garden / habitat land meshes. */
@@ -1464,7 +1520,7 @@ export class Scene3D {
   private ensureNav(tree: TreeBuild, K: number, propK: number, landmark: boolean, fire: (CampfireSpot & { rU: number; key: string }) | null): void {
     const trunkU = Math.max(0.05, (tree.trunkRadius * 1.3) / Math.max(1e-3, K));
     const log = this.logWant && this.logProp && this.logProp.key !== 'pending' ? this.logProp : null;
-    const key = `${this.habitatKey}|${landmark ? 1 : 0}|${fire ? fire.key : ''}|${log ? log.key : ''}`;
+    const key = `${this.habitatKey}|${landmark ? 1 : 0}|${this.nestKey}|${fire ? fire.key : ''}|${log ? log.key : ''}`;
     if (this.nav && key === this.navKey && Math.abs(propK - this.navPk) / this.navPk < 0.04 && Math.abs(trunkU - this.navTrunk) / this.navTrunk < 0.08) return;
     this.navKey = key;
     this.navPk = propK;
@@ -1475,6 +1531,7 @@ export class Scene3D {
     for (const o of this.island.obstacles()) obstacles.push({ x: o.x, z: o.z, r: o.r * propK, fixed: true, kind: o.kind });
     if (hab && hab.stage > 0) for (const o of resolveObstacles(hab.obstacles, propK)) obstacles.push({ ...o, fixed: true });
     if (landmark) obstacles.push({ x: 2.8, z: 2.2, r: 0.55, fixed: true, kind: 'landmark' });
+    for (const o of this.nestObstacles) obstacles.push({ x: o.x, z: o.z, r: o.r, fixed: true, kind: 'nest' });
     if (fire) obstacles.push({ x: fire.x, z: fire.z, r: fire.rU * 1.15, fixed: true, kind: 'campfire' });
     // v16: the fallen top beside the tree (a few circles along the log).
     if (log) for (let i = 0; i < 3; i++) {
@@ -1632,6 +1689,7 @@ export class Scene3D {
     this.island.update(t, wind);
     this.habitat?.update(t, wind);
     this.landmark.visible = Boolean(input.landmark);
+    this.syncNestDecor(input.nestBuilds ?? [], K, t, input.reducedMotion);
     this.sparkles.visible = Boolean(input.starry);
     if (this.sparkles.visible) {
       this.sparkles.rotation.y = t * 0.05;
@@ -1713,6 +1771,32 @@ export class Scene3D {
         this.seedPhase = 'sprout';
         this.seedT = 0;
       }
+    } else if (this.seedPhase === 'intro') {
+      // Hold the planting vista until the tree's own framing has settled, then glide straight to the normal distance.
+      this.seedT += dt;
+      const framed = Math.abs(this.camDist - want) < Math.max(0.4, want * 0.04);
+      const hold = this.seedT < 1.2 && (this.seedT < 0.45 || !framed);
+      if (hold) {
+        this.zoom = this.zoomGoal = this.farZoom();
+        this.introGlide = -1;
+      } else {
+        // Smoothstep lands on the normal distance with no leftover snap.
+        if (this.introGlide < 0) {
+          this.introGlide = 0;
+          this.introFrom = this.zoom;
+        }
+        this.introGlide += dt;
+        const u = Math.min(1, this.introGlide / 4.8);
+        const s = u * u * (3 - 2 * u);
+        this.zoom = this.zoomGoal = this.introFrom + (1 - this.introFrom) * s;
+        if (u >= 1) {
+          this.zoom = this.zoomGoal = 1;
+          this.seedPhase = null;
+          const done = this.onSeed;
+          this.onSeed = null;
+          if (done) queueMicrotask(done);
+        }
+      }
     } else if (this.seedPhase === 'settle') {
       const back = dt === 0 ? 1 : 1 - Math.exp(-dt * 1.6);
       this.zoom += (1 - this.zoom) * back;
@@ -1730,7 +1814,7 @@ export class Scene3D {
     }
     this.panOff.lerp(this.panGoal, this.seedPhase === 'pull' ? (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.05)) : ez);
     const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
-    const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle';
+    const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro';
     if (handsOff && !planting && performance.now() - this.lastDrag > IDLE_MS) {
       if (!this.isZoomed()) this.dragEl *= 1 - Math.min(1, dt * 0.6);
       if (!input.reducedMotion) this.idleAz += dt * IDLE_SPIN;
@@ -1761,6 +1845,7 @@ export class Scene3D {
       dist = Math.max(0.22, focus.size * (chase ? 5.5 : 4.2)) * this.followZoom;
     }
     this.followOn = Boolean(focus);
+    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt);
     // Follow-cam looks from lower down so animals are seen in profile (chase: just above and behind).
     this.lift += (this.liftGoal - this.lift) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.5));
     const camEl = focus ? clamp((chase ? 0.2 : Math.min(el, 0.38)) + this.followOrbitEl + this.lift, -0.25, 1.25) : el;
@@ -1864,6 +1949,27 @@ export class Scene3D {
     this.drawRays(input, t);
   }
 
+  /** Hatch decorations (風車、銅像、屋仔、涼亭) on the garden, rebuilt only when the earned list changes. */
+  private syncNestDecor(kinds: readonly NestBuildKind[], K: number, t: number, reduced: boolean): void {
+    const key = kinds.join(',');
+    if (key !== this.nestKey) {
+      this.nestKey = key;
+      disposeGroup(this.nestDecor);
+      this.nestDecor.clear();
+      this.nestBlades = [];
+      this.nestObstacles = [];
+      if (kinds.length) {
+        const built = buildNestDecor(kinds);
+        this.nestDecor.add(built.group);
+        this.nestBlades = built.blades;
+        this.nestObstacles = built.obstacles;
+      }
+    }
+    this.nestDecor.scale.setScalar(K);
+    const spin = reduced ? 0 : t * 0.7;
+    for (const blade of this.nestBlades) blade.rotation.z = spin;
+  }
+
   /**
    * v15.2 campfire spot (island units): beside the trunk, front-left in the default view (clear of the height rail on
    * phones), outside the mulch ring, clear of water, props and the 養分地標. Re-picked only when the trunk / fire size
@@ -1876,11 +1982,12 @@ export class Scene3D {
     this.mulchR = mulchRadii(trunkU, dirtU);
     const rU = campfireRadiusUnits(animalFactor(tree.height), kS, tree.height / Math.max(1e-3, kS));
     const log = this.logWant && this.logProp && this.logProp.key !== 'pending' ? this.logProp : null;
-    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}|${log ? log.key : ''}`;
+    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}|${this.nestKey}|${log ? log.key : ''}`;
     if (!this.fireSpot || this.fireSpot.key !== key) {
       const hab = this.habitat;
       const props = [...this.island.obstacles().map((o) => ({ x: o.x, z: o.z, r: o.r * propK })), ...(hab && hab.stage > 0 ? resolveObstacles(hab.obstacles, propK) : [])];
       if (input.landmark) props.push({ x: 2.8, z: 2.2, r: 0.55 });
+      for (const o of this.nestObstacles) props.push(o);
       if (log) for (let i = 0; i < 3; i++) {
         const d = log.lenU * (0.2 + i * 0.3);
         props.push({ x: log.x + Math.cos(log.a) * d, z: log.z + Math.sin(log.a) * d, r: Math.max(0.12, log.rU * 1.8) });
@@ -2026,7 +2133,8 @@ export class Scene3D {
     const ground = new THREE.Mesh(new THREE.CylinderGeometry(build.canopyRadius * 1.1 + gm, build.canopyRadius * 1.0 + gm, build.height * 0.02, 20), new THREE.MeshStandardMaterial({ color: '#8cc26a', flatShading: true }));
     ground.position.y = -build.height * 0.01;
     scene.add(ground);
-    const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value };
+    const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value, peek: peekUniform.uPeek.value };
+    peekUniform.uPeek.value = 0;
     windUniforms.uWind.value = 0;
     windUniforms.uGust.value = 0;
     windUniforms.uHeight.value = build.localHeight;
@@ -2041,6 +2149,7 @@ export class Scene3D {
     windUniforms.uWind.value = saved.w;
     windUniforms.uGust.value = saved.g;
     windUniforms.uHeight.value = saved.h;
+    peekUniform.uPeek.value = saved.peek;
     build.dispose();
     ground.geometry.dispose();
     this.speciesThumbs.set(key, url);

@@ -187,6 +187,8 @@ export interface GameState {
    * tree regrows toward `heightBefore`) and the fallen log beside the tree for a few days. Never affects balance.
    */
   lastCollapse?: LastCollapse | null;
+  /** Magpie-robin clutch. Missing on saves from before the nest. */
+  nest?: NestState;
 }
 
 /** v16: the latest collapse, as the scene needs it. */
@@ -265,6 +267,8 @@ export interface MetaState {
   weather: MetaWeather[];
   /** Island achievements (second island after a world record). */
   isle: IsleAward[];
+  /** Hatched-egg achievements from every tree. */
+  nest?: MetaNest[];
 }
 
 /** Kept after visiting or planting on the second island. */
@@ -273,6 +277,41 @@ export interface IsleAward {
   date: string;
   treeName: string;
   species: SpeciesId;
+}
+
+/** One hatched-egg achievement kept across trees. */
+export interface MetaNest {
+  count: number;
+  treeName: string;
+  species: SpeciesId;
+  date: string;
+  ageDays: number;
+}
+
+/** Bird eggs on this tree. One unlocked species lays each day, and the egg hatches 6 hours later. */
+export interface NestState {
+  /** Eggs hatched on this tree (the settlement after each hatch). */
+  hatched: number;
+  awards: NestAward[];
+  /** The clutch, until the settlement after it hatches. */
+  egg: NestEgg | null;
+  /** Calendar date the current clutch was laid, so a day only has one species. */
+  laidOn: string;
+}
+
+export interface NestAward {
+  count: number;
+  date: string;
+  ageDays: number;
+  booked?: boolean;
+}
+
+export interface NestEgg {
+  /** Which bird laid it. */
+  bird: string;
+  laidAt: number;
+  /** Set once `laidAt` plus 6 hours has passed. Null while it is still an egg. */
+  hatchedAt: number | null;
 }
 
 /** Weather achievement kept across trees. */

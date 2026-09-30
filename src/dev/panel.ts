@@ -10,6 +10,7 @@ import { eventLabel } from '../labels';
 import { shownAge } from '../sim';
 import { SPECIES, STAGE_NAMES, type SpeciesId } from '../data/species';
 import { ANIMALS, CATEGORY_LABEL } from '../data/animals';
+import { nestBuildPhrase, nestBuilds, nextNestBuildCount } from '../nest';
 
 const SWAYS: [string, number | null][] = [
   ['自動（跟天氣）', null],
@@ -127,6 +128,15 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       </div>
       <p class="dev-note" data-dev-caps>${esc(capsText())}</p>
       <p class="dev-note" data-dev-eco>${esc(ecoText())}</p>
+      <h4 class="dev-h">雀巢</h4>
+      <p class="dev-note">已孵化 ${s.nest?.hatched ?? 0} 粒${nestBuilds(s.nest?.hatched ?? 0).length ? `・島上：${nestBuilds(s.nest?.hatched ?? 0).map((k) => nestBuildPhrase(k)).join('、')}` : ''}</p>
+      <div class="dev-actions">
+        <button type="button" data-dev="hatch-one">加一粒</button>
+        <button type="button" data-dev="hatch-next">加到下一件裝飾（第 ${nextNestBuildCount(s.nest?.hatched ?? 0)} 粒）</button>
+        <button type="button" data-dev="hatch-four">四件裝飾（第 30 粒）</button>
+        <button type="button" data-dev="hatch-restore">還原孵化</button>
+      </div>
+      <p class="dev-note">裝飾即時出現喺島上。加高要等夜晚結算，呢度唔改高度。</p>
       <p class="dev-note">今日計算用：${esc(api.todayEvents().map((e) => eventLabel(e)).join('、'))}${s.virtualToday ? `・虛擬日期 ${esc(s.virtualToday)}` : ''}${s.pest.active ? '・有蟲害' : ''}${s.dying ? '・瀕死' : ''}</p>
       ${s.lastSettlement ? settlementCard(s.lastSettlement) : '<p class="dev-note">未有結算紀錄。撳「跳去下一日」試下。</p>'}
     `;
@@ -193,6 +203,10 @@ export function mountDevPanel(root: HTMLElement, api: DevApi): () => void {
       window.setTimeout(draw, 50);
     }
     if (cmd === 'unlock-all') api.unlockAll();
+    if (cmd === 'hatch-one') api.setHatched((api.state().nest?.hatched ?? 0) + 1);
+    if (cmd === 'hatch-next') api.setHatched(nextNestBuildCount(api.state().nest?.hatched ?? 0));
+    if (cmd === 'hatch-four') api.setHatched(Math.max(30, api.state().nest?.hatched ?? 0));
+    if (cmd === 'hatch-restore') api.restoreHatched();
     if (cmd === 'reset' && confirm('重置存檔？徽章會保留。')) api.reset();
     draw();
   });

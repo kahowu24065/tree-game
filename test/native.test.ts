@@ -67,7 +67,7 @@ describe('native persist adapter', () => {
 
 describe('reminder planning', () => {
   const H = 3600_000;
-  const base: NotifyInput = { now: 0, msToSettlement: 5 * H, started: true, over: false, wateredToday: true, fertilizedToday: true, dyingEndsAt: null, pendingEmergencies: [], background: false };
+  const base: NotifyInput = { now: 0, msToSettlement: 5 * H, started: true, over: false, wateredToday: true, fertilizedToday: true, dyingEndsAt: null, pendingEmergencies: [], background: false, hatchAt: null };
   const ids = (i: Partial<NotifyInput>) => planNotifications({ ...base, ...i }).map((n) => n.id);
 
   it('nothing before planting or after death', () => {

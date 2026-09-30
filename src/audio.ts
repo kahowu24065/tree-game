@@ -1,7 +1,8 @@
 /**
  * Day/night music, weather, button clicks and animal calls.
  * Real recordings (see public/audio/CREDITS.txt), mixed with the Web Audio API.
- * Silent until the first tap, because browsers block sound before a gesture.
+ * Opening the game tries to start the bed immediately. A later tap still unlocks it
+ * when the platform blocked that first attempt.
  * Day and night beds crossfade over 2.5s.
  */
 import type { AnimalCategory, Motion } from './data/animals';
@@ -291,6 +292,12 @@ function shot(id: string, vol = 0.55): void {
   src.connect(gain);
   gain.connect(sfx);
   src.start();
+}
+
+/** Start the bed as the opening camera moves in. No-op when sound is off. */
+export function beginAmbience(): void {
+  if (!soundEnabled()) return;
+  void resume();
 }
 
 /** Remember the scene. Music starts after the first tap. */

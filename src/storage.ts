@@ -169,6 +169,11 @@ export function parseSave(raw: string): GameState | null {
     migrateV14(data);
     migrateV16(data);
     migrateWx(data);
+    data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '' };
+    if (data.nest) {
+      data.nest.laidOn ??= '';
+      if (data.nest.egg && !data.nest.egg.bird) data.nest.egg.bird = 'magpierobin';
+    }
     return data;
   } catch {
     return null;

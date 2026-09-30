@@ -8,7 +8,7 @@ import type { GameState, MetaState } from './types';
 export const META_KEY = 'sekai-tree-meta-v1';
 
 export function freshMeta(): MetaState {
-  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [], weather: [], isle: [] };
+  return { version: 1, badges: { '1': 0, '2': 0, '3': 0 }, reviveTokens: 0, starry: false, landmark: null, pendingLegacy: false, history: [], milestones: [], weather: [], isle: [], nest: [] };
 }
 
 export function loadMeta(): MetaState {
@@ -18,7 +18,8 @@ export function loadMeta(): MetaState {
     if (data && data.version === 1 && data.badges) {
       const weather = Array.isArray(data.weather) ? data.weather.filter((w) => parseWxAwardId(w.id)) : [];
       const isle = Array.isArray(data.isle) ? data.isle.filter((a) => a && (a.id === 'land' || a.id === 'plant' || a.id === 'record')) : [];
-      return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [], weather, isle };
+      const nest = Array.isArray(data.nest) ? data.nest.filter((a) => a && typeof a.count === 'number' && a.count >= 1) : [];
+      return { ...freshMeta(), ...data, milestones: Array.isArray(data.milestones) ? data.milestones : [], weather, isle, nest };
     }
   } catch {
     /* ignore */
@@ -98,6 +99,18 @@ export function bookWeather(meta: MetaState, state: GameState): string[] {
   }
   if (meta.weather.length > 200) meta.weather.splice(0, meta.weather.length - 200);
   return lines;
+}
+
+/** Copy this tree's new hatched-egg achievements into the collection. Idempotent via `booked`. */
+export function bookNest(meta: MetaState, state: GameState): void {
+  meta.nest ??= [];
+  const awards = [...(state.nest?.awards ?? [])].sort((a, b) => a.count - b.count);
+  for (const a of awards) {
+    if (a.booked) continue;
+    a.booked = true;
+    meta.nest.push({ count: a.count, treeName: state.treeName, species: state.species, date: a.date, ageDays: a.ageDays });
+  }
+  if (meta.nest.length > 200) meta.nest.splice(0, meta.nest.length - 200);
 }
 
 const MILESTONE_ORDER: MilestoneId[] = [...AGE_MILESTONES.map((m) => m.id), RECORD_MILESTONE.id];

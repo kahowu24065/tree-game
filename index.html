@@ -10,13 +10,12 @@
     <title>世界之樹</title>
     <style>
       html.preplant .hud,
-      html.preplant #dev-root { opacity: 0; pointer-events: none; }
+      html.preplant #dev-root,
+      html.preplant .ad-banner { opacity: 0; pointer-events: none; }
     </style>
     <script>
       try {
-        var raw = localStorage.getItem('sekai-tree-v2');
-        var started = raw && JSON.parse(raw).started;
-        if (!started) document.documentElement.classList.add('preplant');
+        document.documentElement.classList.add('preplant');
       } catch (e) {}
     </script>
   </head>
@@ -25,6 +24,7 @@
     <div id="app" class="hud">
       <div class="left-col">
         <div class="glass weather-card" id="weather-card"></div>
+        <div class="glass hatch-card" id="hatch-card" hidden>孵蛋時間：<b>06:00</b></div>
         <div id="note-slot" class="note-slot"></div>
         <aside id="coach" class="glass coach" hidden></aside>
       </div>

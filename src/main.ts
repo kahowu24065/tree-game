@@ -5,7 +5,7 @@ import { condForEvent, currentEvents, sceneCond, severeCountdown, type Countdown
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
-import { bookGameEnd, bookMilestones, bookWeather, loadMeta, newGame, saveMeta } from './meta';
+import { bookGameEnd, bookMilestones, bookNest, bookWeather, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { mulchLaid } from './campfire';
@@ -13,7 +13,8 @@ import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
-import { playCelebrate, playControl, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { beginAmbience, playCelebrate, playControl, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { freshNest, isNestHeightCount, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nestPhase, tickNest } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -59,6 +60,7 @@ import {
   milestoneModal,
   weatherModal,
   renderChrome,
+  syncHatchCard,
   renderPanel,
   weatherPageHtml,
   renderSheet,
@@ -368,6 +370,9 @@ function sceneInput(): SceneInput {
     pests: state.pest.active ? 70 : 0,
     scars: state.scars,
     animals: bare ? [] : [...state.residents, ...visitors],
+    nest: bare ? 'empty' : nestPhase(state.nest),
+    nestBird: bare ? '' : (state.nest?.egg?.bird ?? ''),
+    nestBuilds: bare ? [] : nestBuilds(state.nest?.hatched ?? 0),
     cond,
     daylight: daylightFactor(minute, sunrise, sunset, timeMode),
     minute: timeMode === 'day' ? sunrise + 180 : timeMode === 'night' ? 23 * 60 : minute,
@@ -677,6 +682,10 @@ function scheduleReminders(background: boolean): void {
       dyingEndsAt: state.dying ? state.dying.at + DYING_MS - offset : null,
       pendingEmergencies: pending,
       background,
+      hatchAt: (() => {
+        const at = nestHatchAt(state);
+        return at == null ? null : Date.now() + (at - virtualNow());
+      })(),
     }),
   );
 }
@@ -699,6 +708,7 @@ function handleOver(): boolean {
     openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather, recordHint) : weatherModal(state, meta, weather), 'celebrate');
     return true;
   }
+  bookNest(meta, state);
   const lines = [...bookMilestones(meta, state), ...bookWeather(meta, state), ...bookGameEnd(meta, state)];
   persist();
   if (!state.started) return true;
@@ -769,7 +779,12 @@ function maybeExplainWind(): boolean {
   return true;
 }
 
+/** True while the opening glide is running, so night cards wait until the interface fades in. */
+let opening = false;
+let deferredReport: CatchupReport | null = null;
+
 function showReport(report: CatchupReport): void {
+  bookNest(meta, state);
   persist();
   render();
   if (state.over) {
@@ -794,9 +809,59 @@ function showReport(report: CatchupReport): void {
 function runCatchup(): void {
   reconcileClock();
   const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
-  showReport(report);
+  if (opening) deferredReport = report;
+  else showReport(report);
   syncWarningWater();
   checkDyingExpiry();
+}
+
+/** The camera has arrived. Fade the interface in, then show anything the night left behind. */
+let nestPending = { laid: false, hatched: false };
+
+function flushNestToast(): void {
+  const bird = state.nest?.egg?.bird;
+  const name = bird ? animalName(bird) : '雀鳥';
+  if (nestPending.laid) toast(`${name}生咗蛋。`);
+  if (nestPending.hatched) {
+    const next = (state.nest?.hatched ?? 0) + 1;
+    const build = nestBuildAt(next);
+    const gift = build ? `島上會多${nestBuildPhrase(build)}` : isNestHeightCount(next) ? '今晚會多長一截' : '開返嚟睇下';
+    toast(`${name}嘅蛋孵化咗，${gift}。`);
+  }
+  nestPending = { laid: false, hatched: false };
+}
+
+/** Lay today's one bird egg, or hatch it six hours later. The night's reward is paid at settlement. */
+function syncNest(): void {
+  if (!state.started || state.over) return;
+  const ev = tickNest(state, virtualNow(), today());
+  if (!ev.laid && !ev.hatched) return;
+  if (ev.laid) nestPending.laid = true;
+  if (ev.hatched) nestPending.hatched = true;
+  persist();
+  if (!opening) flushNestToast();
+}
+
+function finishOpening(): void {
+  opening = false;
+  document.documentElement.classList.remove('preplant');
+  document.documentElement.classList.add('hud-in');
+  syncBanner(true);
+  flushNestToast();
+  const report = deferredReport;
+  deferredReport = null;
+  if (report) showReport(report);
+}
+
+/** Existing tree: the planting far-to-near glide, music underneath, then the interface fades in. */
+function beginOpening(): void {
+  opening = true;
+  document.documentElement.classList.add('preplant');
+  document.documentElement.classList.remove('hud-in');
+  syncBanner(false);
+  beginAmbience();
+  if (scene3d) scene3d.beginIntro(reducedMotion, finishOpening);
+  else window.setTimeout(finishOpening, reducedMotion ? 0 : 700);
 }
 
 /** v16: 瀕死 ends the moment its 24 hours are up (not at the next nightly settlement). */
@@ -1620,6 +1685,10 @@ export interface DevApi {
   ecoInfo: () => { id: string; name: string; count: number; resident: boolean }[];
   ecoCaps: () => EcoCaps | null;
   followAnimal: (id: string | null) => void;
+  /** Developer preview: set how many eggs have hatched, so the island decorations update. */
+  setHatched: (n: number) => void;
+  /** Put the hatch count back to what it was before the first preview change this session. */
+  restoreHatched: () => void;
   /** Camera / scale readout: zoom, camera distance (m), island scale, tree height (m), fence radius (m). */
   viewInfo: () => { zoom: number; distM: number; islandK: number; treeM: number; fenceRadius: number; islandRadius: number } | null;
   habitatInfo: () => string;
@@ -1627,6 +1696,26 @@ export interface DevApi {
 }
 
 if (DEV_PANEL) {
+  /** Hatch count before the first preview change, so 還原 can put the tree back. */
+  let hatchBeforePreview: number | null = null;
+
+  function applyHatched(n: number, remember: boolean, announce: boolean): void {
+    if (!state.started || state.over) {
+      toast('未種樹，加唔到蛋。');
+      return;
+    }
+    const nest = (state.nest ??= freshNest());
+    if (remember && hatchBeforePreview === null) hatchBeforePreview = nest.hatched;
+    const next = Math.max(0, Math.round(n));
+    nest.hatched = next;
+    nest.awards = nest.awards.filter((a) => a.count <= next);
+    persist();
+    render();
+    if (!announce) return;
+    const built = nestBuilds(next);
+    toast(built.length ? `已孵化 ${next} 粒。島上：${built.map(nestBuildPhrase).join('、')}。` : `已孵化 ${next} 粒。`);
+  }
+
   const api: DevApi = {
     state: () => state,
     dev: () => dev,
@@ -1766,6 +1855,17 @@ if (DEV_PANEL) {
     ecoInfo: () => (scene3d?.animalInfo() ?? []).map((g) => ({ id: g.id, name: animalName(g.id), count: g.count, resident: g.resident })),
     ecoCaps: () => scene3d?.animalCaps() ?? null,
     followAnimal: (id) => scene3d?.followAnimal(id),
+    setHatched: (n) => applyHatched(n, true, true),
+    restoreHatched: () => {
+      if (hatchBeforePreview === null) {
+        toast('未有改過孵化次數。');
+        return;
+      }
+      const back = hatchBeforePreview;
+      hatchBeforePreview = null;
+      applyHatched(back, false, false);
+      toast('還原咗孵化次數。');
+    },
     viewInfo: () => (scene3d ? { ...scene3d.cameraInfo(), ...scene3d.fenceInfo() } : null),
     habitatInfo: () => {
       const input = sceneInput();
@@ -1890,8 +1990,15 @@ function syncAnimalHud(time: number): void {
   animalHud.update(time);
 }
 
+let nestTickAt = 0;
+
 function frame(time: number): void {
   const input = sceneInput();
+  if (time - nestTickAt > 1000) {
+    nestTickAt = time;
+    syncNest();
+    syncHatchCard(state);
+  }
   syncAmbience(input.daylight < 0.45, manual() ? todayEvents() : liveEvents());
   drawScene(input, time);
   syncViewButton();
@@ -1929,7 +2036,6 @@ window.addEventListener('resize', resize);
 resize();
 
 bindSheetDrag();
-runCatchup();
 if (isNative()) {
   void App.addListener('pause', () => scheduleReminders(true));
   void App.addListener('resume', () => relocateNow());
@@ -1937,10 +2043,9 @@ if (isNative()) {
   void syncPush(notifyEnabled());
 }
 if (!state.started) beginSpeciesPick();
-else {
-  document.documentElement.classList.remove('preplant');
-  syncBanner(true);
-}
+else beginOpening();
+runCatchup();
+syncNest();
 requestAnimationFrame(frame);
 if (usesDeviceLocation()) {
   if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);

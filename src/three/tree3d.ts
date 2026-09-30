@@ -89,7 +89,10 @@ export const healthUniforms = {
   uPulse: { value: 0 },
 };
 
-const HEALTH_FRAG_HEAD = 'uniform float uWither; uniform float uDroop; uniform float uPulse;';
+/** 0 solid … 1 semi-transparent, while the camera is looking at the nest. */
+export const peekUniform = { uPeek: { value: 0 } };
+
+const HEALTH_FRAG_HEAD = 'uniform float uWither; uniform float uDroop; uniform float uPulse; uniform float uPeek;';
 /** Dull → yellow → brown by uWither (linear colours, keeps the vertex-colour shading). */
 const WITHER_LEAF = `
   {
@@ -106,17 +109,19 @@ const WITHER_BARK = `
   }`;
 const PULSE = `
   gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.07, 0.05), uPulse);`;
+const PEEK = `
+  gl_FragColor.a = mix(1.0, 0.32, clamp(uPeek, 0.0, 1.0));`;
 
 let leafMaterial: THREE.MeshStandardMaterial | null = null;
 export function leafMat(): THREE.MeshStandardMaterial {
   if (leafMaterial) return leafMaterial;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, side: THREE.DoubleSide });
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, windUniforms, healthUniforms);
+    Object.assign(shader.uniforms, windUniforms, healthUniforms, peekUniform);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>${WITHER_LEAF}`)
-      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}`);
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}${PEEK}`);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform float uHeight; uniform float uGust; uniform float uDroop;')
       .replace(
@@ -144,11 +149,11 @@ export function barkMat(): THREE.MeshStandardMaterial {
   if (barkMaterial) return barkMaterial;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.92 });
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, healthUniforms);
+    Object.assign(shader.uniforms, healthUniforms, peekUniform);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>${WITHER_BARK}`)
-      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}`);
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}${PEEK}`);
   };
   barkMaterial = m;
   return m;

@@ -50,6 +50,7 @@ import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
 import { dayEvents, mildEvent } from './events';
+import { freshNest, isNestHeightCount, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, settleNest } from './nest';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy } from './labels';
 import {
   baseDailyGrowth,
@@ -155,6 +156,7 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     doubleRDate: null,
     doubleRSeen: false,
     lastCollapse: null,
+    nest: freshNest(),
   };
   state.targetCm = speciesTargetCm(state.species);
   addLog(state, today, legacyBonus ? `一棵幼苗喺上一棵樹留低嘅養分地標旁邊種低，一開始就有 +${legacyBonus} 養分。` : '一棵幼苗種低咗，由今日開始慢慢陪佢大。', {
@@ -794,6 +796,34 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   } else if (wasDying) {
     state.dying = null;
     addLog(state, date, '棵樹捱過瀕死，慢慢回復生氣。', { kind: 'grow', title: '救返', reward: { text: `健康 ${Math.round(state.health)}`, tone: 'green' }, time: '' });
+  }
+
+  const nestNight = settleNest(state, nowMs, date);
+  if (nestNight.paid) {
+    const parent = nestBirdName(nestNight.bird);
+    const build = nestBuildAt(nestNight.count);
+    if (build) {
+      const phrase = nestBuildPhrase(build);
+      notes.push(`${parent}嘅蛋孵化咗，島上多咗${phrase}`);
+      messages.push(`${parent}嘅蛋孵化咗。島上多咗${phrase}。`);
+      addLog(state, date, `${parent}嘅蛋孵化咗。島上多咗${phrase}。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: phrase, tone: 'blue' }, time: '' });
+    } else if (isNestHeightCount(nestNight.count)) {
+      const extra = dG > 0 ? Math.max(0.1, r1(dG * 0.3)) : 0;
+      if (extra > 0) state.heightCm = r1(state.heightCm + extra);
+      const gift = extra > 0 ? `今晚多長 ${extra} 厘米` : '今晚冇加高';
+      notes.push(`${parent}嘅蛋孵化咗，${gift}`);
+      messages.push(`${parent}嘅蛋孵化咗。${gift}。`);
+      addLog(state, date, `${parent}嘅蛋孵化咗。${gift}。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: extra > 0 ? `+${extra} 厘米` : '孵化', tone: 'green' }, time: '' });
+    } else {
+      notes.push(`${parent}嘅蛋孵化咗`);
+      messages.push(`${parent}嘅蛋孵化咗。`);
+      addLog(state, date, `${parent}嘅蛋孵化咗。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: '孵化', tone: 'green' }, time: '' });
+    }
+    for (const n of nestNight.awards) {
+      const title = nestAwardTitle(n);
+      messages.push(`成就：${title}`);
+      addLog(state, date, `成就：${title}。`, { kind: 'badge', title, reward: { text: '成就', tone: 'purple' }, time: '' });
+    }
   }
 
   const settlement: Settlement = {

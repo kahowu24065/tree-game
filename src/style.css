@@ -97,7 +97,7 @@ body.night .glass {
   inset: 0;
   pointer-events: none;
   z-index: 2;
-  transition: opacity 1.2s ease;
+  transition: opacity 2.4s ease;
 }
 
 /* Opening: nothing on screen until the seedling has broken the soil. */
@@ -111,6 +111,12 @@ html.preplant #animal-markers,
 html.preplant .ad-banner {
   opacity: 0;
   pointer-events: none;
+}
+
+#dev-root,
+.animal-markers,
+.ad-banner {
+  transition: opacity 2.4s ease;
 }
 
 .hud > * {
@@ -169,6 +175,20 @@ body.sheet-open .hud > .sheet-backdrop {
 }
 .weather-card:has(.wx-hit:active) {
   transform: scale(0.98);
+}
+
+.hatch-card {
+  width: 100%;
+  border-radius: 16px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.hatch-card b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .wx-art svg {

@@ -235,7 +235,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   }
 
   function hudRects(): Rect[] {
-    const ids = ['weather-card', 'status-card', 'rail', 'sheet', 'dock', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint', 'coach'];
+    const ids = ['weather-card', 'hatch-card', 'status-card', 'rail', 'sheet', 'dock', 'gear', 'view-reset', 'animal-list-btn', 'animal-list', 'animal-toast', 'toast', 'note-slot', 'zoom-hint', 'coach'];
     const out: Rect[] = [];
     for (const id of ids) {
       const el = document.getElementById(id);

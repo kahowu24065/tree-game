@@ -4,7 +4,7 @@ import { isNative } from './platform';
 export const NOTIFY_KEY = 'sekai-tree-notify';
 const HOUR = 3600_000;
 /** Fixed ids so each reschedule replaces the previous set. */
-export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105 } as const;
+export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105, nest: 106 } as const;
 
 export interface NotifyInput {
   now: number;
@@ -20,6 +20,8 @@ export interface NotifyInput {
   pendingEmergencies: string[];
   /** Only plan the weather reminder when the app is going to the background. */
   background: boolean;
+  /** Real timestamp when the current egg hatches. Null when there is nothing to wait for. Scheduled on the phone, not via a server. */
+  hatchAt: number | null;
 }
 
 export interface PlannedNotice {
@@ -48,6 +50,9 @@ export function planNotifications(i: NotifyInput): PlannedNotice[] {
     const hint = '將水分調返 50–100、養分 60 以上就救得返。';
     if (soon(i.dyingEndsAt - 12 * HOUR)) out.push({ id: NOTIFY_IDS.dying12, at: i.dyingEndsAt - 12 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹瀕死，仲有大約 12 小時！${hint}` });
     if (soon(i.dyingEndsAt - 2 * HOUR)) out.push({ id: NOTIFY_IDS.dying2, at: i.dyingEndsAt - 2 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹只剩大約 2 小時！${hint}` });
+  }
+  if (i.hatchAt !== null && soon(i.hatchAt)) {
+    out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: '鵲鴝嘅蛋孵化咗，開返嚟睇下。' });
   }
   if (i.background && i.pendingEmergencies.length) {
     const at = i.now + HOUR;
