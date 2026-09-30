@@ -17,6 +17,7 @@ import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextM
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, weatherLabel, type WeatherProvider } from './weather';
+import { APP_VERSION } from './version';
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -1361,6 +1362,34 @@ export function openModal(inner: string, cls = ''): void {
       focusModal(modal);
     }));
   };
+  const card = modal.querySelector<HTMLElement>('.modal-card');
+  const sameWindow = !modal.hidden && modal.classList.contains('in') && card && cls !== 'celebrate' && !card.classList.contains('celebrate');
+  if (sameWindow && card) {
+    const tickSame = tick;
+    const paintSame = () => {
+      if (tickSame !== modalTick) return;
+      card.className = `modal-card glass ${cls} page-out`;
+      card.innerHTML = inner;
+      card.scrollTop = 0;
+      paintThumbs();
+      requestAnimationFrame(() => {
+        if (tickSame !== modalTick) return;
+        card.classList.remove('page-out');
+        focusModal(modal);
+      });
+    };
+    if (modalFadeMs() === 0) {
+      card.className = `modal-card glass ${cls}`;
+      card.innerHTML = inner;
+      card.scrollTop = 0;
+      paintThumbs();
+      focusModal(modal);
+      return;
+    }
+    card.classList.add('page-out');
+    window.setTimeout(paintSame, 180);
+    return;
+  }
   if (!modal.hidden && modal.classList.contains('in')) {
     modal.classList.remove('in');
     modal.classList.add('leaving');
@@ -1554,7 +1583,7 @@ export function locationModal(current: string): string {
 }
 
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
-export function settingsModal(treeName: string, quality: 'low' | 'high', threeD: boolean, notify: boolean | null = null): string {
+export function settingsModal(treeName: string, notify: boolean | null = null): string {
   const soundOn = soundEnabled();
   return `
     <p class="eyebrow">設定</p>
@@ -1562,13 +1591,6 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
     <div class="setting-row">
       <span>樹的名字</span>
       <button type="button" class="ghost" data-action="rename">改名</button>
-    </div>
-    <div class="setting-row">
-      <span>畫質${threeD ? '' : '（呢部機用緊簡化畫面）'}</span>
-      <div class="seg">
-        <button type="button" class="${quality === 'low' ? 'on' : ''}" data-quality="low" ${threeD ? '' : 'disabled'}>慳電</button>
-        <button type="button" class="${quality === 'high' ? 'on' : ''}" data-quality="high" ${threeD ? '' : 'disabled'}>精緻</button>
-      </div>
     </div>
     <div class="setting-row">
       <span>聲音</span>
@@ -1599,7 +1621,30 @@ export function settingsModal(treeName: string, quality: 'low' | 'high', threeD:
         <button type="button" data-action="import-save">匯入存檔</button>
       </div>
     </div>
-    <button type="button" class="primary" data-action="close-modal">好</button>
+    <p class="set-legal"><button type="button" data-action="disclaimer">免責聲明</button><button type="button" data-action="privacy">私隱權政策</button></p>
+    <p class="set-ver">版本 ${esc(APP_VERSION)}</p>
+    <button type="button" class="primary" data-action="close-modal">關閉</button>
+  `;
+}
+
+export function disclaimerModal(): string {
+  return `
+    <p class="eyebrow">免責聲明</p>
+    <h2>免責聲明</h2>
+    <p>世界之樹係遊戲。畫面入面嘅健康、水分、養分、倒塌同成長，都係玩法，唔代表一棵真樹。</p>
+    <p>天氣嚟自香港天文台、澳門地球物理氣象局或者 Open-Meteo，可能同官方最新消息有分別，唔係出行或者安全指引。惡劣天氣請跟當地氣象部門。</p>
+    <button type="button" class="primary" data-action="settings">返回</button>
+  `;
+}
+
+export function privacyModal(): string {
+  return `
+    <p class="eyebrow">私隱權政策</p>
+    <h2>私隱權政策</h2>
+    <p>位置只用嚟查天氣同顯示地名。拒絕定位就用香港嘅天氣。</p>
+    <p>開咗提醒通知，會把推送同大約位置（四捨五入到 0.5 度），送到推送伺服器，用來決定發邊種天氣警告。</p>
+    <p>應用程式底部會顯示橫幅廣告。廣告服務可能用廣告識別碼同裝置資料嚟顯示同量度廣告。</p>
+    <button type="button" class="primary" data-action="settings">返回</button>
   `;
 }
 

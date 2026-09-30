@@ -67,6 +67,8 @@ import {
   moveLogMonth,
   setThumbnailer,
   settingsModal,
+  disclaimerModal,
+  privacyModal,
   exportSaveModal,
   importSaveModal,
   startModal,
@@ -113,6 +115,7 @@ import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { fetchSmg, withSmgDays } from './smg';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
+import { syncBanner } from './native/banner';
 import { isNative } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
 import { decodeSave, encodeSave } from './saveCode';
@@ -1026,6 +1029,7 @@ function beginSpeciesPick(): void {
   lesson = null;
   document.documentElement.classList.add('preplant');
   document.documentElement.classList.remove('hud-in');
+  syncBanner(false);
   scene3d?.showFarIslands();
   openStart();
 }
@@ -1034,6 +1038,7 @@ function revealHud(): void {
   plantingShow = null;
   document.documentElement.classList.remove('preplant');
   document.documentElement.classList.add('hud-in');
+  syncBanner(true);
   beginCoach();
   render();
   toast(coachOpen(coach) ? `${state.treeName}種好喇。先澆一次水。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
@@ -1093,6 +1098,7 @@ function startGame(species?: SpeciesId): void {
   plantingShow = 'arrive';
   document.documentElement.classList.add('preplant');
   document.documentElement.classList.remove('hud-in');
+  syncBanner(false);
   scene3d?.showFarIslands();
   render();
   dismissModal(() => {
@@ -1348,7 +1354,13 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
     case 'settings':
-      openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null));
+      return;
+    case 'disclaimer':
+      openModal(disclaimerModal());
+      return;
+    case 'privacy':
+      openModal(privacyModal());
       return;
     case 'weather':
       openWeather();
@@ -1486,19 +1498,27 @@ document.addEventListener('click', (event) => {
     localStorage.setItem(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
     scheduleReminders(false);
     void syncPush(target.dataset.notify === 'on');
-    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+    const row = target.closest('.seg');
+    row?.querySelectorAll('button').forEach((btn) => {
+      const on = btn.dataset.notify === target.dataset.notify;
+      btn.classList.toggle('on', on);
+    });
     return;
   }
   if (target.dataset.quality === 'low' || target.dataset.quality === 'high') {
     quality = target.dataset.quality;
     localStorage.setItem(QUALITY_KEY, quality);
     scene3d?.setQuality(quality);
-    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
     return;
   }
   if (target.dataset.sound === '0' || target.dataset.sound === '1') {
     setSoundEnabled(target.dataset.sound === '1');
-    openModal(settingsModal(state.treeName, quality, Boolean(scene3d), isNative() ? notifyEnabled() : null));
+    const row = target.closest('.seg');
+    row?.querySelectorAll('button').forEach((btn) => {
+      const on = btn.dataset.sound === target.dataset.sound;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     return;
   }
   if (target.dataset.cal) {
@@ -1892,7 +1912,10 @@ if (isNative()) {
   void syncPush(notifyEnabled());
 }
 if (!state.started) beginSpeciesPick();
-else document.documentElement.classList.remove('preplant');
+else {
+  document.documentElement.classList.remove('preplant');
+  syncBanner(true);
+}
 requestAnimationFrame(frame);
 if (usesDeviceLocation()) {
   if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);
