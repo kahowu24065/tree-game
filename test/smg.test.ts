@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hkoWarningEvents } from '../src/events';
-import { parseSmg, smgWarnings, withSmgDays, type SmgXml } from '../src/smg';
+import { warningDisplay } from '../src/hko';
+import { parseSmg, smgMessages, smgWarnings, withSmgDays, type SmgXml } from '../src/smg';
 
 const brief = `<?xml version="1.0" encoding="UTF-8" ?>
 <ActualWeatherBrief><System><SysPubdate>2026-09-29 14:57</SysPubdate></System><Custom>
@@ -56,6 +57,7 @@ describe('SMG', () => {
     expect(peninsula.data.current?.station).toBe('大炮台');
     expect(peninsula.data.current?.tempC).toBe(30);
     expect(peninsula.data.current?.icon).toBe(60);
+    expect(peninsula.data.messages).toEqual(['預料本澳天氣酷熱。']);
     expect(peninsula.windKmh).toBe(7);
     expect(peninsula.gustKmh).toBe(12);
     expect(peninsula.precipMm).toBe(0);
@@ -70,10 +72,15 @@ describe('SMG', () => {
   it('maps in-force signals onto the same game events as Hong Kong', () => {
     const quiet = smgWarnings(xml());
     expect(quiet.map((w) => w.group)).toEqual(['WHOT']);
+    expect(warningDisplay(quiet[0]!)).toBe('黃色高溫提示');
     expect(hkoWarningEvents(quiet)).toEqual(['hot']);
     const storm = smgWarnings(xml({ typhoon: typhoon8, rain: rainBlack, temp: hotCancelled }));
     expect(storm.map((w) => w.code)).toEqual(['TC8SE', 'WRAINB']);
     expect(hkoWarningEvents(storm)).toEqual(expect.arrayContaining(['typhoon8', 'blackrain']));
     expect(hkoWarningEvents(storm)).not.toContain('hot');
+    expect(smgMessages(xml({ typhoon: typhoon8, rain: rainBlack, temp: hotCancelled }))).toEqual([
+      '現正發出八號東南烈風或暴風信號。',
+      '黑色暴雨警告信號現正生效。',
+    ]);
   });
 });

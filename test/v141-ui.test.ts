@@ -37,9 +37,22 @@ describe('v1.4.1 天氣概況 page', () => {
     expect(html).toContain('未來預報');
     for (const word of ['加固', '抗風力', '遊戲當', '健康', 'data-prep']) expect(html).not.toContain(word);
   });
+  it('shows the bureau sentence together with the warning name', () => {
+    const sentence = '酷熱天氣警告現正生效，高溫天氣持續！請補充足夠水分。';
+    const missing = weatherPageHtml(view({ warnings: [], messages: [sentence] }));
+    expect(missing).toContain(sentence);
+    expect(missing).not.toContain('而家冇天氣警告生效');
+    const listed = weatherPageHtml(view({
+      warnings: parseWarnsum({ WHOT: { name: '酷熱天氣警告', code: 'WHOT', actionCode: 'ISSUE' } }),
+      messages: [sentence],
+    }));
+    expect(listed).toContain('酷熱天氣警告');
+    expect(listed).toContain('高溫天氣持續');
+  });
   it('outside HK says there are no HKO warnings', () => {
     const html = weatherPageHtml(view({ hkoUsed: false, warnings: [], provider: 'open-meteo' }));
-    expect(html).toContain('香港以外');
+    expect(html).toContain('Open-Meteo');
+    expect(html).not.toContain('香港天文台・生效中警告');
     expect(html).not.toContain('加固');
   });
 });

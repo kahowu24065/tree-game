@@ -79,13 +79,9 @@ export function eventFromNumbers(input: { code: number; precipMm: number; gustKm
  * so the game never calls a day rainy that the Observatory calls fine; wind storms still come from gusts.
  */
 export function dayEvent(day: ForecastDay): WeatherEventId {
-  if (day.hkoIcon === undefined) return eventFromNumbers(day);
-  const windy = eventFromNumbers({ ...day, precipMm: 0, code: 0, tempMax: 0, tempMin: undefined });
-  if (windy !== 'clear') return windy;
-  if (day.hkoIcon === 65) return 'thunder';
-  if (day.hkoIcon === 64 && day.precipMm >= 25) return 'rainstorm';
-  if (isHotDay(day)) return 'hot';
-  return hkoIconRain(day.hkoIcon) ? 'drizzle' : 'clear';
+  // A bureau forecast day only contributes drizzle or fine weather. Severe events come from that bureau's warning list.
+  if (day.hkoIcon !== undefined) return hkoIconRain(day.hkoIcon) ? 'drizzle' : 'clear';
+  return eventFromNumbers(day);
 }
 
 /** v15: every event of a forecast day — the headline plus 酷熱／寒冷 when they stack with rain or wind. */

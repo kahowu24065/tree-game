@@ -185,7 +185,7 @@ describe('v15 香港以外相對酷熱', () => {
     expect(currentEvents({ hk: true, warnings: [], current: cur })).toEqual([]);
     expect(isHotDay({ tempMax: 33 })).toBe(true);
     expect(dayEvent(day({ tempMax: 33 }))).toBe('hot');
-    expect(dayEvent(day({ tempMax: 33, hkoIcon: 90 }))).toBe('hot');
+    expect(dayEvent(day({ tempMax: 33, hkoIcon: 90 }))).toBe('clear');
   });
 });
 

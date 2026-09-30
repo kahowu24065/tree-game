@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, windFromText } from '../src/hko';
+import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, warningDisplay, windFromText } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
 import { dayEvent, hkoWarningEvents, severeCountdown } from '../src/events';
 import { condFromForecast, dayLabel, districtRain, isRainCode, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, inMacau, nearHongKong, parseOpenMeteo } from '../src/weather';
@@ -67,7 +67,7 @@ describe('香港天文台', () => {
       WHOT: { name: '酷熱天氣警告', code: 'WHOT', actionCode: 'ISSUE' },
       WFIRE: { name: '火災危險警告', code: 'WFIREY', type: '黃色', actionCode: 'CANCEL' },
     });
-    expect(w.map((x) => x.short)).toEqual(['八號風球', '紅雨', '酷熱天氣警告']);
+    expect(w.map((x) => x.short)).toEqual(['八號東北風球', '紅雨', '酷熱天氣警告']);
     expect(w[0]!.name).toBe('八號東北烈風或暴風信號');
     expect(drivingWarning(w)?.kind).toBe('typhoon');
     const tc1 = parseWarnsum({ WTCSGNL: { name: '熱帶氣旋警告信號', code: 'TC1', actionCode: 'ISSUE' } });
@@ -76,6 +76,30 @@ describe('香港天文台', () => {
     const black = parseWarnsum({ WRAIN: { name: '暴雨警告信號', code: 'WRAINB', type: '黑色', actionCode: 'ISSUE' } });
     expect(black[0]!.short).toBe('黑雨');
     expect(black[0]!.kind).toBe('heavy-rain');
+  });
+
+  it('顯示跟足信號，遊戲分級維持一號三號初級、八號或以上高級、黃雨紅雨暴雨', () => {
+    const one = parseWarnsum({ WTCSGNL: { code: 'TC1', actionCode: 'ISSUE' } });
+    const three = parseWarnsum({ WTCSGNL: { code: 'TC3', actionCode: 'ISSUE' } });
+    const eight = parseWarnsum({ WTCSGNL: { code: 'TC8SE', actionCode: 'ISSUE' } });
+    const ten = parseWarnsum({ WTCSGNL: { code: 'TC10', actionCode: 'ISSUE' } });
+    const yellow = parseWarnsum({ WRAIN: { code: 'WRAINA', actionCode: 'ISSUE' } });
+    const red = parseWarnsum({ WRAIN: { code: 'WRAINR', actionCode: 'ISSUE' } });
+    const blackRain = parseWarnsum({ WRAIN: { code: 'WRAINB', actionCode: 'ISSUE' } });
+    expect(one.map(warningDisplay)).toEqual(['一號風球']);
+    expect(three.map(warningDisplay)).toEqual(['三號風球']);
+    expect(eight.map(warningDisplay)).toEqual(['八號東南風球']);
+    expect(ten.map(warningDisplay)).toEqual(['十號風球']);
+    expect(yellow.map(warningDisplay)).toEqual(['黃雨']);
+    expect(red.map(warningDisplay)).toEqual(['紅雨']);
+    expect(hkoWarningEvents(one)).toEqual(['typhoon1']);
+    expect(hkoWarningEvents(three)).toEqual(['typhoon1']);
+    expect(hkoWarningEvents(eight)).toEqual(['typhoon8']);
+    expect(hkoWarningEvents(ten)).toEqual(['typhoon8']);
+    expect(hkoWarningEvents(yellow)).toEqual(['rainstorm']);
+    expect(hkoWarningEvents(red)).toEqual(['rainstorm']);
+    expect(blackRain.map(warningDisplay)).toEqual(['黑雨']);
+    expect(hkoWarningEvents(blackRain)).toEqual(['blackrain']);
   });
 
   it('揀最近嘅氣溫站，同埋分區雨量', () => {

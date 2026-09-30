@@ -1,6 +1,6 @@
 import './style.css';
 import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
-import { addDays, clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
+import { clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
 import { condForEvent, currentEvents, sceneCond, severeCountdown, type Countdown } from './events';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
@@ -96,7 +96,6 @@ import {
   districtRain,
   fetchForecast,
   hkoForecast,
-  withHkoDays,
   stampDays,
   inHongKong,
   inMacau,
@@ -112,7 +111,7 @@ import {
   type WeatherSnapshot,
 } from './weather';
 import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
-import { fetchSmg, withSmgDays } from './smg';
+import { fetchSmg } from './smg';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
@@ -303,12 +302,12 @@ function localNowIso(): string {
 }
 
 function countdown(): Countdown | null {
-  const t = today();
+  // A warning counts only while the active source says it is in force. No second forecast
+  // (Open-Meteo hours, or the game's own "tomorrow will be hot") on top of that.
   return severeCountdown({
     nowEvents: manual() ? dev.events : liveEvents(),
-    hourly: manual() ? [] : weather.hourly,
+    hourly: [],
     nowIso: localNowIso(),
-    tomorrow: manual() ? undefined : weather.daily.find((d) => d.date === addDays(t, 1)),
     minutesToMidnight: 24 * 60 - clockMinutes(timezone),
     manual: manual() ? dev.forecast : null,
     nowMs: Date.now(),
@@ -918,9 +917,9 @@ function refreshWeather(forceLocate = false): Promise<void> {
 }
 
 /**
- * Real weather first: Open-Meteo for the player's spot, plus HKO in/near Hong Kong or SMG inside Macau.
- * If Open-Meteo is down, the bureau alone; then the last good snapshot; simulated weather only when all of that fails.
- * Macau is refreshed on the same timer as Hong Kong. Everywhere else is unchanged.
+ * One source for the place. Hong Kong uses the Observatory, Macau uses SMG, everywhere else
+ * uses Open-Meteo. A bureau day does not keep the model's temperatures, rain or warning guess.
+ * Sun times still come from Open-Meteo when it answered, because the bureaus don't send them.
  */
 async function loadWeather(forceLocate: boolean): Promise<void> {
   const manual = PLACES.find((p) => p.id === placeChoice);
@@ -944,23 +943,51 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
   const place = manual?.name ?? found?.name ?? (mo ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
   const district = manual?.name ?? found?.district;
-  let base: ForecastResult | null = om.status === 'fulfilled' ? om.value : null;
+  const openMeteo = om.status === 'fulfilled' ? om.value : null;
+  let base: ForecastResult | null = hk || mo ? null : openMeteo;
   let provider: WeatherProvider = 'open-meteo';
   const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : '未知錯誤') : undefined;
-  if (!base && official) {
-    base = hkoForecast(official, today());
-    provider = mo ? 'smg' : 'hko';
+  if (official && (hk || mo)) {
+    const bureau = hkoForecast(official, today());
+    if (bureau) {
+      if (openMeteo) {
+        const sun = new Map(openMeteo.daily.map((d) => [d.date, d]));
+        bureau.daily = bureau.daily.map((d) => {
+          const s = sun.get(d.date);
+          return s ? { ...d, sunrise: s.sunrise, sunset: s.sunset } : d;
+        });
+      }
+      bureau.timezone = mo ? 'Asia/Macau' : bureau.timezone;
+      base = bureau;
+      provider = mo ? 'smg' : 'hko';
+    }
   }
   if (!base) {
     const cached = loadWeatherCache();
-    if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS) {
-      const cachedOfficial = !mo || (cached.source === 'geo' && inMacau(cached.lat, cached.lon)) ? cached.hko : null;
-      const kept = official ?? cachedOfficial;
-      const daily = kept ? withHkoDays(mo ? withSmgDays(cached.daily, kept) : cached.daily, kept, today()) : cached.daily;
-      applyWeather({ ...cached, origin: 'cache', error, hko: kept, daily, lat: loc.lat, lon: loc.lon, source: loc.source, place });
+    if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS && !(hk || mo)) {
+      applyWeather({ ...cached, origin: 'cache', error, hko: null, lat: loc.lat, lon: loc.lon, source: loc.source, place });
       return;
     }
-    // Last resort: simulated numbers, but still pass along any real bureau warnings.
+    const kept = hk || mo ? official ?? cached?.hko ?? null : null;
+    const bureau = kept ? hkoForecast(kept, today()) : null;
+    if (cached && bureau && kept && (hk || mo) && Date.now() - cached.fetchedAt < WEATHER_STALE_MS) {
+      applyWeather({
+        ...cached,
+        origin: 'cache',
+        error,
+        hko: kept,
+        daily: bureau.daily,
+        current: bureau.current,
+        provider: mo ? 'smg' : 'hko',
+        rainInHours: null,
+        lat: loc.lat,
+        lon: loc.lon,
+        source: loc.source,
+        place,
+        timezone: mo ? 'Asia/Macau' : cached.timezone,
+      });
+      return;
+    }
     applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko: official, lat: loc.lat, lon: loc.lon, source: loc.source, place, choice: choiceKey() });
     return;
   }
@@ -978,7 +1005,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     provider: mo && smg ? 'smg' : provider,
     hko: official,
     district,
-    rainInHours: base.rainInHours,
+    rainInHours: provider === 'open-meteo' ? base.rainInHours : null,
     choice: choiceKey(),
     error: provider === 'hko' || (mo && smg && om.status === 'rejected') ? error : undefined,
   };
@@ -1000,17 +1027,12 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
       else if (official.current.icon && !hkoIconRain(official.current.icon)) snapshot.current.precipMm = 0;
     } else {
       const mm = districtRain(official, district);
-      if (mm !== null) {
-        // Measured rain in the player's district beats the model's "current precipitation".
-        snapshot.current.precipMm = Math.min(8, mm);
-      } else if (official.current.icon && !hkoIconRain(official.current.icon)) {
-        snapshot.current.precipMm = 0;
-      }
+      if (mm !== null) snapshot.current.precipMm = Math.min(8, mm);
+      else if (official.current.icon && !hkoIconRain(official.current.icon)) snapshot.current.precipMm = 0;
+      // The Observatory feed used here has no wind speed. Don't keep a stand-in from another source.
+      snapshot.current.windKmh = 0;
+      snapshot.current.gustKmh = 0;
     }
-  }
-  if (official && (hk || (mo && smg))) {
-    if (mo && smg) snapshot.daily = withSmgDays(snapshot.daily, official);
-    snapshot.daily = withHkoDays(snapshot.daily, official, today());
   }
   applyWeather(snapshot);
 }

@@ -144,6 +144,31 @@ export function smgWarnings(xml: SmgXml): HkoWarning[] {
   return out;
 }
 
+/** Advisory sentences that sit under a warning, like the Observatory's warningMessage. Names stay in the warning list. */
+export function smgMessages(xml: SmgXml): string[] {
+  const out: string[] = [];
+  const add = (text: string) => {
+    const t = text.trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+  const sentence = (block: string) => inner(block, 'Description') || inner(block, 'description');
+  const typhoon = blocks(xml.typhoon ?? '', 'TropicalCyclone').find(active);
+  if (typhoon) add(sentence(typhoon));
+  const rain = blocks(xml.rain ?? '', 'Rainstorm').find(active);
+  if (rain) add(sentence(rain));
+  const thunder = blocks(xml.thunder ?? '', 'Thunderstorm').find(active);
+  if (thunder) add(sentence(thunder));
+  const monsoon = blocks(xml.monsoon ?? '', 'Monsoon').find(active);
+  if (monsoon) add(sentence(monsoon));
+  for (const item of blocks(xml.temp ?? '', 'item')) {
+    const title = inner(item, 'title');
+    const desc = inner(item, 'description');
+    if (!title || /取消|沒有|並無/.test(`${title}${desc}`)) continue;
+    if (/高溫|酷熱|低溫|寒冷|降溫/.test(title)) add(desc);
+  }
+  return out;
+}
+
 function statusIcon(status: string): number | null {
   const icon = STATUS_ICON[status.trim().toLowerCase()];
   return icon ?? null;
@@ -216,7 +241,7 @@ export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()
   const days = forecastDays(xml.week ?? '');
   const today = days[0];
   const warnings = smgWarnings(xml);
-  const messages = warnings.map((w) => w.name);
+  const messages = smgMessages(xml);
   return {
     windKmh,
     gustKmh: gustKmh ?? (windKmh !== null ? windKmh : null),

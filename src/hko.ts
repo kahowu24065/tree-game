@@ -64,13 +64,20 @@ const TC_NAME: Record<string, string> = {
 const TC_SHORT: Record<string, string> = {
   TC1: '一號風球',
   TC3: '三號風球',
-  TC8NE: '八號風球',
-  TC8SE: '八號風球',
-  TC8NW: '八號風球',
-  TC8SW: '八號風球',
+  TC8NE: '八號東北風球',
+  TC8SE: '八號東南風球',
+  TC8NW: '八號西北風球',
+  TC8SW: '八號西南風球',
   TC9: '九號風球',
   TC10: '十號風球',
 };
+
+/** What the warning card shows. The signal stays specific; the game grade is chosen separately. */
+export function warningDisplay(w: HkoWarning): string {
+  if (w.group === 'WTCSGNL' || w.group === 'WRAIN') return w.short;
+  if ((w.group === 'WHOT' || w.group === 'WCOLD') && w.name && w.name !== w.code) return w.name;
+  return w.short || w.name;
+}
 
 export function mapWarning(group: string, raw: { code?: string; name?: string; type?: string; actionCode?: string; issueTime?: string }): HkoWarning | null {
   if (!raw || raw.actionCode === 'CANCEL') return null;

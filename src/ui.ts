@@ -8,9 +8,9 @@ import { SPECIES, STAGE_NAMES, realAgeDays, speciesDef, speciesTargetCm, stageSa
 import { formatLong, formatShort, weekdayIndex } from './dates';
 import { soundEnabled } from './audio';
 import { drawAnimal } from './draw-animals';
-import { type Countdown } from './events';
+import { hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
-import type { HkoWarning } from './hko';
+import { warningDisplay, type HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
@@ -572,6 +572,12 @@ export function weatherCardTone(events: readonly WeatherEventId[], cond: DayCond
   return null;
 }
 
+/** The bureau's own signal for this game event, when Hong Kong or Macau issued one. */
+function signalLabel(warnings: readonly HkoWarning[], event: WeatherEventId): string | null {
+  const hit = warnings.find((w) => hkoWarningEvents([w]).includes(event));
+  return hit ? warningDisplay(hit) : null;
+}
+
 function renderWeatherCard(card: HTMLElement, view: View): void {
   const { state, cond, wx } = view;
   const simulated = wx.provider === 'sim' && !wx.overridden;
@@ -597,12 +603,13 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
     delete hit.dataset.open;
     hit.dataset.action = 'weather';
   }
-  const label = view.manual ? ev(view.todayEvent).label : cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code);
+  const signal = !view.manual && cd?.active ? signalLabel(wx.warnings, cd.event) : null;
+  const label = view.manual ? ev(view.todayEvent).label : signal ?? (cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code));
   let line: string;
   if (cd) {
     const cat = ev(cd.event).category;
     const tail = cat === 'wind' ? (state.windUnlocked ? `抗風力 ${Math.round(state.resist)}` : '青年樹前冇影響') : cat === 'heat' ? '可以酷熱澆水' : cat === 'cold' ? '可以保暖' : cat === 'rain' ? `可以${emergencyName('rainDrain')}` : '';
-    line = `<span class="warn-line">${icon('warn')}${esc(ev(cd.event).label)} · ${hoursText(cd.hours)}${tail ? ` · ${tail}` : ''}</span>`;
+    line = `<span class="warn-line">${icon('warn')}${esc(signal ?? ev(cd.event).label)} · ${hoursText(cd.hours)}${tail ? ` · ${tail}` : ''}</span>`;
   } else if (wx.rainInHours !== null && !cond.raining && !simulated && !view.manual) {
     line = wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`;
   } else {
@@ -610,7 +617,7 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   }
   const chips = wx.warnings
     .slice(0, 4)
-    .map((w) => `<span class="wchip ${w.tone}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(w.short)}</span></span>`)
+    .map((w) => `<span class="wchip ${w.tone}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(warningDisplay(w))}</span></span>`)
     .join('');
   const source = sourceLabel(wx);
   const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
@@ -651,7 +658,7 @@ function sourceLabel(wx: WeatherView): string {
     const note = wx.bureau === 'smg' && wx.hkoUsed ? '（氣象局警告係真嘅）' : wx.hkoUsed ? '（天文台警告係真嘅）' : '';
     return `模擬天氣・撳一下重試${note}`;
   }
-  const names = wx.bureau === 'smg' && wx.hkoUsed ? '地球物理氣象局' : wx.provider === 'hko' ? '天文台' : wx.hkoUsed ? 'Open-Meteo／天文台' : 'Open-Meteo';
+  const names = wx.bureau === 'smg' ? '地球物理氣象局' : wx.bureau === 'hko' || wx.provider === 'hko' ? '香港天文台' : 'Open-Meteo';
   if (wx.origin === 'cache') return `上次天氣 ${esc(wx.updated)}・${names}`;
   return `即時天氣・${names}${wx.updated ? ` · ${esc(wx.updated)}` : ''}${wx.loading ? ' · 更新緊' : ''}`;
 }
@@ -1049,7 +1056,7 @@ export function weatherPageHtml(view: View): string {
   const label = wx.conditionText || weatherLabel(cond.code);
   const facts = [
     wx.humidity !== undefined ? `濕度 ${Math.round(wx.humidity)}%` : '',
-    `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,
+    wx.bureau === 'hko' ? '' : `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,
     cond.precipMm > 0 ? `雨量 ${Math.round(cond.precipMm * 10) / 10} 毫米` : '',
   ].filter(Boolean);
   const rain = wx.rainInHours !== null && !cond.raining && !simulated && !wx.overridden ? (wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`) : '';
@@ -1059,29 +1066,44 @@ export function weatherPageHtml(view: View): string {
       <h2>${Math.round(cond.tempC)}°C ${esc(label)}</h2>
       <p class="fine">${facts.map(esc).join(' · ')}${rain ? `<br>${esc(rain)}` : ''}</p></div>
     </article>`;
+  // Bureau advisory sentences (HKO warningMessage, SMG descriptions). Shown with the warning, not instead of it.
+  const extraMessages = wx.hkoUsed ? wx.messages.filter((msg) => msg.trim()) : [];
   let warns: string;
   if (wx.hkoUsed) {
-    warns = wx.warnings.length
-      ? `<ul class="hko-warns">${wx.warnings.map((w) => `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(w.name)}</b></span></li>`).join('')}</ul>`
-      : '<p>而家冇天氣警告生效。</p>';
-    warns += `${wx.messages.length ? `<p class="fine">${wx.messages.map(esc).join('<br>')}</p>` : ''}${wx.situation ? `<p class="fine">${esc(wx.situation)}</p>` : ''}`;
+    const list = wx.warnings.length
+      ? `<ul class="hko-warns">${wx.warnings.map((w) => {
+          const shown = warningDisplay(w);
+          const official = w.name !== shown ? `<small>${esc(w.name)}</small>` : '';
+          return `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(shown)}</b>${official}</span></li>`;
+        }).join('')}</ul>`
+      : '';
+    const prose = extraMessages.map((msg) => `<p>${esc(msg)}</p>`).join('');
+    warns = list + prose || '<p>而家冇天氣警告生效。</p>';
   } else if (wx.bureau === 'smg') {
-    warns = '<p>地球物理氣象局暫時攞唔到，以下預報嚟自 Open-Meteo。</p>';
+    warns = '<p>地球物理氣象局暫時攞唔到。呢度唔會改用其他來源。</p>';
+  } else if (wx.bureau === 'hko') {
+    warns = '<p>香港天文台暫時攞唔到。呢度唔會改用其他來源。</p>';
   } else {
-    warns = `<p>${wx.overridden ? '手動天氣（開發者）：冇真實警告。' : '你喺香港以外，冇天文台警告；以下預報嚟自 Open-Meteo。'}</p>`;
+    warns = `<p>${wx.overridden ? '手動天氣（開發者）：冇真實警告。' : '呢度跟 Open-Meteo，冇天文台警告。'}</p>`;
   }
-  const cd = view.countdown;
-  const soon = cd && !wx.overridden ? `<p class="fine wx-soon">${icon('warn')}${cd.active ? '而家' : '預報'}：${esc(ev(cd.event).label)} · ${esc(hoursText(cd.hours))}（${esc(cd.source)}）</p>` : '';
-  const office = wx.bureau === 'smg' ? '地球物理氣象局・生效中警告' : '香港天文台・生效中警告';
-  const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? office : '天氣警告'}</p>${warns}${soon}</article>`;
-  const rows = view.forecast
+  const bureauName = wx.bureau === 'smg' ? '地球物理氣象局' : '香港天文台';
+  const office = wx.warnings.length || extraMessages.length ? `${bureauName}・生效中警告` : bureauName;
+  const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? office : '天氣警告'}</p>${warns}</article>`;
+  // Hong Kong and Macau only list days that source actually forecast. A padded day would be the game inventing weather.
+  const bureauForecast = wx.bureau === 'hko' || wx.bureau === 'smg';
+  const forecastDays = view.forecast.filter((day) => !bureauForecast || wx.hkoDays[day.date]);
+  const rows = forecastDays
     .map((day) => {
       const today = day.date === view.today ? ' today' : '';
       return `<article class="day${today}">
         <span class="day-art">${weatherArt(day.code, false, false, day.hkoIcon)}</span>
         <div><strong>${day.date === view.today ? '今日' : `星期${WEEK[weekdayIndex(day.date)] ?? ''}`}</strong><span>${esc(formatShort(day.date))}</span></div>
-        <div><b>${esc(dayLabel(day))}</b><span>${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}</span></div>
-        ${wx.hkoDays[day.date] ? `<p class="hko-day">${wx.bureau === 'smg' ? '氣象局' : '天文台'}：${esc(wx.hkoDays[day.date]!)}</p>` : ''}
+        <div><b>${esc(dayLabel(day))}</b><span>${
+          wx.hkoDays[day.date]
+            ? `${Math.round(day.tempMin)}–${Math.round(day.tempMax)}°`
+            : `${Math.round(day.tempMin)}–${Math.round(day.tempMax)}° · 雨 ${Math.round(day.precipMm)} 毫米 · 陣風 ${Math.round(day.gustKmh)}`
+        }</span></div>
+        ${wx.hkoDays[day.date] ? `<p class="hko-day">${esc(wx.hkoDays[day.date]!)}</p>` : ''}
       </article>`;
     })
     .join('');
@@ -1090,7 +1112,7 @@ export function weatherPageHtml(view: View): string {
     ${warnCard}
     ${now}
     <h3 class="sub">未來預報</h3>
-    <div class="days">${rows}</div>
+    ${rows ? `<div class="days">${rows}</div>` : '<p class="fine">當地預報暫時攞唔到。呢度唔會自己估。</p>'}
     <p class="status">${esc(view.statusLine)}${simulated ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
     <button type="button" class="texty" data-action="locate">用我所在位置更新天氣</button>
   `;
