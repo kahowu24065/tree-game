@@ -298,23 +298,56 @@ export function clockLeft(ms: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-/** Remaining incubation as HH:MM. Null when there is no egg still waiting to hatch. */
+/** Remaining incubation as HH:MM:SS (v1.4.16, rounded up to the second). Null when no egg is still waiting to hatch. */
 export function hatchClockText(state: GameState): string | null {
   if (!state.started || state.over) return null;
   const at = nestHatchAt(state);
   if (at == null) return null;
-  const m = Math.max(0, Math.ceil((at - uiNow()) / 60000));
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const sec = Math.max(0, Math.ceil((at - uiNow()) / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}`;
+}
+
+// v1.4.16: the card ticks once a second on its own timer, aligned to the next whole second. Only one timer ever
+// exists; it stops when the card is hidden (hatched / no egg), the page is hidden, or the card leaves the DOM.
+let hatchState: GameState | null = null;
+let hatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopHatchTick(): void {
+  if (hatchTimer !== null) clearTimeout(hatchTimer);
+  hatchTimer = null;
+}
+
+function scheduleHatchTick(): void {
+  if (hatchTimer !== null) return;
+  const at = hatchState ? nestHatchAt(hatchState) : null;
+  const msToNext = at == null ? 1000 : ((at - uiNow()) % 1000 + 1000) % 1000 || 1000;
+  hatchTimer = setTimeout(() => {
+    hatchTimer = null;
+    if (hatchState) syncHatchCard(hatchState);
+  }, msToNext + 5);
 }
 
 /** The card under the weather card. Hidden once the egg has hatched or there is none. */
 export function syncHatchCard(state: GameState): void {
+  hatchState = state;
   const el = document.getElementById('hatch-card');
-  if (!el) return;
+  if (!el) {
+    stopHatchTick();
+    return;
+  }
   const text = hatchClockText(state);
   el.hidden = text == null;
   if (text) setHtml(el, `孵蛋時間：<b>${text}</b>`);
+  if (text == null || document.hidden) stopHatchTick();
+  else scheduleHatchTick();
 }
+
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopHatchTick();
+    else if (hatchState) syncHatchCard(hatchState);
+  });
 
 /** The note cards to show, most urgent first: 瀕死 > 倒塌 (double R day) > the morning note. */
 export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {

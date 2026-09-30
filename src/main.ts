@@ -2011,6 +2011,7 @@ function frame(time: number): void {
   if (time - nestTickAt > 1000) {
     nestTickAt = time;
     syncNest();
+    // Keeps the card in step with the nest; the card's own 1 s timer does the ticking (v1.4.16).
     syncHatchCard(state);
   }
   syncAmbience(input.daylight < 0.45, manual() ? todayEvents() : liveEvents());
