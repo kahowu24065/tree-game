@@ -110,7 +110,7 @@ import {
   type WeatherProvider,
   type WeatherSnapshot,
 } from './weather';
-import { fetchHko, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
+import { fetchHko, fillHkoGaps, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { fetchSmg } from './smg';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
@@ -423,13 +423,15 @@ function view(input: SceneInput): View {
       hkoUsed: hk,
       bureau: usesSmg() ? 'smg' : usesHko(weather) ? 'hko' : undefined,
       warnings: hk ? weather.hko!.warnings : [],
+      warningsKnown: hk ? weather.hko!.warningsKnown !== false : true,
       messages: hk ? weather.hko!.messages : [],
       situation: hk ? weather.hko!.situation : '',
       hkoDays: hk ? Object.fromEntries(weather.hko!.forecast.map((d) => [d.date, d.text])) : {},
       conditionText: manual() ? undefined : weather.conditionText,
       nowIcon: !manual() && hk ? weather.hko!.current?.icon || undefined : undefined,
       station: weather.station,
-      humidity: manual() ? undefined : weather.current.humidity,
+      reading: !hk || Boolean(weather.hko?.current),
+      humidity: manual() || (hk && !weather.hko?.current) ? undefined : weather.current.humidity,
       rainInHours: weather.rainInHours ?? null,
       error: weather.error,
       overridden: manual(),
@@ -939,7 +941,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   ]);
   const hko = hkoRes.status === 'fulfilled' ? hkoRes.value : null;
   const smg = smgRes.status === 'fulfilled' ? smgRes.value : null;
-  const official = mo ? smg?.data ?? null : hko;
+  let official = mo ? smg?.data ?? null : hko;
+  if (official && (hk || mo)) official = fillHkoGaps(official, loadWeatherCache()?.hko);
   const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
   const place = manual?.name ?? found?.name ?? (mo ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
   const district = manual?.name ?? found?.district;

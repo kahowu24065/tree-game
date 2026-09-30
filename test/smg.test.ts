@@ -47,8 +47,10 @@ const thunderOff = `<ThunderstormWarning><Custom><Thunderstorm><Action>CANCEL</A
 const hot = `<rss><channel><item><title>黃色高溫提示</title><description><![CDATA[預料本澳天氣酷熱。]]></description></item></channel></rss>`;
 const hotCancelled = `<rss><channel><item><title>黃色高溫提示</title><description><![CDATA[黃色高溫提示已經取消。]]></description></item></channel></rss>`;
 
+const outlook = `<ActualForecast><Custom><TodaySituation>高空反氣旋正影響本澳天氣。</TodaySituation></Custom></ActualForecast>`;
+
 const xml = (over: Partial<SmgXml> = {}): SmgXml => ({
-  brief, actual, week, typhoon: typhoonOff, rain: '', thunder: thunderOff, monsoon: '', temp: hot, ...over,
+  brief, actual, week, typhoon: typhoonOff, rain: '', thunder: thunderOff, monsoon: '', temp: hot, outlook, ...over,
 });
 
 describe('SMG', () => {
@@ -58,6 +60,8 @@ describe('SMG', () => {
     expect(peninsula.data.current?.tempC).toBe(30);
     expect(peninsula.data.current?.icon).toBe(60);
     expect(peninsula.data.messages).toEqual(['預料本澳天氣酷熱。']);
+    expect(peninsula.data.situation).toBe('高空反氣旋正影響本澳天氣。');
+    expect(parseSmg(xml({ outlook: '' }), 22.198, 113.544).data.situation).toBe('');
     expect(peninsula.windKmh).toBe(7);
     expect(peninsula.gustKmh).toBe(12);
     expect(peninsula.precipMm).toBe(0);

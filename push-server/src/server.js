@@ -59,7 +59,7 @@ alerts.mo ??= null;
 const isMoDevice = (r) => r.state?.isMO === true;
 const isHkDevice = (r) => !isMoDevice(r) && (!r.state || r.state.isHK);
 
-const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
+const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_forecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
 const SMG_HOST = { xml: 'https://xml.smg.gov.mo', rss: 'https://rss.smg.gov.mo' };
 
 function forSmg(msg) {

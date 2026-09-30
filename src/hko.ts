@@ -48,6 +48,8 @@ export interface HkoData {
   } | null;
   forecast: HkoForecastDay[];
   situation: string;
+  /** False when the warning list itself failed to load. An empty list means the bureau reported none. */
+  warningsKnown?: boolean;
 }
 
 const TC_NAME: Record<string, string> = {
@@ -274,9 +276,18 @@ export function rainFromPsr(psr: string): { mm: number; prob: number } {
 }
 
 async function getJson(dataType: string, timeoutMs: number): Promise<unknown> {
-  const res = await fetch(`${BASE}?dataType=${dataType}&lang=tc`, { signal: timeoutSignal(timeoutMs) });
-  if (!res.ok) throw new Error(`天文台回應 ${res.status}`);
-  return res.json();
+  let last: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${BASE}?dataType=${dataType}&lang=tc`, { signal: timeoutSignal(timeoutMs) });
+      if (!res.ok) throw new Error(`天文台回應 ${res.status}`);
+      const text = await res.text();
+      return JSON.parse(text) as unknown;
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last instanceof Error ? last : new Error('天文台資料暫時攞唔到');
 }
 
 export function timeoutSignal(ms: number): AbortSignal | undefined {
@@ -287,18 +298,52 @@ export function timeoutSignal(ms: number): AbortSignal | undefined {
   return c.signal;
 }
 
-/** Fetch warnings, current readings and the 9-day forecast in parallel. Throws only if all three fail. */
+async function loadOne(dataType: string, timeoutMs: number): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  try {
+    return { ok: true, value: await getJson(dataType, timeoutMs) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Warnings, the live reading, then the 9-day forecast.
+ * One request at a time: the app HTTP client starts each timeout immediately and does not
+ * run them together, so a parallel call was letting the warning list and the reading expire
+ * while the forecast still arrived.
+ */
 export async function fetchHko(lat: number, lon: number, timeoutMs = 8000): Promise<HkoData> {
-  const [warn, now, fnd] = await Promise.allSettled([getJson('warnsum', timeoutMs), getJson('rhrread', timeoutMs), getJson('fnd', timeoutMs)]);
-  if (warn.status === 'rejected' && now.status === 'rejected' && fnd.status === 'rejected') throw new Error('天文台資料暫時攞唔到');
-  const rh = now.status === 'fulfilled' ? parseRhrread(now.value, lat, lon) : null;
-  const f = fnd.status === 'fulfilled' ? parseFnd(fnd.value) : { forecast: [], situation: '' };
+  const warn = await loadOne('warnsum', timeoutMs);
+  const now = await loadOne('rhrread', timeoutMs);
+  const fnd = await loadOne('fnd', timeoutMs);
+  if (!warn.ok && !now.ok && !fnd.ok) throw new Error('天文台資料暫時攞唔到');
+  const rh = now.ok ? parseRhrread(now.value, lat, lon) : null;
+  const f = fnd.ok ? parseFnd(fnd.value) : { forecast: [], situation: '' };
   return {
     fetchedAt: Date.now(),
-    warnings: warn.status === 'fulfilled' ? parseWarnsum(warn.value) : [],
+    warnings: warn.ok ? parseWarnsum(warn.value) : [],
+    warningsKnown: warn.ok,
     messages: rh?.messages ?? [],
     current: rh?.current ?? null,
     forecast: f.forecast,
     situation: f.situation,
+  };
+}
+
+/**
+ * A forecast-only reply must not wipe a warning or a temperature we already had.
+ * An empty previous list is not reused: that snapshot may itself have missed the warning request.
+ */
+export function fillHkoGaps(fresh: HkoData, previous: HkoData | null | undefined, now = Date.now(), maxAgeMs = 45 * 60 * 1000): HkoData {
+  if (!previous || now - previous.fetchedAt > maxAgeMs) return fresh;
+  const keepWarnings = fresh.warningsKnown === false && previous.warnings.length > 0;
+  const keepCurrent = !fresh.current && previous.current !== null && previous.current.tempC !== null;
+  if (!keepWarnings && !keepCurrent) return fresh;
+  return {
+    ...fresh,
+    warnings: keepWarnings ? previous.warnings : fresh.warnings,
+    messages: fresh.messages.length ? fresh.messages : keepWarnings ? previous.messages : fresh.messages,
+    current: keepCurrent ? previous.current : fresh.current,
+    warningsKnown: keepWarnings ? true : fresh.warningsKnown,
   };
 }

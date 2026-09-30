@@ -57,6 +57,8 @@ export interface SmgXml {
   thunder?: string;
   monsoon?: string;
   temp?: string;
+  /** c_forecast.xml. TodaySituation is SMG's weather-situation paragraph. */
+  outlook?: string;
 }
 
 function inner(xml: string, name: string): string {
@@ -239,7 +241,6 @@ export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()
   const gustKmh = station ? valueOfType(station.block, 'WindGust', '3') : null;
   const precipMm = station ? valueOfType(station.block, 'Rainfall', '3') : null;
   const days = forecastDays(xml.week ?? '');
-  const today = days[0];
   const warnings = smgWarnings(xml);
   const messages = smgMessages(xml);
   return {
@@ -250,7 +251,7 @@ export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()
       fetchedAt: now,
       warnings,
       messages,
-      situation: today?.text ?? '',
+      situation: inner(xml.outlook ?? '', 'TodaySituation'),
       forecast: days,
       current: {
         tempC,
@@ -268,6 +269,7 @@ const FILES: { key: keyof SmgXml; host: 'xml' | 'rss'; file: string }[] = [
   { key: 'brief', host: 'xml', file: 'c_actual_brief.xml' },
   { key: 'actual', host: 'xml', file: 'c_actualweather.xml' },
   { key: 'week', host: 'xml', file: 'c_7daysforecast.xml' },
+  { key: 'outlook', host: 'xml', file: 'c_forecast.xml' },
   { key: 'typhoon', host: 'xml', file: 'c_typhoon.xml' },
   { key: 'rain', host: 'xml', file: 'c_rainstorm.xml' },
   { key: 'thunder', host: 'xml', file: 'c_thunderstorm.xml' },

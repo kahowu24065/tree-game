@@ -56,12 +56,16 @@ export interface WeatherView {
   /** Which bureau the warnings came from. Macau uses SMG; absent means HKO when hkoUsed. */
   bureau?: 'hko' | 'smg';
   warnings: HkoWarning[];
+  /** False when the bureau warning list failed to load. Missing means the list is known. */
+  warningsKnown?: boolean;
   messages: string[];
   situation: string;
   hkoDays: Record<string, string>;
   conditionText?: string;
   nowIcon?: number;
   station?: string;
+  /** False when a bureau snapshot has a forecast but no live reading. Missing means the reading is real. */
+  reading?: boolean;
   humidity?: number;
   rainInHours: number | null;
   error?: string;
@@ -604,6 +608,7 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
     hit.dataset.action = 'weather';
   }
   const signal = !view.manual && cd?.active ? signalLabel(wx.warnings, cd.event) : null;
+  const noReading = wx.reading === false && !firstLoad && !view.manual;
   const label = view.manual ? ev(view.todayEvent).label : signal ?? (cd?.active ? ev(cd.event).label : wx.conditionText || weatherLabel(cond.code));
   let line: string;
   if (cd) {
@@ -612,16 +617,19 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
     line = `<span class="warn-line">${icon('warn')}${esc(signal ?? ev(cd.event).label)} · ${hoursText(cd.hours)}${tail ? ` · ${tail}` : ''}</span>`;
   } else if (wx.rainInHours !== null && !cond.raining && !simulated && !view.manual) {
     line = wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`;
-  } else {
+  } else if (view.manual) {
     line = `今日：${esc(ev(view.todayEvent).label)} · 今晚結算 ${esc(hm(view.minutesToSettle))}後`;
+  } else {
+    // A remembered day event plus the time until nightly settlement is not a weather forecast.
+    line = '';
   }
   const chips = wx.warnings
     .slice(0, 4)
     .map((w) => `<span class="wchip ${w.tone}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(warningDisplay(w))}</span></span>`)
     .join('');
   const source = sourceLabel(wx);
-  const temp = firstLoad ? '--' : `${Math.round(cond.tempC)}°C`;
-  const shownLabel = firstLoad ? '攞緊天氣…' : label;
+  const temp = firstLoad || noReading ? '--' : `${Math.round(cond.tempC)}°C`;
+  const shownLabel = firstLoad ? '攞緊天氣…' : noReading ? '讀數暫時攞唔到' : label;
   setAttr(hit, 'aria-label', simulated ? `${temp} ${shownLabel}・模擬天氣，撳一下再試攞真實天氣` : `${temp} ${shownLabel}・天氣概況`);
   setHtml(card.querySelector('.wx-art')!, weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || view.manual ? undefined : wx.nowIcon));
   setHtml(card.querySelector('.wx-main')!, `<b>${temp}</b><span>${esc(shownLabel)}</span>`);
@@ -1053,17 +1061,18 @@ function guardCards(view: View): string {
 export function weatherPageHtml(view: View): string {
   const { cond, wx } = view;
   const simulated = wx.provider === 'sim' && !wx.overridden;
-  const label = wx.conditionText || weatherLabel(cond.code);
+  const reading = wx.reading !== false;
+  const label = reading ? wx.conditionText || weatherLabel(cond.code) : '';
   const facts = [
-    wx.humidity !== undefined ? `濕度 ${Math.round(wx.humidity)}%` : '',
-    wx.bureau === 'hko' ? '' : `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,
-    cond.precipMm > 0 ? `雨量 ${Math.round(cond.precipMm * 10) / 10} 毫米` : '',
+    reading && wx.humidity !== undefined ? `濕度 ${Math.round(wx.humidity)}%` : '',
+    !reading || wx.bureau === 'hko' ? '' : `風 ${Math.round(cond.windKmh)}・陣風 ${Math.round(cond.gustKmh)} 公里/時`,
+    reading && cond.precipMm > 0 ? `雨量 ${Math.round(cond.precipMm * 10) / 10} 毫米` : '',
   ].filter(Boolean);
   const rain = wx.rainInHours !== null && !cond.raining && !simulated && !wx.overridden ? (wx.rainInHours <= 1 ? '一個鐘內可能落雨' : `大約 ${wx.rainInHours} 個鐘後可能落雨`) : '';
   const now = `<article class="card wx-now">
       <span class="wx-now-art">${weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || wx.overridden ? undefined : wx.nowIcon)}</span>
       <div><p class="eyebrow">而家・${esc(view.place)}${wx.station && !simulated && !wx.overridden ? `・${esc(wx.station)}站` : ''}</p>
-      <h2>${Math.round(cond.tempC)}°C ${esc(label)}</h2>
+      <h2>${reading ? `${Math.round(cond.tempC)}°C ${esc(label)}` : '讀數暫時攞唔到'}</h2>
       <p class="fine">${facts.map(esc).join(' · ')}${rain ? `<br>${esc(rain)}` : ''}</p></div>
     </article>`;
   // Bureau advisory sentences (HKO warningMessage, SMG descriptions). Shown with the warning, not instead of it.
@@ -1078,7 +1087,7 @@ export function weatherPageHtml(view: View): string {
         }).join('')}</ul>`
       : '';
     const prose = extraMessages.map((msg) => `<p>${esc(msg)}</p>`).join('');
-    warns = list + prose || '<p>而家冇天氣警告生效。</p>';
+    warns = list + prose || (wx.warningsKnown === false ? '<p>警告暫時攞唔到。</p>' : '<p>而家冇天氣警告生效。</p>');
   } else if (wx.bureau === 'smg') {
     warns = '<p>地球物理氣象局暫時攞唔到。呢度唔會改用其他來源。</p>';
   } else if (wx.bureau === 'hko') {
@@ -1090,6 +1099,7 @@ export function weatherPageHtml(view: View): string {
   const office = wx.warnings.length || extraMessages.length ? `${bureauName}・生效中警告` : bureauName;
   const warnCard = `<article class="card hko"><p class="eyebrow">${wx.hkoUsed ? office : '天氣警告'}</p>${warns}</article>`;
   // Hong Kong and Macau only list days that source actually forecast. A padded day would be the game inventing weather.
+  const outlook = wx.situation.trim();
   const bureauForecast = wx.bureau === 'hko' || wx.bureau === 'smg';
   const forecastDays = view.forecast.filter((day) => !bureauForecast || wx.hkoDays[day.date]);
   const rows = forecastDays
@@ -1112,6 +1122,7 @@ export function weatherPageHtml(view: View): string {
     ${warnCard}
     ${now}
     <h3 class="sub">未來預報</h3>
+    ${outlook ? `<article class="card wx-outlook"><p class="eyebrow">天氣概況</p><p>${esc(outlook)}</p></article>` : ''}
     ${rows ? `<div class="days">${rows}</div>` : '<p class="fine">當地預報暫時攞唔到。呢度唔會自己估。</p>'}
     <p class="status">${esc(view.statusLine)}${simulated ? ' <button type="button" class="linkish" data-action="retry-weather">再試</button>' : ''}</p>
     <button type="button" class="texty" data-action="locate">用我所在位置更新天氣</button>

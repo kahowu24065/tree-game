@@ -1578,6 +1578,11 @@ body.sheet-open .sheet-backdrop {
   color: var(--ink-soft);
 }
 
+.wx-outlook p:last-child {
+  margin: 4px 0 0;
+  white-space: pre-line;
+}
+
 .hko-day {
   grid-column: 1 / -1;
   margin: 2px 0 0;

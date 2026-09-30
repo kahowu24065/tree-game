@@ -49,6 +49,21 @@ describe('v1.4.1 天氣概況 page', () => {
     expect(listed).toContain('酷熱天氣警告');
     expect(listed).toContain('高溫天氣持續');
   });
+  it('shows the forecast overview the bureau actually wrote', () => {
+    const text = '廣東沿岸風勢微弱。日間酷熱。';
+    const html = weatherPageHtml(view({ situation: text }));
+    expect(html.indexOf('未來預報')).toBeLessThan(html.indexOf(text));
+    expect(html).toContain(`<article class="card wx-outlook"><p class="eyebrow">天氣概況</p><p>${text}</p></article>`);
+    const none = weatherPageHtml(view({ situation: '', hkoUsed: false, provider: 'open-meteo' }));
+    expect(none).not.toContain('wx-outlook');
+  });
+  it('says the warning list failed instead of claiming there is none', () => {
+    const html = weatherPageHtml(view({ warnings: [], messages: [], warningsKnown: false, reading: false, humidity: 70, station: undefined, conditionText: undefined }));
+    expect(html).toContain('警告暫時攞唔到');
+    expect(html).toContain('讀數暫時攞唔到');
+    expect(html).not.toContain('而家冇天氣警告生效');
+    expect(html).not.toContain('濕度 70%');
+  });
   it('outside HK says there are no HKO warnings', () => {
     const html = weatherPageHtml(view({ hkoUsed: false, warnings: [], provider: 'open-meteo' }));
     expect(html).toContain('Open-Meteo');

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { drivingWarning, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, warningDisplay, windFromText } from '../src/hko';
+import { drivingWarning, fillHkoGaps, hkoIconLabel, hkoIconRain, hkoIconToWmo, parseFnd, parseRhrread, parseWarnsum, warningDisplay, windFromText, type HkoData } from '../src/hko';
 import { parseBigDataCloud } from '../src/place';
 import { dayEvent, hkoWarningEvents, severeCountdown } from '../src/events';
 import { condFromForecast, dayLabel, districtRain, isRainCode, presentForecast, withHkoDays, fetchForecast, hkoForecast, mildDay, inMacau, nearHongKong, parseOpenMeteo } from '../src/weather';
@@ -124,6 +124,37 @@ describe('香港天文台', () => {
     expect(fc?.current.tempC).toBe(rh.current.tempC);
     expect(windFromText('東風4至5級，間中6級。')).toBe(44);
     expect(hkoIconToWmo(65)).toBe(95);
+  });
+
+  it('預報到手但警告同讀數失手時，保留最近一次完整資料', () => {
+    const hot = parseWarnsum({ WHOT: { name: '酷熱天氣警告', code: 'WHOT', actionCode: 'REISSUE' } });
+    const previous: HkoData = {
+      fetchedAt: 1_000,
+      warnings: hot,
+      messages: ['酷熱天氣警告現正生效。'],
+      current: { tempC: 35, station: '觀塘', humidity: 60, icon: 51, rainByDistrict: {}, updated: '' },
+      forecast: [],
+      situation: '',
+      warningsKnown: true,
+    };
+    const forecastOnly: HkoData = {
+      fetchedAt: 2_000,
+      warnings: [],
+      warningsKnown: false,
+      messages: [],
+      current: null,
+      forecast: [],
+      situation: '',
+    };
+    const kept = fillHkoGaps(forecastOnly, previous, 2_000);
+    expect(kept.warnings.map((w) => w.code)).toEqual(['WHOT']);
+    expect(kept.messages[0]).toContain('酷熱天氣警告現正生效');
+    expect(kept.current?.station).toBe('觀塘');
+    expect(kept.warningsKnown).toBe(true);
+    const emptyPrevious: HkoData = { ...previous, warnings: [], messages: [], current: null };
+    const stillUnknown = fillHkoGaps(forecastOnly, emptyPrevious, 2_000);
+    expect(stillUnknown.warningsKnown).toBe(false);
+    expect(stillUnknown.warnings).toEqual([]);
   });
 });
 
