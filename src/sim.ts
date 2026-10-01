@@ -322,7 +322,7 @@ export const DAY_MS = 24 * 3600 * 1000;
 /** Drift is applied in steps of at most 15 minutes (closed-app time is caught up step by step). */
 export const FLOW_STEP_MS = 15 * 60 * 1000;
 
-/** Per-day rates (the old nightly amounts): 水分 −10 (−9 一級徽章, 0 on a rain day), 養分 −10, 抗風力 −2 after 青年樹. */
+/** Per-day rates: 水分 −24 = 1 an hour (v1.4.23; ×0.9 一級徽章, 0 on a rain day), 養分 −10, 抗風力 −2 after 青年樹. */
 export interface FlowRates {
   w: number;
   n: number;
@@ -1280,8 +1280,19 @@ export interface ActionResult {
   message: string;
 }
 
+/** v1.4.23: the current clock hour (game day + local HH from the log clock), for the 2-per-hour watering limit. */
+export function waterHourKey(state: GameState): string {
+  return `${state.care.date}T${logClock().slice(0, 2)}`;
+}
+
+/** Next clock hour as HH:00 (when watering opens again after 2 taps). */
+export function nextWaterTime(): string {
+  const h = Number(logClock().slice(0, 2));
+  return Number.isFinite(h) && logClock() ? `${String((h + 1) % 24).padStart(2, '0')}:00` : '';
+}
+
 export function actionLimit(state: GameState, action: CareAction): { used: number; max: number } {
-  if (action === 'water') return { used: state.care.water, max: CARE.water.perDay };
+  if (action === 'water') return { used: state.care.waterHour === waterHourKey(state) ? (state.care.waterInHour ?? 0) : 0, max: CARE.water.perHour };
   if (action === 'drain') return { used: state.care.drain, max: CARE.drain.perDay };
   if (action === 'fertilize') return { used: state.care.fertilize, max: CARE.fertilize.perDay };
   return { used: state.care.dewormed ? 1 : 0, max: 1 };
@@ -1290,7 +1301,7 @@ export function actionLimit(state: GameState, action: CareAction): { used: numbe
 export function performAction(state: GameState, action: CareAction): ActionResult {
   if (state.over) return { ok: false, message: tl('sim.109') };
   const lim = actionLimit(state, action);
-  if (lim.used >= lim.max) return { ok: false, message: tl('sim.110') };
+  if (lim.used >= lim.max) return { ok: false, message: action === 'water' ? tl('sim.waterHour', { max: lim.max, time: nextWaterTime() }) : tl('sim.110') };
   let message = '';
   let reward: LogReward;
   const title = { water: tl('ui.167'), fertilize: tl('ui.168'), deworm: tl('ui.169'), drain: tl('ui.170') }[action];
@@ -1298,6 +1309,9 @@ export function performAction(state: GameState, action: CareAction): ActionResul
     // Saturated soil: watering does nothing and does not use up one of today's turns.
     if (state.moisture >= W_SATURATED) return { ok: false, message: tl('sim.111') };
     state.care.water += 1;
+    const hour = waterHourKey(state);
+    state.care.waterInHour = state.care.waterHour === hour ? (state.care.waterInHour ?? 0) + 1 : 1;
+    state.care.waterHour = hour;
     const before = state.moisture;
     state.moisture = waterAdd(before, CARE.water.amount);
     const got = r1(state.moisture - before);

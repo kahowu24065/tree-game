@@ -98,6 +98,14 @@ describe('reminder planning', () => {
     expect(ids({ healthZeroAt: 10 * H, dyingEndsAt: 20 * H })).not.toContain(NOTIFY_IDS.healthLow);
     expect(ids({ healthZeroAt: null })).not.toContain(NOTIFY_IDS.healthLow);
   });
+  it('v1.4.23 水分不足 reminder at 23:00 (1 h before settlement), only when tonight is projected dry, not after 23:00', () => {
+    const n = planNotifications({ ...base, waterLowTonight: true }).find((x) => x.id === NOTIFY_IDS.waterLow);
+    expect(n?.at).toBe(4 * H);
+    expect(n?.body).toContain('扣健康');
+    expect(ids({ waterLowTonight: false })).not.toContain(NOTIFY_IDS.waterLow);
+    expect(ids({ waterLowTonight: true, msToSettlement: 0.5 * H })).not.toContain(NOTIFY_IDS.waterLow);
+    expect(ids({ waterLowTonight: true, dyingEndsAt: 20 * H })).not.toContain(NOTIFY_IDS.waterLow);
+  });
   it('weather reminder only when backgrounded, 1 h later, before settlement', () => {
     expect(ids({ pendingEmergencies: ['酷熱澆水'] })).not.toContain(NOTIFY_IDS.weather);
     const w = planNotifications({ ...base, pendingEmergencies: ['酷熱澆水', '加固'], background: true }).find((n) => n.id === NOTIFY_IDS.weather);

@@ -14,7 +14,7 @@ import { warningDisplay, type HkoWarning } from './hko';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
-import { actionLimit, advice, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
+import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -435,7 +435,7 @@ export function lessonPages(id: LessonId): { title: string; body: string }[] {
     return [
       {
         title: tl('ui.091'),
-        body: tl('ui.092', { lo, hi, perDay: CARE.water.perDay, p3: pts(CARE.water.amount), W_SATURATED, perDay_: CARE.drain.perDay, p6: pts(CARE.drain.amount) }),
+        body: tl('ui.092', { lo, hi, perHour: CARE.water.perHour, p3: pts(CARE.water.amount), W_SATURATED, perDay_: CARE.drain.perDay, p6: pts(CARE.drain.amount) }),
       },
       {
         title: tl('ui.093'),
@@ -447,7 +447,7 @@ export function lessonPages(id: LessonId): { title: string; body: string }[] {
       },
       {
         title: tl('ui.097'),
-        body: tl('ui.098', { p0: pts(hot.dW), p1: emergencyName('heatWater'), p2: pts(EMERGENCY.heatWater.amount), damage: hot.damage, p4: pts(EMERGENCY.bonus), perDay: CARE.water.perDay, W_SATURATED }),
+        body: tl('ui.098', { p0: pts(hot.dW), p1: emergencyName('heatWater'), p2: pts(EMERGENCY.heatWater.amount), damage: hot.damage, p4: pts(EMERGENCY.bonus), perHour: CARE.water.perHour, W_SATURATED }),
       },
     ];
   }
@@ -542,7 +542,7 @@ export function renderChrome(view: View): void {
     const covered = Boolean(state.care.warmCover);
     const warmOk = coldOn && !covered && state.started && !state.over;
     // v15 layout: 澆水 over 疏水 | 施肥 over 除蟲 | 加固 | 保暖 (v1.4.1: 圖鑑 lives in the 樹木狀態 pop box).
-    dock.innerHTML = tl('ui.130', { p0: dockBtn('d-water short', 'data-action="water"', 'drop', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.116') : `${water.used}/${water.max}`, water.used >= water.max || state.moisture >= W_SATURATED), p1: state.moisture > W_SATURATED ? 'alert' : '', p2: drains.used >= drains.max ? 'disabled' : '', p3: icon('drain'), p4: drains.used >= drains.max ? tl('ui.117') : tl('ui.118', { p0: drains.max - drains.used }), p5: dockBtn('d-feed short', 'data-action="fertilize"', 'sprout', tl('ui.099'), feed.used >= feed.max ? tl('ui.119') : `${feed.used}/${feed.max}`, feed.used >= feed.max), p6: state.pest.active ? 'alert' : '', p7: state.care.dewormed ? 'disabled' : '', p8: icon('bug'), p9: state.care.dewormed ? tl('ui.120') : state.pest.active ? tl('ui.121') : tl('ui.122'), p10: dockBtn('d-guard', 'data-open="care" data-focus="guard"', 'shield', tl('ui.123'), !state.windUnlocked ? tl('ui.124') : dbl ? tl('ui.125') : prepShort ? tl('ui.126') : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : ''), p11: warmOk ? 'hot-pulse' : 'done', p12: covered ? ' lit' : '', p13: warmOk ? '' : 'disabled aria-disabled="true"', p14: icon('mulch'), p15: covered ? tl('ui.127') : coldOn ? tl('ui.128') : tl('ui.129') });
+    dock.innerHTML = tl('ui.130', { p0: dockBtn('d-water short', 'data-action="water"', 'drop', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.116') : waterSub(water), water.used >= water.max || state.moisture >= W_SATURATED), p1: state.moisture > W_SATURATED ? 'alert' : '', p2: drains.used >= drains.max ? 'disabled' : '', p3: icon('drain'), p4: drains.used >= drains.max ? tl('ui.117') : tl('ui.118', { p0: drains.max - drains.used }), p5: dockBtn('d-feed short', 'data-action="fertilize"', 'sprout', tl('ui.099'), feed.used >= feed.max ? tl('ui.119') : `${feed.used}/${feed.max}`, feed.used >= feed.max), p6: state.pest.active ? 'alert' : '', p7: state.care.dewormed ? 'disabled' : '', p8: icon('bug'), p9: state.care.dewormed ? tl('ui.120') : state.pest.active ? tl('ui.121') : tl('ui.122'), p10: dockBtn('d-guard', 'data-open="care" data-focus="guard"', 'shield', tl('ui.123'), !state.windUnlocked ? tl('ui.124') : dbl ? tl('ui.125') : prepShort ? tl('ui.126') : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : ''), p11: warmOk ? 'hot-pulse' : 'done', p12: covered ? ' lit' : '', p13: warmOk ? '' : 'disabled aria-disabled="true"', p14: icon('mulch'), p15: covered ? tl('ui.127') : coldOn ? tl('ui.128') : tl('ui.129') });
   }
 
   const slot = document.getElementById('note-slot');
@@ -698,6 +698,12 @@ export function warnIcon(w: HkoWarning): string {
   if (w.group === 'WL') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 18.5L8 5l3.5 5 2-2 5 10.5z" fill="currentColor"/><circle cx="13" cy="14.5" r="1.4" fill="#fff"/><circle cx="9.5" cy="15.5" r="1" fill="#fff"/></svg>';
   if (w.group === 'WTS') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.5 1.5L4 11h5l-1.5 7.5L16 8h-5z" fill="currentColor"/></svg>';
   return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path d="M10 5.5v5.5M10 13.8v.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
+}
+
+/** v1.4.23 dock 澆水 sub-line: taps left this clock hour, or when the next hour opens. */
+function waterSub(water: { used: number; max: number }): string {
+  const left = water.max - water.used;
+  return left > 0 ? tl('ui.waterLeft', { n: left }) : tl('ui.waterNext', { time: nextWaterTime() });
 }
 
 /**
@@ -956,7 +962,7 @@ function careTab(view: View): string {
   const extras = view.todayEvents.filter((e) => e !== 'clear' && e !== view.todayEvent);
   const emerg = emergencyButtons(view, 'act');
   const soon = cd && !same ? tl('ui.204', { p0: icon('warn'), p1: esc(ev(cd.event).label), p2: esc(hoursText(cd.hours)), p3: esc(effectText(cd.event, state.windUnlocked)) }) : '';
-  return tl('ui.215', { p0: today.severe || cd ? 'warn' : '', p1: view.manual ? tl('ui.205') : '', p2: esc(hm(view.minutesToSettle)), p3: esc(today.label), p4: same && cd ? ` · ${esc(hoursText(cd.hours))}` : '', p5: esc(effectText(view.todayEvent, state.windUnlocked)), p6: extras.length ? tl('ui.207', { p0: extras.map((e) => esc(sideEventLine(e, state.windUnlocked))).join(tl('ui.206')) }) : '', soon, emerg, p9: careAdvice(view), p10: actionBtn('water', 'drop', 'blue', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.208', { used: water.used, max: water.max }) : `+${CARE.water.amount} · ${water.used}/${water.max}`, water.used >= water.max || state.moisture >= W_SATURATED), p11: actionBtn('drain', 'drain', 'purple', tl('ui.209'), tl('ui.210', { amount: CARE.drain.amount, used: drain.used, max: drain.max }), drain.used >= drain.max), p12: actionBtn('fertilize', 'sprout', 'green', tl('ui.099'), tl('ui.211', { amount: CARE.fertilize.amount, used: feed.used, max: feed.max }), feed.used >= feed.max), p13: actionBtn('deworm', 'bug', 'orange', tl('ui.122'), state.care.dewormed ? tl('ui.212') : state.pest.active ? tl('ui.213', { p0: pestDamageWith(state.residents.length) }) : tl('ui.214'), state.care.dewormed), p14: guardCards(view), p15: nightCard(view.preview, state.collapses || 0), p16: s ? settlementCard(s) : '', p17: esc(event.title), p18: esc(event.text), p19: carbonKg(state.heightCm, state.species), daysCared: state.daysCared });
+  return tl('ui.215', { p0: today.severe || cd ? 'warn' : '', p1: view.manual ? tl('ui.205') : '', p2: esc(hm(view.minutesToSettle)), p3: esc(today.label), p4: same && cd ? ` · ${esc(hoursText(cd.hours))}` : '', p5: esc(effectText(view.todayEvent, state.windUnlocked)), p6: extras.length ? tl('ui.207', { p0: extras.map((e) => esc(sideEventLine(e, state.windUnlocked))).join(tl('ui.206')) }) : '', soon, emerg, p9: careAdvice(view), p10: actionBtn('water', 'drop', 'blue', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.208', { used: water.used, max: water.max }) : tl('ui.waterAct', { amount: CARE.water.amount, used: water.used, max: water.max }), water.used >= water.max || state.moisture >= W_SATURATED), p11: actionBtn('drain', 'drain', 'purple', tl('ui.209'), tl('ui.210', { amount: CARE.drain.amount, used: drain.used, max: drain.max }), drain.used >= drain.max), p12: actionBtn('fertilize', 'sprout', 'green', tl('ui.099'), tl('ui.211', { amount: CARE.fertilize.amount, used: feed.used, max: feed.max }), feed.used >= feed.max), p13: actionBtn('deworm', 'bug', 'orange', tl('ui.122'), state.care.dewormed ? tl('ui.212') : state.pest.active ? tl('ui.213', { p0: pestDamageWith(state.residents.length) }) : tl('ui.214'), state.care.dewormed), p14: guardCards(view), p15: nightCard(view.preview, state.collapses || 0), p16: s ? settlementCard(s) : '', p17: esc(event.title), p18: esc(event.text), p19: carbonKg(state.heightCm, state.species), daysCared: state.daysCared });
 }
 
 export function settlementCard(s: NonNullable<GameState['lastSettlement']>): string {

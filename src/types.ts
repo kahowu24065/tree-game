@@ -5,6 +5,9 @@ export interface Care {
   date: string;
   /** Times watered / drained today. */
   water: number;
+  /** v1.4.23: clock hour of the latest watering (`YYYY-MM-DDTHH`) and how many taps in that hour (max 2). */
+  waterHour?: string;
+  waterInHour?: number;
   drain: number;
   fertilize: number;
   dewormed: boolean;

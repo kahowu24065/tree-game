@@ -5,7 +5,7 @@ import { t as tl } from '../i18n';
 export const NOTIFY_KEY = 'sekai-tree-notify';
 const HOUR = 3600_000;
 /** Fixed ids so each reschedule replaces the previous set. */
-export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105, nest: 106, healthLow: 107 } as const;
+export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105, nest: 106, healthLow: 107, waterLow: 108 } as const;
 
 export interface NotifyInput {
   now: number;
@@ -17,6 +17,8 @@ export interface NotifyInput {
   fertilizedToday: boolean;
   /** v1.4.18: tonight's settlement time when its projected 健康 is 0 (null = safe tonight / already 瀕死). */
   healthZeroAt?: number | null;
+  /** v1.4.23: tonight's projected water (after the day's drift) is in the 乾旱 tier, so midnight costs health. */
+  waterLowTonight?: boolean;
   /** Real timestamp when 瀕死 runs out (null = not dying). */
   dyingEndsAt: number | null;
   /** Labels of active warnings whose emergency action is still undone (e.g. 酷熱警告 → 酷熱澆水). */
@@ -58,6 +60,11 @@ export function planNotifications(i: NotifyInput): PlannedNotice[] {
     // Tonight's settlement is projected to take 健康 to 0: warn ~3 hours before midnight.
     const at = Math.max(i.now + 5 * 60_000, i.healthZeroAt - 3 * HOUR);
     if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: tl('notify.008', { TITLE }), body: tl('notify.009') });
+  }
+  if (i.waterLowTonight && i.dyingEndsAt === null) {
+    // 23:00 (one hour before settlement), once a night: the fixed id replaces any earlier plan; none after 23:00.
+    const at = settle - HOUR;
+    if (soon(at)) out.push({ id: NOTIFY_IDS.waterLow, at, title: tl('notify.waterLowTitle', { TITLE }), body: tl('notify.waterLowBody') });
   }
   if (i.hatchAt !== null && soon(i.hatchAt)) {
     out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: tl('notify.010') });

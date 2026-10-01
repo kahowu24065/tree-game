@@ -118,7 +118,7 @@ function playTab(): string {
     table(
       [tl('guide.024'), tl('guide.025'), tl('guide.026')],
       [
-        [tl('ui.115'), tl('guide.027', { amount: CARE.water.amount, W_SATURATED }), CARE.water.perDay],
+        [tl('ui.115'), tl('guide.027', { amount: CARE.water.amount, W_SATURATED }), tl('guide.waterLimit', { perHour: CARE.water.perHour })],
         [tl('ui.209'), tl('guide.028', { amount: CARE.drain.amount }), CARE.drain.perDay],
         [tl('ui.099'), tl('guide.029', { amount: CARE.fertilize.amount }), CARE.fertilize.perDay],
         [tl('ui.122'), tl('guide.030'), 1],

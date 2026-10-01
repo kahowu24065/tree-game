@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WEATHER_EVENTS } from '../src/balance';
 import { bookGameEnd, freshMeta, newGame } from '../src/meta';
 import { carbonKg, deltaG, finalDamage, hMult, nFactor, pickEvent, wFactor } from '../src/rules';
-import { catchUp, createGame, performAction, reinforce, settleDay } from '../src/sim';
+import { actionLimit, catchUp, createGame, nextWaterTime, performAction, reinforce, setLogClock, settleDay } from '../src/sim';
 import { visualHeight } from '../src/three/tree3d';
 import type { GameState } from '../src/types';
 
@@ -12,7 +12,8 @@ const HOUR = 3600 * 1000;
 function game(over: Partial<GameState> = {}): GameState {
   const s = createGame('2026-09-25');
   s.started = true;
-  return Object.assign(s, { health: 70, moisture: 60, nutrients: 70, resist: 0 }, over);
+  // v1.4.23: W loses 24 a day, so 74 ends the day at 50 (the old 60 − 10).
+  return Object.assign(s, { health: 70, moisture: 74, nutrients: 70, resist: 0 }, over);
 }
 
 describe('公式', () => {
@@ -90,7 +91,7 @@ describe('夜間結算', () => {
     expect(settlement.finalDamage).toBe(40);
     expect(settlement.rain).toMatchObject({ event: 'rainstorm', score: -10 });
     expect(settlement.wind).toMatchObject({ event: 'typhoon8', score: -30 });
-    expect(s.moisture).toBe(80);
+    expect(s.moisture).toBe(94);
     expect(settlement.notes.join()).toContain('各自計埋');
   });
 
@@ -101,9 +102,9 @@ describe('夜間結算', () => {
     expect(s.resist).toBe(30);
   });
 
-  it('v12：晴天每晚 −10、毛毛雨 +10 冇流失、酷熱（未即時計過）−20 再 −10', () => {
+  it('v1.4.23：晴天每日 −24（每個鐘 −1）、毛毛雨 +10 冇流失、酷熱（未即時計過）−20 再 −24', () => {
     expect(settleDay(game(), 'd', ['clear'], null, NOW).settlement.wAfter).toBe(50);
-    expect(settleDay(game(), 'd', ['drizzle'], null, NOW).settlement.wAfter).toBe(70);
+    expect(settleDay(game(), 'd', ['drizzle'], null, NOW).settlement.wAfter).toBe(84);
     const hot = settleDay(game(), 'd', ['hot'], null, NOW).settlement;
     expect(hot.wAfter).toBe(30);
     expect(hot.wFactor).toBe(-10);
@@ -121,7 +122,7 @@ describe('夜間結算', () => {
   it('一級徽章：水分流失少 10%', () => {
     const meta = freshMeta();
     meta.badges['1'] = 1;
-    expect(settleDay(game(), 'd', ['clear'], meta, NOW).settlement.wAfter).toBe(51);
+    expect(settleDay(game(), 'd', ['clear'], meta, NOW).settlement.wAfter).toBe(52.4);
   });
 
   it('蟲害：連續 3 晚營養不良觸發，每晚 −15，除蟲清走', () => {
@@ -158,7 +159,7 @@ describe('瀕死、枯死、遺產', () => {
     const s = doomed();
     settleDay(s, '2026-09-25', ['clear'], null, NOW);
     s.care.date = '2026-09-26';
-    s.moisture = 40;
+    s.moisture = 46;
     s.nutrients = 45;
     performAction(s, 'water');
     expect(s.dying).not.toBeNull();
@@ -223,24 +224,46 @@ describe('瀕死、枯死、遺產', () => {
 });
 
 describe('照顧同動物', () => {
-  it('澆水每日 3 次、落雨都照澆，疏水降水分，加固每樣每日一次', () => {
+  it('v1.4.23 澆水：每次 +5、唔限每日但每個鐘最多 2 次；疏水降水分，加固每樣每日一次', () => {
     const s = game({ moisture: 30, windUnlocked: true });
     s.care.date = '2026-09-25';
-    for (let i = 0; i < 3; i++) expect(performAction(s, 'water').ok).toBe(true);
-    expect(performAction(s, 'water').ok).toBe(false);
-    expect(s.moisture).toBe(75);
+    setLogClock(() => '10:15');
+    try {
+      for (let i = 0; i < 2; i++) expect(performAction(s, 'water').ok).toBe(true);
+      const no = performAction(s, 'water');
+      expect(no.ok).toBe(false);
+      expect(no.message).toContain('11:00');
+      expect(actionLimit(s, 'water')).toEqual({ used: 2, max: 2 });
+      expect(nextWaterTime()).toBe('11:00');
+      expect(s.moisture).toBe(40);
+      setLogClock(() => '11:00');
+      expect(actionLimit(s, 'water')).toEqual({ used: 0, max: 2 });
+      expect(performAction(s, 'water').ok).toBe(true);
+      expect(s.moisture).toBe(45);
+      expect(s.care.water).toBe(3);
+      // Watering never goes past 100 (98 → 100); at 100 it does nothing and uses no turn.
+      setLogClock(() => '12:00');
+      s.moisture = 98;
+      expect(performAction(s, 'water').ok).toBe(true);
+      expect(s.moisture).toBe(100);
+      expect(performAction(s, 'water').ok).toBe(false);
+      expect(actionLimit(s, 'water').used).toBe(1);
+      s.moisture = 45;
+    } finally {
+      setLogClock(() => '');
+    }
     performAction(s, 'drain');
-    expect(s.moisture).toBe(65);
+    expect(s.moisture).toBe(35);
     expect(reinforce(s, 'stakes').ok).toBe(true);
     expect(reinforce(s, 'stakes').ok).toBe(false);
     expect(s.resist).toBe(15);
   });
 
   it('健康連續 5 晚 90 以上，動物長駐；長駐動物唔再加養分', () => {
-    const s = game({ health: 95, moisture: 60, nutrients: 90 });
+    const s = game({ health: 95, moisture: 80, nutrients: 90 });
     s.animals = ['butterfly'];
     for (const d of ['2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29']) {
-      s.moisture = 60;
+      s.moisture = 80;
       s.nutrients = 90;
       settleDay(s, d, ['clear'], null, NOW);
     }

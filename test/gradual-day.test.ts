@@ -14,7 +14,7 @@ function game(over: Partial<GameState> = {}): GameState {
   const s = createGame('2026-09-20');
   s.started = true;
   s.ageDays = 5;
-  return Object.assign(s, { health: 70, moisture: 70, nutrients: 70, resist: 0 }, over);
+  return Object.assign(s, { health: 70, moisture: 90, nutrients: 70, resist: 0 }, over);
 }
 
 /** Tick the whole day in uneven real-time slices (like the app's 1 s tick + a closed-app gap), then settle. */
@@ -31,15 +31,15 @@ function tickedDay(s: GameState, events: WeatherEventId[]) {
 }
 
 describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () => {
-  /** Old nightly formula (≤ 1.4.16): W/N change first, then H += wFactor(W) + nFactor(N) (+ weather), clamped 0–100. */
+  /** Nightly formula (≤ 1.4.16 shape, v1.4.23 W loss 24/day): W/N change first, then H += wFactor(W) + nFactor(N) (+ weather), clamped 0–100. */
   const oldNight = (h: number, w: number, n: number, extra = 0) => {
-    const wA = w - 10;
+    const wA = w - 24;
     const nA = n - 10;
     return { w: wA, n: nA, h: Math.max(0, Math.min(100, h + wFactor(wA) + nFactor(nA) + extra)) };
   };
 
   it('成日慢慢扣，晚上結算 = 舊版一晚結算（完全一樣）', () => {
-    for (const [h, w, n] of [[70, 70, 70], [70, 55, 65], [40, 140, 25], [95, 105, 95]]) {
+    for (const [h, w, n] of [[70, 90, 70], [70, 55, 65], [40, 140, 25], [95, 105, 95]]) {
       const r = tickedDay(game({ health: h, moisture: w, nutrients: n }), ['clear']);
       const old = oldNight(h!, w!, n!);
       expect(r.wAfter).toBeCloseTo(old.w, 6);
@@ -48,7 +48,7 @@ describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () =>
       expect(r.day?.dH).toBeCloseTo(old.h - h!, 6);
     }
     const r = tickedDay(game(), ['clear']);
-    expect(r.day?.dW).toBeCloseTo(-10, 6);
+    expect(r.day?.dW).toBeCloseTo(-24, 6);
     expect(r.day?.dN).toBeCloseTo(-10, 6);
     expect(dailySummaryText(r)).toContain('今日：健康 +10');
   });
@@ -62,14 +62,14 @@ describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () =>
     expect(s.dying).toBeNull();
   });
 
-  it('日頭水分 110 → 100：用一日完結嗰刻嘅 100 計，+5', () => {
-    const s = game({ moisture: 110, nutrients: 90 });
+  it('日頭水分 120 → 108 → 96：用一日完結嗰刻嘅 96 計，+5', () => {
+    const s = game({ moisture: 120, nutrients: 90 });
     advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
     advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(105, 6);
+    expect(s.moisture).toBeCloseTo(108, 6);
     expect(s.health).toBe(70);
     const r = settleDay(s, D, ['clear'], null, END).settlement;
-    expect(r.wAfter).toBe(100);
+    expect(r.wAfter).toBe(96);
     expect(r.wFactor).toBe(5);
     expect(r.hAfter).toBe(80);
   });
@@ -90,7 +90,7 @@ describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () =>
     expect(tickedDay(game({ health: 100 }), ['clear']).hAfter).toBe(100);
     const g = game({ health: 100 });
     applyWarningWater(g, D, ['hot'], null, MIDNIGHT);
-    expect(settleDay(g, D, ['hot'], null, END).settlement.hAfter).toBe(85); // 100 − 10 (W 70 −20 −10 = 40 乾旱) + 5 (N 60) − 10 (酷熱冇處理)
+    expect(settleDay(g, D, ['hot'], null, END).settlement.hAfter).toBe(85); // 100 − 10 (W 90 −20 −24 = 46 乾旱) + 5 (N 60) − 10 (酷熱冇處理)
   });
 
   it('落雨日水分冇自然流失', () => {
@@ -102,11 +102,11 @@ describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () =>
     const s = game();
     expect(s.flow).toBeUndefined();
     advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(65, 6);
+    expect(s.moisture).toBeCloseTo(78, 6);
     advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(65, 6);
+    expect(s.moisture).toBeCloseTo(78, 6);
     const r = settleDay(s, D, ['clear'], null, END).settlement;
-    expect(r.wAfter).toBeCloseTo(60, 6);
+    expect(r.wAfter).toBeCloseTo(66, 6);
     expect(s.flow?.date).toBe('2026-09-26');
   });
 

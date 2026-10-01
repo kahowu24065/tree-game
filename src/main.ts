@@ -28,6 +28,7 @@ import {
   resolveDyingExpiry,
   checkWaterDeath,
   previewNight,
+  waterHourKey,
   checkRescue,
   createGame,
   eventsForDate,
@@ -696,6 +697,10 @@ function scheduleReminders(background: boolean): void {
         if (!state.started || state.over || state.dying) return null;
         const p = previewNight(state, today(), events, meta);
         return p.hAfter <= 0 || p.waterDeath ? Date.now() + (24 * 60 - clockMinutes(timezone)) * 60_000 : null;
+      })(),
+      waterLowTonight: (() => {
+        if (!state.started || state.over || state.dying) return false;
+        return previewNight(state, today(), events, meta).wTone === 'dry';
       })(),
       pendingEmergencies: pending,
       background,
@@ -2077,7 +2082,8 @@ function syncFlow(force = false): void {
   const now = virtualNow();
   advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
   if (state.dying && !state.dying.at) state.dying.at = now;
-  const key = [state.health, state.moisture, state.nutrients, state.resist].map((x) => Math.round(x)).join(',') + (state.dying ? 'd' : '');
+  // The clock hour is part of the key so the 澆水 button reopens when a new hour starts (2 taps per hour, v1.4.23).
+  const key = [state.health, state.moisture, state.nutrients, state.resist].map((x) => Math.round(x)).join(',') + (state.dying ? 'd' : '') + waterHourKey(state);
   const changed = key !== flowKey;
   flowKey = key;
   if (changed || force || Date.now() - flowSavedAt > 30_000) {

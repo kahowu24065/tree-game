@@ -41,9 +41,9 @@ describe('新手引導', () => {
     expect(feed).toHaveLength(2);
     expect(health).toHaveLength(1);
     expect(water[0]!.body).toContain('50');
-    expect(water[0]!.body).toContain('+15點');
+    expect(water[0]!.body).toContain('+5點');
     expect(water[0]!.body).toContain('-10點');
-    expect(water[1]!.body).toContain('-10點');
+    expect(water[1]!.body).toContain('-24點');
     expect(water[2]!.body).toContain('+5點');
     expect(water[2]!.body).toContain('-10點');
     expect(feed[0]!.body).toContain('+25點');

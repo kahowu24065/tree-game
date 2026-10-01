@@ -58,9 +58,9 @@ describe('長駐動物（每晚 12 點睇健康）', () => {
 
   it('85–89 still counts as a good night', () => {
     const s = game();
-    s.moisture = 70;
+    s.moisture = 80;
     s.nutrients = 50;
-    s.health = 82; // 82 + 5 (水分 60) + 0 (養分 40) = 87
+    s.health = 82; // 82 + 5 (水分 56) + 0 (養分 40) = 87
     settleDay(s, day, ['clear'], null, NOW);
     day = addDays(day, 1);
     expect(s.health).toBe(87);
@@ -72,9 +72,9 @@ describe('長駐動物（每晚 12 點睇健康）', () => {
     for (let n = 0; n < 5; n++) night(s, true);
     night(s, true);
     expect(s.highStreak).toBe(1);
-    s.moisture = 70;
+    s.moisture = 80;
     s.nutrients = 50; // 養分 40 after the day → 0
-    s.health = 72; // 72 + 5 (水分 60) + 0 (養分 40) = 77
+    s.health = 72; // 72 + 5 (水分 56) + 0 (養分 40) = 77
     settleDay(s, day, ['clear'], null, NOW);
     day = addDays(day, 1);
     expect(s.health).toBeGreaterThanOrEqual(75);

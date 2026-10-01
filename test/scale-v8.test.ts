@@ -73,11 +73,11 @@ describe('冇高度上限', () => {
     const s = createGame('2026-01-01', { species: 'banyan' });
     s.started = true;
     const target = speciesTargetCm('banyan');
-    Object.assign(s, { health: 95, moisture: 60, nutrients: 80, heightCm: target - 10 });
+    Object.assign(s, { health: 95, moisture: 80, nutrients: 80, heightCm: target - 10 });
     const d = (i: number) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
     let last = s.heightCm;
     for (let i = 60; i < 200; i++) {
-      Object.assign(s, { moisture: 60, nutrients: 80 });
+      Object.assign(s, { moisture: 80, nutrients: 80 });
       settleDay(s, d(i), ['clear'], null, NOW);
       expect(s.over).toBeNull();
       expect(s.heightCm).toBeGreaterThan(last);

@@ -22,8 +22,8 @@ export const W_TIERS: readonly { max: number; score: number; label: string; tone
   { max: 135, score: -20, label: tl('balance.004'), tone: 'rot2' },
   { max: Infinity, score: -30, label: tl('balance.005'), tone: 'rot3' },
 ];
-/** Water that leaves the soil every night (none on a rain day). */
-export const W_NIGHT_LOSS = 10;
+/** v1.4.23: natural water loss per day = 1 point an hour, applied gradually (none on a rain day). */
+export const W_NIGHT_LOSS = 24;
 /** Rain above 泥土飽和 (100) only adds this much more: 暴雨／黑雨 +10, 毛毛雨 +5. */
 export const RAIN_OVER_CAP = { heavy: 10, drizzle: 5 } as const;
 /** 養分 N optimal band ("充足"). */
@@ -240,8 +240,11 @@ export const REVIVE_HEALTH = 30;
 
 /* ---------- Care actions ---------- */
 export const CARE = {
-  /** 澆水 fills up to 泥土飽和 (100). At ≥ 100 it is locked for the day and does not use a turn, until moisture drops. */
-  water: { amount: 15, perDay: 3 },
+  /**
+   * v1.4.23 澆水: +5 a tap, never past 泥土飽和 (100; only rain goes above). No daily limit: at most 2 per clock
+   * hour. At ≥ 100 it does nothing and does not use a turn, until moisture drops.
+   */
+  water: { amount: 5, perHour: 2 },
   drain: { amount: -10, perDay: 3 },
   fertilize: { amount: 25, perDay: 1 },
 } as const;
@@ -261,7 +264,7 @@ export const COLLAPSE_REINFORCE_MULT = 2;
 
 /* ---------- v13 應急行動、風災、倒塌 ---------- */
 export const EMERGENCY = {
-  /** 酷熱澆水: once a day on top of the 3 waterings, +5 water (never past 100; at ≥ 100 still counts). */
+  /** 酷熱澆水: once a day on top of the normal waterings (not counted in the hourly limit), +5 water (never past 100; at ≥ 100 still counts). */
   heatWater: { amount: 5 },
   /** 暴雨疏水: once a day on top of the 3 drains, −10 water but never below this floor. */
   rainDrain: { amount: -10, floor: 50 },

@@ -72,8 +72,8 @@ describe('v13 開局同分類', () => {
 
 describe('v13 酷熱', () => {
   it('冇做酷熱澆水 −10，唔受 R 影響', () => {
-    const r = settle(game({ resist: 100, moisture: 80 }), ['hot']).settlement;
-    // W 80 −20 −10 = 50 → +5, N +5, hot −10.
+    const r = settle(game({ resist: 100, moisture: 95 }), ['hot']).settlement;
+    // W 95 −20 −24 = 51 → +5, N +5, hot −10.
     expect(r.heat).toMatchObject({ handled: false, score: -10 });
     expect(r.hAfter).toBe(70);
   });
@@ -85,7 +85,7 @@ describe('v13 酷熱', () => {
     const r1 = performEmergency(s, 'heatWater', ['hot']);
     expect(r1.ok).toBe(true);
     expect(s.moisture).toBe(85);
-    expect(s.care.water).toBe(0); // extra to the 3 waterings
+    expect(s.care.water).toBe(0); // extra to the normal waterings (not in the hourly limit)
     expect(performEmergency(s, 'heatWater', ['hot']).ok).toBe(false);
     const t = game({ moisture: 98 });
     performEmergency(t, 'heatWater', ['hot']);
@@ -95,12 +95,12 @@ describe('v13 酷熱', () => {
     expect(u.moisture).toBe(120);
     expect(u.care.heatWater).toBe(true);
     // Settlement: hot handled → 0 and +3.
-    const v = game({ moisture: 80 });
+    const v = game({ moisture: 95 });
     performEmergency(v, 'heatWater', ['hot']);
     const st = settle(v, ['hot']).settlement;
     expect(st.heat).toMatchObject({ handled: true, score: 0 });
     expect(st.emergencyBonus).toBe(3);
-    // W 85 −20 −10 = 55 +5, N +5, +3.
+    // W 95 +5 = 100 −20 −24 = 56 +5, N +5, +3.
     expect(st.hAfter).toBe(83);
   });
 });

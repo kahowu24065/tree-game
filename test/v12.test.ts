@@ -19,24 +19,24 @@ const water = (s: GameState) => performAction(s, 'water');
 const drain = (s: GameState) => performAction(s, 'drain');
 
 describe('v12 照顧：澆水上限、疏水 3 次', () => {
-  it('澆水 +15 最多到 100（部分都得）；≥100 冇效果、唔用次數', () => {
-    const s = game({ moisture: 90 });
+  it('v1.4.23 澆水 +5 最多到 100（部分都得）；≥100 冇效果、唔用次數；每個鐘 2 次', () => {
+    const s = game({ moisture: 97 });
     expect(water(s).ok).toBe(true);
     expect(s.moisture).toBe(100);
     expect(s.care.water).toBe(1);
     const r = water(s);
     expect(r.ok).toBe(false);
-    expect(r.message).toBe('水分去到 100，今日唔使再澆。水分跌咗先可以再澆。');
+    expect(r.message).toBe('水分去到 100，唔使再澆。水分跌咗先可以再澆。');
     expect(s.care.water).toBe(1);
     s.moisture = 120;
-    expect(water(s).message).toBe('水分去到 100，今日唔使再澆。水分跌咗先可以再澆。');
+    expect(water(s).message).toBe('水分去到 100，唔使再澆。水分跌咗先可以再澆。');
     expect(s.moisture).toBe(120);
     expect(s.care.water).toBe(1);
     s.moisture = 40;
     expect(water(s).ok).toBe(true);
-    expect(water(s).ok).toBe(true);
-    expect(s.moisture).toBe(70);
-    expect(water(s).ok).toBe(false); // 3 uses done
+    expect(s.moisture).toBe(45);
+    expect(water(s).ok).toBe(false); // 2 in this hour (same test clock)
+    expect(water(s).message).toContain('呢個鐘已經澆咗 2 次');
   });
 
   it('疏水每日 3 次、每次 −10，最低 0', () => {
@@ -54,10 +54,10 @@ describe('v12 照顧：澆水上限、疏水 3 次', () => {
 });
 
 describe('v12 自然流失同落雨日', () => {
-  it('每晚 −10；毛毛雨、暴雨、黑雨日唔流失', () => {
-    expect(settleDay(game({ moisture: 80 }), D, ['clear'], null, NOW).settlement.wAfter).toBe(70);
-    expect(settleDay(game({ moisture: 80 }), D, ['thunder'], null, NOW).settlement.wAfter).toBe(70);
-    expect(settleDay(game({ moisture: 80 }), D, ['typhoon8'], null, NOW).settlement.wAfter).toBe(70);
+  it('每日 −24（每個鐘 −1）；毛毛雨、暴雨、黑雨日唔流失', () => {
+    expect(settleDay(game({ moisture: 80 }), D, ['clear'], null, NOW).settlement.wAfter).toBe(56);
+    expect(settleDay(game({ moisture: 80 }), D, ['thunder'], null, NOW).settlement.wAfter).toBe(56);
+    expect(settleDay(game({ moisture: 80 }), D, ['typhoon8'], null, NOW).settlement.wAfter).toBe(56);
     for (const rain of ['rainstorm', 'blackrain'] as WeatherEventId[]) {
       const s = game({ moisture: 60 });
       applyWarningWater(s, D, [rain], null, NOW);
@@ -67,13 +67,13 @@ describe('v12 自然流失同落雨日', () => {
     expect(settleDay(game({ moisture: 80 }), D, ['drizzle'], null, NOW).settlement.wAfter).toBe(90);
   });
 
-  it('一級徽章：流失少 10%（晚上 −9、酷熱 −18）', () => {
+  it('一級徽章：流失少 10%（每日 −21.6、酷熱 −18）', () => {
     const meta = freshMeta();
     meta.badges['1'] = 1;
     const s = game({ moisture: 80 });
     applyWarningWater(s, D, ['hot'], meta, NOW);
     expect(s.moisture).toBe(62);
-    expect(settleDay(s, D, ['hot'], meta, NOW).settlement.wAfter).toBe(53);
+    expect(settleDay(s, D, ['hot'], meta, NOW).settlement.wAfter).toBe(40.4);
   });
 
   it('毛毛雨同暴雨同日：只計暴雨嗰次 +20，毛毛雨唔再加', () => {
@@ -89,14 +89,14 @@ describe('v12 自然流失同落雨日', () => {
 });
 
 describe('v12 即時警告', () => {
-  it('酷熱即時 −20，當晚再 −10', () => {
+  it('酷熱即時 −20，全日再 −24', () => {
     const s = game({ moisture: 70 });
     const hits = applyWarningWater(s, D, ['hot'], null, NOW);
     expect(hits).toHaveLength(1);
     expect(hits[0]!.message).toContain('酷熱天氣警告！水分 -20，而家 50');
     expect(s.moisture).toBe(50);
     const r = settleDay(s, D, ['hot'], null, NOW);
-    expect(r.settlement.wAfter).toBe(40);
+    expect(r.settlement.wAfter).toBe(26);
     expect(r.settlement.wFactor).toBe(-10);
   });
 
@@ -212,8 +212,8 @@ describe('v12 夜間健康', () => {
     expect([49, 75, 110, 120, 140].map((w) => wTier(w).label)).toEqual(['乾旱', '適中', '輕度爛根', '嚴重爛根', '根部壞死']);
   });
 
-  it('先計水分變化，再計健康：110 晴天 → 100 → +5', () => {
-    const r = settleDay(game({ moisture: 110, nutrients: 90 }), D, ['clear'], null, NOW).settlement;
+  it('先計水分變化，再計健康：124 晴天 → 100 → +5', () => {
+    const r = settleDay(game({ moisture: 124, nutrients: 90 }), D, ['clear'], null, NOW).settlement;
     expect(r.wAfter).toBe(100);
     expect(r.wFactor).toBe(5);
     expect(r.hAfter).toBe(80);
@@ -250,7 +250,7 @@ describe('v12 夜間健康', () => {
   });
 
   it('預計即時跟住疏水更新，建議同預計一致', () => {
-    const s = game({ moisture: 120 });
+    const s = game({ moisture: 134 });
     const before = previewNight(s, D, ['clear'], null);
     expect(before).toMatchObject({ wAfter: 110, wScore: -10, wLabel: '輕度爛根' });
     expect(advice(s, before, null)).toContain('今晚水分預計 110：輕度爛根 -10');

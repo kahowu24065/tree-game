@@ -66,7 +66,7 @@ describe('v14 生長曲線', () => {
     const R = speciesTargetCm('redwood');
     const floor = Math.round(GROWTH_FLOOR_SHARE * R * 10) / 10; // 2.4 cm
     const run = (health: number, events: ('clear' | 'drizzle')[]) => {
-      const s = tree('redwood', { heightCm: R * 1.1, health, moisture: 60, nutrients: 80, eventBonus: 1 });
+      const s = tree('redwood', { heightCm: R * 1.1, health, moisture: 80, nutrients: 80, eventBonus: 1 });
       return settleDay(s, D0, events, null, NOW).settlement;
     };
     const hi = run(90, ['clear']);
