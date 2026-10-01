@@ -236,18 +236,20 @@ describe('照顧同動物', () => {
     expect(s.resist).toBe(15);
   });
 
-  it('健康連續 3 晚 90 以上，動物長駐，之後每晚幫手施肥', () => {
+  it('健康連續 5 晚 90 以上，動物長駐；長駐動物唔再加養分', () => {
     const s = game({ health: 95, moisture: 60, nutrients: 90 });
     s.animals = ['butterfly'];
-    for (const d of ['2026-09-25', '2026-09-26', '2026-09-27']) {
+    for (const d of ['2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29']) {
       s.moisture = 60;
+      s.nutrients = 90;
       settleDay(s, d, ['clear'], null, NOW);
     }
     expect(s.residents).toEqual(['butterfly']);
     s.nutrients = 70;
     s.moisture = 60;
-    settleDay(s, '2026-09-28', ['clear'], null, NOW);
-    expect(s.nutrients).toBe(62);
+    delete s.flow;
+    settleDay(s, '2026-09-30', ['clear'], null, NOW);
+    expect(s.nutrients).toBe(60);
   });
 
   it('3D 樹的視覺高度隨真實高度單調上升', () => {

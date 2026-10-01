@@ -1,4 +1,4 @@
-import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, H_MULT_TIERS, N_DAILY_USE, N_FACTOR, N_MALNOURISHED, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_NIGHT_LOSS, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
+import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, H_MULT_TIERS, N_DAILY_USE, N_FACTOR, N_MALNOURISHED, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, RESIDENT_LEAVE_H, RESIDENT_MIN_H, RESIDENT_PEST_CUT, RESIDENT_PEST_MAX_SPECIES, RESIDENT_STREAKS, RESIDENT_STREAK_LATER, pestDamageWith, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_NIGHT_LOSS, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
 import { coachTasks, type Coach } from './coach';
 import { ISLE_AWARDS } from './grove';
 import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
@@ -177,7 +177,7 @@ export function previewLines(p: NightPlan): { text: string; value: string; tone:
     p.water.kind === 'loss' ? `而家 ${fmt(p.wBefore)}，到今晚再流失 ${signed(p.water.delta)}` : p.water.kind === 'drizzle' ? `而家 ${fmt(p.wBefore)}，毛毛雨 ${signed(p.water.delta)}，冇流失` : `而家 ${fmt(p.wBefore)}，落雨日冇流失`;
   const lines: { text: string; value: string; tone: string; sub?: string }[] = [
     { text: `水分 ${fmt(p.wAfter)}｜${p.waterDeath ? '根部浸死' : p.wLabel}`, value: p.waterDeath ? '瀕死' : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: waterSub },
-    { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: `每日用 10（全日慢慢扣）${p.residentN ? `，長駐動物 +${p.residentN}` : ''}` },
+    { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: '每日用 10（全日慢慢扣）' },
   ];
   if (p.heat) lines.push(p.heat.handled ? { text: `熱｜${eventLabel('hot')}：已應對`, value: '0', tone: 'flat', sub: '做咗酷熱澆水' } : { text: `熱｜${eventLabel('hot')}`, value: signed(p.heat.score), tone: 'down', sub: '做「酷熱澆水」就唔扣' });
   if (p.cold) lines.push(p.cold.handled ? { text: '寒｜寒冷：已應對', value: '0', tone: 'flat', sub: '做咗保暖' } : { text: '寒｜寒冷', value: signed(p.cold.score), tone: 'down', sub: '做「保暖」就唔扣' });
@@ -1018,7 +1018,7 @@ function careTab(view: View): string {
       ${actionBtn('water', 'drop', 'blue', '澆水', state.moisture >= W_SATURATED ? `水分 100 · 跌咗先可以再澆 · ${water.used}/${water.max}` : `+${CARE.water.amount} · ${water.used}/${water.max}`, water.used >= water.max || state.moisture >= W_SATURATED)}
       ${actionBtn('drain', 'drain', 'purple', '疏水', `${CARE.drain.amount} 水分 · ${drain.used}/${drain.max}`, drain.used >= drain.max)}
       ${actionBtn('fertilize', 'sprout', 'green', '施肥', `+${CARE.fertilize.amount} 養分 · ${feed.used}/${feed.max}`, feed.used >= feed.max)}
-      ${actionBtn('deworm', 'bug', 'orange', '除蟲', state.care.dewormed ? '用過喇' : state.pest.active ? '有蟲，每晚 −15' : '預防', state.care.dewormed)}
+      ${actionBtn('deworm', 'bug', 'orange', '除蟲', state.care.dewormed ? '用過喇' : state.pest.active ? `有蟲，每晚 −${pestDamageWith(state.residents.length)}` : '預防', state.care.dewormed)}
     </div>
     ${guardCards(view)}
     ${nightCard(view.preview, state.collapses || 0)}
@@ -1112,7 +1112,7 @@ function guardCards(view: View): string {
       ${dbl ? `<p class="double-banner">🪵 棵樹昨晚倒塌咗，今日加固效果雙倍！</p>` : ''}
       <h2>${Math.round(state.resist)} / ${R_MAX}</h2>
       <div class="track fat"><div class="fill shield" style="width:${Math.round(state.resist)}%"></div></div>
-      <p class="fine">${locked ? '未到青年樹：風災唔傷樹，抗風力唔變。' : `每樣每日一次，每晚 −${R_DAILY_DECAY}。`}<button type="button" class="linkish" data-action="guide" data-tab="calc">計法</button></p>
+      <p class="fine">${locked ? '未到青年樹：風災唔傷樹，抗風力唔變。' : `每樣每日一次，每晚 −${R_DAILY_DECAY}。<button type="button" class="linkish" data-action="guide" data-tab="calc">計法</button>`}</p>
       <div class="preps">${preps}</div>
     </article>`;
   return shield;
@@ -1222,7 +1222,7 @@ function animalAlbum(view: View): string {
   }).join('');
   const res = view.state.residents.length;
   return `<p class="status">圖鑑 ${unlocked} / ${ANIMALS.length} · 長駐 ${res}</p>
-    <p class="advice">見過嘅動物會輪流返嚟探棵樹，每 3–5 分鐘換一批（每種最少成對出現；雀鳥成群飛過、猴子成群落地）。健康度連續 3 晚 90 以上，已見過嘅動物會長駐：每隻每晚 +2 養分（最多 +6）；兩隻或以上仲會幫手防蟲。健康跌穿 70 佢哋會搬走。</p>
+    <p class="advice">每晚 12 點結算時，健康度連續 ${RESIDENT_STREAKS[0]} 晚 ${RESIDENT_MIN_H} 以上，一種見過嘅動物會成群長駐（最少一對）；再連續 ${RESIDENT_STREAKS[1]} 晚有第 2 種，之後每種要再連續 ${RESIDENT_STREAK_LATER} 晚。每種長駐動物會幫手食蟲：蟲害每晚少扣 ${RESIDENT_PEST_CUT}、遲 1 晚先生蟲（最多計 ${RESIDENT_PEST_MAX_SPECIES} 種）。有一晚健康跌穿 ${RESIDENT_LEAVE_H}，就會有一種搬走，連續晚數重新計。</p>
     ${groups}`;
 }
 
@@ -1366,7 +1366,7 @@ function achievementTab(view: View): string {
     <h3 class="sub">島嶼</h3>
     <ol class="miles">${isles}</ol>
     <h3 class="sub">雀巢</h3>
-    <ol class="miles"><li class="${hatched ? 'done' : ''}"><strong>雀鳥生蛋</strong><span>已孵化 ${hatched} 粒</span><p>健康度 50 或以上，每日一種見過嘅雀會生蛋。6 小時後孵化。第 1 粒同之後每 10 粒，島上多一件裝飾。第 5、15、25 粒，之後都係呢個次序，當晚多長一截。</p><p>下次裝飾：第 ${nextNestBuildCount(hatched)} 粒${nextBuild ? `（${esc(nestBuildPhrase(nextBuild))}）` : ''} · 下次加高：第 ${nextNestHeightCount(hatched)} 粒</p><p>下次成就：${esc(nestAwardTitle(nextEgg))} · ${hatched} / ${nextEgg}</p>${gotBuilds}${gotEggs}</li></ol>
+    <ol class="miles"><li class="${hatched ? 'done' : ''}"><strong>雀鳥生蛋</strong><span>已孵化 ${hatched} 粒</span><p>健康度95以上先會生蛋。每次生蛋6小時後孵化。</p><p>下次裝飾：第 ${nextNestBuildCount(hatched)} 粒${nextBuild ? `（${esc(nestBuildPhrase(nextBuild))}）` : ''} · 下次加高：第 ${nextNestHeightCount(hatched)} 粒</p><p>下次成就：${esc(nestAwardTitle(nextEgg))} · ${hatched} / ${nextEgg}</p>${gotBuilds}${gotEggs}</li></ol>
     ${eggCollection}
     <h3 class="sub">天氣</h3>
     <ol class="miles">${groups}</ol>

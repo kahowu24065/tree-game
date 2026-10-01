@@ -9,18 +9,16 @@ import {
   WIND_UNLOCK_STAGE,
   LANDMARK_N_BONUS,
   N_OPTIMAL,
-  PEST_DAMAGE,
-  PEST_TRIGGER_DAYS,
-  PEST_TRIGGER_DAYS_GUARDED,
   PREPS,
   R_DAILY_DECAY,
   R_MAX,
   RESCUE_HEALTH,
   RESIDENT_LEAVE_H,
   RESIDENT_MIN_H,
-  RESIDENT_N_EACH,
-  RESIDENT_N_MAX,
-  RESIDENT_STREAK,
+  RESIDENT_PEST_CUT,
+  pestDamageWith,
+  pestTriggerDays,
+  residentStreakNeeded,
   REVIVE_HEALTH,
   START,
   STORM_SURVIVE_GROWTH,
@@ -323,7 +321,7 @@ export const DAY_MS = 24 * 3600 * 1000;
 /** Drift is applied in steps of at most 15 minutes (closed-app time is caught up step by step). */
 export const FLOW_STEP_MS = 15 * 60 * 1000;
 
-/** Per-day rates (the old nightly amounts): 水分 −10 (−9 一級徽章, 0 on a rain day), 養分 −10 + 長駐動物, 抗風力 −2 after 青年樹. */
+/** Per-day rates (the old nightly amounts): 水分 −10 (−9 一級徽章, 0 on a rain day), 養分 −10, 抗風力 −2 after 青年樹. */
 export interface FlowRates {
   w: number;
   n: number;
@@ -332,10 +330,9 @@ export interface FlowRates {
 }
 
 export function flowRates(state: GameState, events: readonly WeatherEventId[], perks: Perks): FlowRates {
-  const residentN = Math.min(RESIDENT_N_MAX, state.residents.length * RESIDENT_N_EACH);
   return {
     w: isRainDay(events) ? 0 : -(perks.waterSaver ? W_NIGHT_LOSS * T1_WATER_LOSS_MULT : W_NIGHT_LOSS),
-    n: residentN - N_DAILY_USE,
+    n: -N_DAILY_USE,
     r: state.windUnlocked ? -R_DAILY_DECAY : 0,
     pest: state.pest.active,
   };
@@ -572,7 +569,6 @@ export interface NightPlan {
   nBefore: number;
   nAfter: number;
   nScore: number;
-  residentN: number;
   rBefore: number;
   /** R after the night (decay + wind consumption; unchanged before 青年樹). */
   rAfter: number;
@@ -649,7 +645,6 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   v.n = q6(v.n);
   v.r = q6(v.r);
   const water: NightWater = { wAfter: v.w, kind: rates.w === 0 ? 'rain' : 'loss', delta: r1(v.w - state.moisture) };
-  const residentN = Math.min(RESIDENT_N_MAX, state.residents.length * RESIDENT_N_EACH);
   const nAfter = v.n;
   const tier = wTier(water.wAfter);
   // v1.4.18: 健康 settles once at midnight from 水分／養分 at the end of the day (the old nightly formula).
@@ -699,7 +694,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const bonus = emergencyBonus(emergencyCount);
   const weather = (heat?.score ?? 0) + (cold?.score ?? 0) + (rain?.score ?? 0) + (wind?.score ?? 0);
   const baseDamage = (heat?.base ?? 0) + (cold?.base ?? 0) + (rain?.base ?? 0) + (wind && !wind.locked ? wind.base : 0);
-  const pest = state.pest.active ? PEST_DAMAGE : 0;
+  const pest = state.pest.active ? pestDamageWith(state.residents.length) : 0;
   const death = waterDeath(water.wAfter);
   const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, state.health + wScore + nScore - pest + weather + bonus)));
   const growth = planGrowth(state, event, wind, hAfter, collapse);
@@ -715,7 +710,6 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
     nBefore: state.nutrients,
     nAfter,
     nScore,
-    residentN,
     rBefore: state.resist,
     rAfter,
     heat,
@@ -792,7 +786,6 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const rainDay = flowRates(state, events, perks).w === 0;
   if (!rainDay && perks.waterSaver) notes.push('一級徽章：水分流失減少 10%');
   if (rainDay) notes.push('落雨日：水分冇自然流失');
-  if (plan.residentN) notes.push(`長駐動物施肥 +${plan.residentN} 養分`);
   if (plan.heat) notes.push(plan.heat.handled ? `${eventLabel('hot')}：做咗酷熱澆水，唔扣健康` : `${eventLabel('hot')}：冇做酷熱澆水 −${plan.heat.base}`);
   if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖，唔扣健康' : `寒冷：冇做保暖 −${plan.cold.base}`);
   if (plan.rain) notes.push(plan.rain.handled ? `${eventLabel(plan.rain.event)}：做咗${emergencyName('rainDrain')}，唔扣健康` : `${eventLabel(plan.rain.event)}：冇做${emergencyName('rainDrain')} −${plan.rain.base}`);
@@ -890,25 +883,26 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   // 蟲害 triggers for the coming days.
   state.pest.lowNDays = state.nutrients < 30 ? state.pest.lowNDays + 1 : 0;
   state.pest.wetDays = state.moisture > W_SATURATED ? state.pest.wetDays + 1 : 0;
-  const need = state.residents.length >= 2 ? PEST_TRIGGER_DAYS_GUARDED : PEST_TRIGGER_DAYS;
+  const need = pestTriggerDays(state.residents.length);
   if (!state.pest.active && (state.pest.lowNDays >= need || state.pest.wetDays >= need)) {
     state.pest.active = true;
     state.pest.since = date;
     const why = state.pest.lowNDays >= need ? `連續 ${need} 日營養不良` : `連續 ${need} 晚水分超過 ${W_SATURATED}（爛根）`;
-    addLog(state, date, `${why}，葉底生咗蟲。每日會扣 15 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: '-15/日', tone: 'red' }, time: '' });
+    const dmg = pestDamageWith(state.residents.length);
+    addLog(state, date, `${why}，葉底生咗蟲。每日會扣 ${dmg} 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: `-${dmg}/日`, tone: 'red' }, time: '' });
     messages.push(`${why}，生咗蟲！記得除蟲。`);
   }
 
-  // Resident animals (long-term H ≥ 90).
+  // Resident animals: consecutive nights at H ≥ 90 — 5 for the 1st species, 5 more for the 2nd, then 10 more each.
   if (state.health >= RESIDENT_MIN_H) {
     state.highStreak += 1;
-    if (state.highStreak >= RESIDENT_STREAK) {
+    if (state.highStreak >= residentStreakNeeded(state.residents.length)) {
       const pick = state.animals.find((id) => !state.residents.includes(id));
       if (pick) {
         state.residents.push(pick);
         state.highStreak = 0;
         const name = ANIMALS.find((a) => a.id === pick)?.name ?? pick;
-        addLog(state, date, `${name}鍾意呢棵咁健康嘅樹，決定長駐。每晚會幫手施少少肥${state.residents.length >= 2 ? '，仲會幫手防蟲' : ''}。`, {
+        addLog(state, date, `${name}鍾意呢棵咁健康嘅樹，成群（最少一對）決定長駐。佢哋會幫手食蟲（蟲害傷害 −${RESIDENT_PEST_CUT}、遲 1 晚先生蟲，最多計 3 種）。`, {
           kind: 'animal',
           title: '動物長駐',
           reward: { text: '長駐', tone: 'purple' },
@@ -917,11 +911,12 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
       }
     }
   } else {
+    // Any night below 90 breaks the run of good nights; below 85 one resident species also leaves.
     state.highStreak = 0;
     if (state.health < RESIDENT_LEAVE_H && state.residents.length) {
       const gone = state.residents.pop()!;
       const name = ANIMALS.find((a) => a.id === gone)?.name ?? gone;
-      addLog(state, date, `樹唔夠精神，${name}搬走咗。健康度長期保持 90 以上，佢會返嚟。`, { kind: 'animal', title: '動物離開', time: '' });
+      addLog(state, date, `健康度跌穿 ${RESIDENT_LEAVE_H}，${name}搬走咗。再連續 ${residentStreakNeeded(state.residents.length)} 晚健康 ${RESIDENT_MIN_H} 以上，會有動物返嚟長駐。`, { kind: 'animal', title: '動物離開', time: '' });
     }
   }
 
@@ -1463,7 +1458,8 @@ export function refreshUnlocks(state: GameState, opts: { date: string; events?: 
 export function triggerPest(state: GameState, date: string): void {
   state.pest.active = true;
   state.pest.since = date;
-  addLog(state, date, '葉底生咗蟲。每晚會扣 15 健康度，要用除蟲處理。', { kind: 'pest', title: '蟲害', reward: { text: '-15/日', tone: 'red' } });
+  const dmg = pestDamageWith(state.residents.length);
+  addLog(state, date, `葉底生咗蟲。每晚會扣 ${dmg} 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: `-${dmg}/日`, tone: 'red' } });
 }
 
 /* ---------- Day changes ---------- */
@@ -1576,7 +1572,7 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
     if (c.fatal && !c.revive) return `危險！抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚再倒塌棵樹就會死！即刻加固。`;
     return `抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚會倒塌（高度 −20%）。快啲加固到 ${c.threshold} 或以上。`;
   }
-  if (state.pest.active) return '生咗蟲，每晚扣 15 健康度，快啲除蟲。';
+  if (state.pest.active) return `生咗蟲，每晚扣 ${pestDamageWith(state.residents.length)} 健康度，快啲除蟲。`;
   if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
   if (plan.heat && !plan.heat.handled) return `${eventLabel('hot')}生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
   if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（喺樹根周圍鋪覆蓋物，每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;

@@ -113,8 +113,19 @@ export const STORM_SURVIVE_GROWTH = 1.3;
 export const PEST_DAMAGE = 15;
 /** Consecutive nights of N < 30, or of 爛根 (W > 100), that trigger 蟲害. */
 export const PEST_TRIGGER_DAYS = 3;
-/** With ≥ 2 resident animals the trigger needs this many nights instead. */
-export const PEST_TRIGGER_DAYS_GUARDED = 5;
+/** Each resident species eats pests: +1 night before 蟲害 triggers and −3 蟲害 damage a night, for up to 3 species. */
+export const RESIDENT_PEST_NIGHTS = 1;
+export const RESIDENT_PEST_CUT = 3;
+export const RESIDENT_PEST_MAX_SPECIES = 3;
+const pestHelpers = (residents: number) => Math.max(0, Math.min(RESIDENT_PEST_MAX_SPECIES, residents));
+/** Nights in a row of N < 30 or 爛根 needed for 蟲害 with `residents` resident species (3 → 6). */
+export function pestTriggerDays(residents: number): number {
+  return PEST_TRIGGER_DAYS + pestHelpers(residents) * RESIDENT_PEST_NIGHTS;
+}
+/** 蟲害 damage a night with `residents` resident species (15 → 12 → 9 → 6). */
+export function pestDamageWith(residents: number): number {
+  return PEST_DAMAGE - pestHelpers(residents) * RESIDENT_PEST_CUT;
+}
 
 /* ---------- Growth ---------- */
 /** 健康轉化係數 H_mult by H after the night's settlement. */
@@ -304,12 +315,16 @@ export const COLLAPSE_MAX = 2;
 export const DYING_HOURS = 24;
 /** Bringing W and N back into their optimal bands while 瀕死 saves the tree at this H. */
 export const RESCUE_HEALTH = 10;
-/** Nights in a row at H ≥ 90 before a new animal settles in (長駐). */
+/** 長駐 (checked at the midnight settlement): consecutive nights at H ≥ 90 before the next species settles in. */
 export const RESIDENT_MIN_H = 90;
-export const RESIDENT_STREAK = 3;
-export const RESIDENT_LEAVE_H = 70;
-export const RESIDENT_N_EACH = 2;
-export const RESIDENT_N_MAX = 6;
+/** 1st and 2nd species: 5 nights each; every species after that: 10 more. The streak restarts after each arrival. */
+export const RESIDENT_STREAKS = [5, 5] as const;
+export const RESIDENT_STREAK_LATER = 10;
+export function residentStreakNeeded(residents: number): number {
+  return RESIDENT_STREAKS[residents] ?? RESIDENT_STREAK_LATER;
+}
+/** A night below this sends one resident species away and restarts the streak. */
+export const RESIDENT_LEAVE_H = 85;
 
 export const START = { health: 70, moisture: 60, nutrients: 50, resist: 60, heightCm: 18 } as const;
 /** A tree that died becomes a 養分地標: the next tree starts with this much extra 養分. */
