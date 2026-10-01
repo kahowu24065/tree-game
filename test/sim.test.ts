@@ -146,11 +146,8 @@ describe('瀕死、枯死、遺產', () => {
     const s = doomed();
     settleDay(s, '2026-09-25', ['clear'], null, NOW);
     expect(s.health).toBe(0);
-    // v1.4.17: 健康 drifts −20 a day, so 5 runs out 6 hours into the day (18 h before that night's settlement).
-    expect(s.dying?.since).toBe('2026-09-25');
-    expect((NOW - s.dying!.at) / HOUR).toBeGreaterThan(17.5);
-    expect((NOW - s.dying!.at) / HOUR).toBeLessThanOrEqual(18);
-    settleDay(s, '2026-09-26', ['clear'], null, NOW + 4 * HOUR);
+    expect(s.dying).toEqual({ since: '2026-09-25', at: NOW });
+    settleDay(s, '2026-09-26', ['clear'], null, NOW + 10 * HOUR);
     expect(s.over).toBeNull();
     const r = settleDay(s, '2026-09-27', ['clear'], null, NOW + 25 * HOUR);
     expect(r.died).toBe(true);
@@ -195,9 +192,7 @@ describe('瀕死、枯死、遺產', () => {
     s.lastSeenDate = '2026-09-26';
     const report = catchUp(s, '2026-09-27', () => ['clear'], null, NOW);
     expect(report.over).toBe(false);
-    // v1.4.17: 瀕死 starts when 健康 drifts to 0 during that day (3 at −20/day ≈ 3.6 h in), not at the settlement.
-    expect(s.dying?.at).toBeLessThan(NOW);
-    expect(NOW - s.dying!.at).toBeLessThan(24 * 3600 * 1000);
+    expect(s.dying?.at).toBe(NOW);
   });
 
   it('枯死變養分地標，下一棵樹開局養分高；v14 枯死唔再發保底徽章（能力徽章跟樹齡里程碑）', () => {

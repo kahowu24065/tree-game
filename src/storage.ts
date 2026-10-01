@@ -127,6 +127,21 @@ export function migrateV16(data: GameState): void {
     lc.seen = lc.seen !== false;
   }
   if (data.over && data.over.fallSeen === undefined) data.over.fallSeen = true;
+  // v1.4.18: 1.4.17 drifted 健康 during the day; undo today's applied part so midnight settles the day once.
+  const fl = data.flow;
+  if (fl && typeof fl === 'object' && typeof fl.hw === 'number') {
+    const applied = (fl.hw || 0) + (fl.hn || 0) + (fl.hp || 0) - (fl.over || 0);
+    if (!data.over && Number.isFinite(applied)) {
+      const h = Math.max(0, Math.min(100, Math.round((data.health - applied) * 1e6) / 1e6));
+      if (data.dying && h > 0 && data.dying.since === fl.date) data.dying = null; // that 瀕死 came from today's drift
+      data.health = h;
+    }
+    delete fl.hw;
+    delete fl.hn;
+    delete fl.hp;
+    delete fl.over;
+    delete fl.hRate;
+  }
 }
 
 /**

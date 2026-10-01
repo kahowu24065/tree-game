@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WeatherEventId } from '../src/balance';
 import { nFactor, wFactor } from '../src/rules';
-import { DAY_MS, advanceFlow, applyWarningWater, createGame, dailySummaryText, healthZeroInMs, settleDay } from '../src/sim';
+import { DAY_MS, advanceFlow, applyWarningWater, createGame, dailySummaryText, settleDay } from '../src/sim';
+import { parseSave } from '../src/storage';
 import type { GameState } from '../src/types';
 
 const D = '2026-09-25';
@@ -29,73 +30,67 @@ function tickedDay(s: GameState, events: WeatherEventId[]) {
   return settleDay(s, D, events, null, END).settlement;
 }
 
-describe('v1.4.18 水分／養分／健康慢慢變（健康全日固定速率）', () => {
-  it('成日慢慢扣，晚上結算 ≈ 舊版一次過結算（W70 N70 H70 晴天）', () => {
+describe('v1.4.18 水分／養分慢慢變，健康半夜一次過結算', () => {
+  /** Old nightly formula (≤ 1.4.16): W/N change first, then H += wFactor(W) + nFactor(N) (+ weather), clamped 0–100. */
+  const oldNight = (h: number, w: number, n: number, extra = 0) => {
+    const wA = w - 10;
+    const nA = n - 10;
+    return { w: wA, n: nA, h: Math.max(0, Math.min(100, h + wFactor(wA) + nFactor(nA) + extra)) };
+  };
+
+  it('成日慢慢扣，晚上結算 = 舊版一晚結算（完全一樣）', () => {
+    for (const [h, w, n] of [[70, 70, 70], [70, 55, 65], [40, 140, 25], [95, 105, 95]]) {
+      const r = tickedDay(game({ health: h, moisture: w, nutrients: n }), ['clear']);
+      const old = oldNight(h!, w!, n!);
+      expect(r.wAfter).toBeCloseTo(old.w, 6);
+      expect(r.nAfter).toBeCloseTo(old.n, 6);
+      expect(r.hAfter).toBe(old.h);
+      expect(r.day?.dH).toBeCloseTo(old.h - h!, 6);
+    }
     const r = tickedDay(game(), ['clear']);
-    // Old nightly formula: W −10, N −10, then H += wFactor + nFactor (same tiers at the midnight snapshot 70/70 and at 60/60).
-    const oldW = 60;
-    const oldN = 60;
-    const oldH = 70 + wFactor(oldW) + nFactor(oldN);
-    expect(r.wAfter).toBeCloseTo(oldW, 3);
-    expect(r.nAfter).toBeCloseTo(oldN, 3);
-    expect(r.hAfter).toBe(oldH);
-    expect(r.day?.dW).toBeCloseTo(-10, 3);
-    expect(r.day?.dN).toBeCloseTo(-10, 3);
-    expect(r.day?.dH).toBeCloseTo(oldH - 70, 6);
-    expect(dailySummaryText(r)).toContain('今日：健康');
+    expect(r.day?.dW).toBeCloseTo(-10, 6);
+    expect(r.day?.dN).toBeCloseTo(-10, 6);
+    expect(dailySummaryText(r)).toContain('今日：健康 +10');
   });
 
-  it('分段 tick 同一次過結算結果一樣（包括酷熱冇處理）', () => {
+  it('日頭健康唔郁，只喺半夜變', () => {
+    const s = game({ health: 70, moisture: 140, nutrients: 10 });
+    advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
+    advanceFlow(s, D, ['clear'], null, MIDNIGHT + 20 * 3600 * 1000, { dayStartMs: MIDNIGHT });
+    expect(s.health).toBe(70);
+    expect(s.moisture).toBeLessThan(140);
+    expect(s.dying).toBeNull();
+  });
+
+  it('日頭水分 110 → 100：用一日完結嗰刻嘅 100 計，+5', () => {
+    const s = game({ moisture: 110, nutrients: 90 });
+    advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
+    advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
+    expect(s.moisture).toBeCloseTo(105, 6);
+    expect(s.health).toBe(70);
+    const r = settleDay(s, D, ['clear'], null, END).settlement;
+    expect(r.wAfter).toBe(100);
+    expect(r.wFactor).toBe(5);
+    expect(r.hAfter).toBe(80);
+  });
+
+  it('分段 tick 同一次過結算結果一樣（晴、酷熱冇處理、毛毛雨）', () => {
     for (const events of [['clear'], ['hot'], ['drizzle']] as WeatherEventId[][]) {
       const a = tickedDay(game(), events);
       const g = game();
       applyWarningWater(g, D, events, null, MIDNIGHT);
       const b = settleDay(g, D, events, null, END).settlement;
       expect(a.hAfter).toBe(b.hAfter);
-      expect(a.wAfter).toBeCloseTo(b.wAfter, 3);
-      expect(a.nAfter).toBeCloseTo(b.nAfter, 3);
+      expect(a.wAfter).toBeCloseTo(b.wAfter, 6);
+      expect(a.nAfter).toBeCloseTo(b.nAfter, 6);
     }
   });
 
-  it('半夜快照水分 110（輕度爛根）→ 全日 −10，就算日頭跌到 100；下一晚快照 100 → 翌日 +5', () => {
-    const s = game({ moisture: 110, nutrients: 90 });
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.flow?.hRate).toEqual({ w: -10, n: 5, p: 0 });
-    expect(s.health).toBeCloseTo(67.5, 6); // half of −5
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS * 0.9, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(101, 6);
-    expect(s.flow?.hRate?.w).toBe(-10); // crossing nothing mid-day changes the rate
-    const r = settleDay(s, D, ['clear'], null, END).settlement;
-    expect(r.wAfter).toBe(100);
-    expect(r.wFactor).toBe(-10);
-    expect(r.hAfter).toBe(65);
-    const D2 = '2026-09-26';
-    advanceFlow(s, D2, ['clear'], null, END, { dayStartMs: END });
-    advanceFlow(s, D2, ['clear'], null, END + DAY_MS / 2, { dayStartMs: END });
-    expect(s.flow?.hRate?.w).toBe(5); // snapshot 100 = 適中
-    const r2 = settleDay(s, D2, ['clear'], null, END + DAY_MS).settlement;
-    expect(r2.wAfter).toBe(90);
-    expect(r2.wFactor).toBe(5);
-  });
-
-  it('日頭澆水唔改今日健康速率（午夜先按新數值定聽日速率）', () => {
-    const s = game({ moisture: 45 });
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT + 1, { dayStartMs: MIDNIGHT });
-    expect(s.flow?.hRate?.w).toBe(-10); // snapshot 45 = 乾旱
-    s.moisture = 80;
-    const r = settleDay(s, D, ['clear'], null, END).settlement;
-    expect(r.wFactor).toBe(-10);
-    advanceFlow(s, '2026-09-26', ['clear'], null, END + 1, { dayStartMs: END });
-    expect(s.flow?.hRate?.w).toBe(5); // snapshot 70 = 適中
-  });
-
-  it('健康 100 上限：晴天多出嚟嘅分數唔會變走，酷熱照扣', () => {
-    const clear = tickedDay(game({ health: 100 }), ['clear']);
-    expect(clear.hAfter).toBeCloseTo(100, 3);
-    const hot = settleDay(game({ health: 100 }), D, ['hot'], null, END).settlement;
-    expect(hot.hAfter).toBeLessThanOrEqual(100);
+  it('健康 100 上限同舊版一樣一次過計', () => {
+    expect(tickedDay(game({ health: 100 }), ['clear']).hAfter).toBe(100);
+    const g = game({ health: 100 });
+    applyWarningWater(g, D, ['hot'], null, MIDNIGHT);
+    expect(settleDay(g, D, ['hot'], null, END).settlement.hAfter).toBe(85); // 100 − 10 (W 70 −20 −10 = 40 乾旱) + 5 (N 60) − 10 (酷熱冇處理)
   });
 
   it('落雨日水分冇自然流失', () => {
@@ -107,23 +102,30 @@ describe('v1.4.18 水分／養分／健康慢慢變（健康全日固定速率�
     const s = game();
     expect(s.flow).toBeUndefined();
     advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(65, 3);
+    expect(s.moisture).toBeCloseTo(65, 6);
     advanceFlow(s, D, ['clear'], null, MIDNIGHT + DAY_MS / 2, { dayStartMs: MIDNIGHT });
-    expect(s.moisture).toBeCloseTo(65, 3);
+    expect(s.moisture).toBeCloseTo(65, 6);
     const r = settleDay(s, D, ['clear'], null, END).settlement;
-    expect(r.wAfter).toBeCloseTo(60, 3);
+    expect(r.wAfter).toBeCloseTo(60, 6);
     expect(s.flow?.date).toBe('2026-09-26');
   });
 
-  it('日頭健康慢慢跌到 0 就即刻瀕死，通知估算到時間', () => {
+  it('1.4.17 存檔：今日已經 drift 咗嘅健康會還原，等半夜一次過計', () => {
+    const s = game({ health: 72.5 });
+    s.flow = { date: D, at: MIDNIGHT + DAY_MS / 2, elapsed: DAY_MS / 2, start: { h: 70, w: 70, n: 70, r: 0 }, w: -5, n: -5, r: 0, hw: 2.5, hn: 2.5, hp: -2.5, over: 0 };
+    const back = parseSave(JSON.stringify(s))!;
+    expect(back.health).toBeCloseTo(70, 6);
+    expect(back.flow?.hw).toBeUndefined();
+  });
+
+  it('瀕死由半夜結算開始（同舊版一樣）', () => {
     const s = game({ health: 5, moisture: 10, nutrients: 5 });
-    const zeroIn = healthZeroInMs(s, ['clear'], null);
-    expect(zeroIn).not.toBeNull();
-    expect(zeroIn! / (3600 * 1000)).toBeCloseTo(6, 0);
     advanceFlow(s, D, ['clear'], null, MIDNIGHT, { dayStartMs: MIDNIGHT });
-    advanceFlow(s, D, ['clear'], null, MIDNIGHT + 8 * 3600 * 1000, { dayStartMs: MIDNIGHT });
+    advanceFlow(s, D, ['clear'], null, MIDNIGHT + 20 * 3600 * 1000, { dayStartMs: MIDNIGHT });
+    expect(s.health).toBe(5);
+    expect(s.dying).toBeNull();
+    settleDay(s, D, ['clear'], null, END);
     expect(s.health).toBe(0);
-    expect(s.dying?.since).toBe(D);
-    expect(s.over).toBeNull();
+    expect(s.dying).toEqual({ since: D, at: END });
   });
 });

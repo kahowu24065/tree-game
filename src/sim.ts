@@ -317,7 +317,7 @@ function enterDying(state: GameState, date: string, nowMs: number, why: string, 
   return true;
 }
 
-/* ---------- v1.4.17 gradual day: 水分、養分、抗風力 and 健康 drift with real time (v1.4.18: 健康 at a rate fixed at midnight) ---------- */
+/* ---------- v1.4.17 gradual day: 水分、養分、抗風力 drift with real time (v1.4.18: 健康 settles once at midnight) ---------- */
 
 export const DAY_MS = 24 * 3600 * 1000;
 /** Drift is applied in steps of at most 15 minutes (closed-app time is caught up step by step). */
@@ -342,7 +342,6 @@ export function flowRates(state: GameState, events: readonly WeatherEventId[], p
 }
 
 interface DriftVals {
-  h: number;
   w: number;
   n: number;
   r: number;
@@ -351,40 +350,12 @@ interface DriftSum {
   w: number;
   n: number;
   r: number;
-  hw: number;
-  hn: number;
-  hp: number;
-  over: number;
 }
 const q6 = (x: number) => Math.round(x * 1e6) / 1e6;
-const zeroSum = (): DriftSum => ({ w: 0, n: 0, r: 0, hw: 0, hn: 0, hp: 0, over: 0 });
+const zeroSum = (): DriftSum => ({ w: 0, n: 0, r: 0 });
 
-export interface HealthRate {
-  w: number;
-  n: number;
-  p: number;
-}
-
-/**
- * v1.4.18: the day's 健康 score, fixed at midnight with the nightly formula from that moment's snapshot — 水分分 and
- * 養分分 of `start`, and −蟲害. Spread evenly over the next 24 hours; a tier crossing during the day does not change it.
- */
-export function dayHealthRate(start: { w: number; n: number }, rates: FlowRates): HealthRate {
-  return {
-    w: wTier(start.w).score,
-    n: nFactor(start.n),
-    p: rates.pest ? -PEST_DAMAGE : 0,
-  };
-}
-
-/**
- * One step (share `f` of a day). 健康 moves by the day's fixed score × f; while 瀕死 it only moves up.
- * Returns 'zero' when 健康 reaches 0, 'up' when a 瀕死 tree climbs above 0.
- */
-function driftStep(v: DriftVals, rates: FlowRates, hs: HealthRate, f: number, sum: DriftSum, dying: boolean): 'zero' | 'up' | null {
-  const hw = hs.w * f;
-  const hn = hs.n * f;
-  const hp = hs.p * f;
+/** One step (share `f` of a day) of 水分／養分／抗風力 drift. v1.4.18: 健康 does not drift; it settles once at midnight. */
+function driftStep(v: DriftVals, rates: FlowRates, f: number, sum: DriftSum): void {
   const w0 = v.w;
   const n0 = v.n;
   const r0 = v.r;
@@ -394,36 +365,18 @@ function driftStep(v: DriftVals, rates: FlowRates, hs: HealthRate, f: number, su
   sum.w += v.w - w0;
   sum.n += v.n - n0;
   sum.r += v.r - r0;
-  const dh = hw + hn + hp;
-  if (dying && dh <= 0 && v.h <= 0) return null;
-  const raw = v.h + dh;
-  if (raw > 100) sum.over += raw - Math.max(100, v.h);
-  const before = v.h;
-  v.h = Math.max(0, Math.min(100, raw));
-  sum.hw += hw;
-  sum.hn += hn;
-  sum.hp += hp;
-  if (dying) return dh > 0 && v.h > 0 ? 'up' : null;
-  return before > 0 && v.h <= 0 ? 'zero' : null;
 }
 
-/** Pure: run `ms` of drift on a copy (今晚預計 and the health notification). */
-function simulateDrift(v: DriftVals, rates: FlowRates, hs: HealthRate, ms: number, dying: boolean): { sum: DriftSum; zeroAfterMs: number | null } {
+/** Pure: run `ms` of drift on a copy (今晚預計). */
+function simulateDrift(v: DriftVals, rates: FlowRates, ms: number): DriftSum {
   const sum = zeroSum();
   let done = 0;
-  let zeroAfterMs: number | null = null;
-  let stillDying = dying;
   while (done < ms - 1e-6) {
     const dt = Math.min(FLOW_STEP_MS, ms - done);
-    const hit = driftStep(v, rates, hs, dt / DAY_MS, sum, stillDying);
+    driftStep(v, rates, dt / DAY_MS, sum);
     done += dt;
-    if (hit === 'zero' && zeroAfterMs === null) {
-      zeroAfterMs = done;
-      stillDying = true;
-    }
-    if (hit === 'up') stillDying = false;
   }
-  return { sum, zeroAfterMs };
+  return sum;
 }
 
 function newFlow(state: GameState, date: string, at: number, elapsed: number): DayFlow {
@@ -435,50 +388,33 @@ function newFlow(state: GameState, date: string, at: number, elapsed: number): D
     w: 0,
     n: 0,
     r: 0,
-    hw: 0,
-    hn: 0,
-    hp: 0,
-    over: 0,
   };
 }
 
-/** Apply `ms` of drift to the real state (steps of 15 min ending at `endMs`), entering or leaving 瀕死 on the way. */
-function applyDrift(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null, ms: number, endMs: number): void {
+/** Apply `ms` of drift to the real state (steps of 15 min). */
+function applyDrift(state: GameState, events: readonly WeatherEventId[], meta: MetaState | null, ms: number): void {
   const f = state.flow!;
   const perks = perksFrom(meta);
   let done = 0;
   while (done < ms - 1e-6 && !state.over) {
     const dt = Math.min(FLOW_STEP_MS, ms - done);
-    const v: DriftVals = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
+    const v: DriftVals = { w: state.moisture, n: state.nutrients, r: state.resist };
     const sum = zeroSum();
-    const rates = flowRates(state, events, perks);
-    f.hRate ??= dayHealthRate(f.start, rates);
-    const hit = driftStep(v, rates, f.hRate, dt / DAY_MS, sum, Boolean(state.dying));
-    state.health = v.h;
+    driftStep(v, flowRates(state, events, perks), dt / DAY_MS, sum);
     state.moisture = v.w;
     state.nutrients = v.n;
     state.resist = v.r;
     f.w += sum.w;
     f.n += sum.n;
     f.r += sum.r;
-    f.hw += sum.hw;
-    f.hn += sum.hn;
-    f.hp += sum.hp;
-    f.over += sum.over;
     f.elapsed += dt;
     done += dt;
-    const at = endMs - (ms - done);
-    if (hit === 'zero') enterDying(state, date, at, '健康度慢慢跌到 0', '');
-    if (hit === 'up' && state.dying) {
-      state.dying = null;
-      addLog(state, date, '棵樹捱過瀕死，慢慢回復生氣。', { kind: 'grow', title: '救返', reward: { text: `健康 ${Math.round(state.health)}`, tone: 'green' }, time: '' });
-    }
-  }  // Steps of 1/96 day leave float dust (69.9999999); keep 6 decimals.
-  state.health = q6(state.health);
+  }
+  // Steps of 1/96 day leave float dust (69.9999999); keep 6 decimals.
   state.moisture = q6(state.moisture);
   state.nutrients = q6(state.nutrients);
   state.resist = q6(state.resist);
-  for (const k of ['w', 'n', 'r', 'hw', 'hn', 'hp', 'over'] as const) f[k] = q6(f[k]);
+  for (const k of ['w', 'n', 'r'] as const) f[k] = q6(f[k]);
 }
 
 export interface FlowOptions {
@@ -487,9 +423,9 @@ export interface FlowOptions {
 }
 
 /**
- * v1.4.17: drift `date` from the last applied moment up to `toMs` (at most one full day per date). Called every second
- * while the game is open, on open / resume (closed-app time is caught up in the same 15-minute steps) and by the
- * settlement. A new tree starts drifting when it is planted; an old save (no flow yet) catches up from midnight.
+ * v1.4.17: drift 水分／養分／抗風力 for `date` from the last applied moment up to `toMs` (at most one full day per date).
+ * Called every second while the game is open, on open / resume (closed-app time is caught up in the same 15-minute
+ * steps) and by the settlement. A new tree starts drifting when it is planted; an old save catches up from midnight.
  */
 export function advanceFlow(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null, toMs: number, opts: FlowOptions = {}): void {
   if (state.over) return;
@@ -502,7 +438,7 @@ export function advanceFlow(state: GameState, date: string, events: readonly Wea
   }
   const f = state.flow;
   const ms = Math.min(toMs - f.at, DAY_MS - f.elapsed);
-  if (ms > 0) applyDrift(state, date, events, meta, ms, f.at + ms);
+  if (ms > 0) applyDrift(state, events, meta, ms);
   f.at = Math.max(f.at, toMs);
 }
 
@@ -512,26 +448,8 @@ function completeFlowDay(state: GameState, date: string, events: readonly Weathe
   const f = state.flow ?? newFlow(state, date, nowMs, 0);
   state.flow = f;
   const rest = DAY_MS - f.elapsed;
-  if (rest > 0 && !state.over) applyDrift(state, date, events, meta, rest, nowMs);
+  if (rest > 0 && !state.over) applyDrift(state, events, meta, rest);
   return f;
-}
-
-/**
- * Real ms until 健康 drifts to 0 at the current rates (checked up to 3 days ahead; null = not within that, or 瀕死
- * already). Ignores tonight's weather hits. Used for the 「健康度就快跌到 0」 local notification.
- */
-export function healthZeroInMs(state: GameState, events: readonly WeatherEventId[], meta: MetaState | null): number | null {
-  if (!state.started || state.over || state.dying) return null;
-  const v: DriftVals = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
-  const rates = flowRates(state, events, perksFrom(meta));
-  // v1.4.18: only today's fixed rate is known (tomorrow's is set at midnight), so look ahead to tonight only.
-  const restMs = state.flow ? Math.max(0, DAY_MS - state.flow.elapsed) : DAY_MS;
-  return simulateDrift(v, rates, healthRateOf(state.flow ?? null, state, rates), restMs, false).zeroAfterMs;
-}
-
-/** The day's fixed 健康 rate: already fixed on the flow, or what the day's first drift will fix it to. */
-function healthRateOf(flow: DayFlow | null, state: GameState, rates: FlowRates): HealthRate {
-  return flow?.hRate ?? dayHealthRate(flow?.start ?? { w: state.moisture, n: state.nutrients }, rates);
 }
 
 /**
@@ -725,9 +643,8 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const flow = date !== null && state.flow?.date === date ? state.flow : null;
   const restMs = flow ? Math.max(0, DAY_MS - flow.elapsed) : DAY_MS;
   const rates = flowRates(state, events, perks);
-  const v = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
-  const sim = simulateDrift(v, rates, healthRateOf(flow, state, rates), restMs, Boolean(state.dying)).sum;
-  v.h = q6(v.h);
+  const v = { w: state.moisture, n: state.nutrients, r: state.resist };
+  simulateDrift(v, rates, restMs);
   v.w = q6(v.w);
   v.n = q6(v.n);
   v.r = q6(v.r);
@@ -735,8 +652,9 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const residentN = Math.min(RESIDENT_N_MAX, state.residents.length * RESIDENT_N_EACH);
   const nAfter = v.n;
   const tier = wTier(water.wAfter);
-  const wScore = r1(sim.hw);
-  const nScore = r1(sim.hn);
+  // v1.4.18: 健康 settles once at midnight from 水分／養分 at the end of the day (the old nightly formula).
+  const wScore = tier.score;
+  const nScore = nFactor(nAfter);
   // Wind meets the shield as it stood before today's slow loosening (as the old night did: R first, then −2).
   const rWind = q6(Math.max(0, Math.min(R_MAX, state.resist - (flow?.r ?? 0))));
   let emergencyCount = 0;
@@ -781,11 +699,9 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const bonus = emergencyBonus(emergencyCount);
   const weather = (heat?.score ?? 0) + (cold?.score ?? 0) + (rain?.score ?? 0) + (wind?.score ?? 0);
   const baseDamage = (heat?.base ?? 0) + (cold?.base ?? 0) + (rain?.base ?? 0) + (wind && !wind.locked ? wind.base : 0);
-  const pest = r1(-sim.hp);
+  const pest = state.pest.active ? PEST_DAMAGE : 0;
   const death = waterDeath(water.wAfter);
-  // 健康 above 100 that the cap swallowed today still cushions tonight's hits, as in the old single nightly sum.
-  const over = q6((flow?.over ?? 0) + sim.over);
-  const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, v.h + over + weather + bonus)));
+  const hAfter = death ? 0 : r1(Math.max(0, Math.min(100, state.health + wScore + nScore - pest + weather + bonus)));
   const growth = planGrowth(state, event, wind, hAfter, collapse);
   return {
     event,
@@ -859,8 +775,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     notes.push(`${regionalize(WARNING_NAME[h.event])}：水分 ${sgn(h.delta)}`);
     if (h.toN) notes.push(`二級徽章：${h.toN} 水分轉咗做養分`);
   }
-  // v1.4.17: the day's slow drift (水分、養分、抗風力、健康 from 水分／養分／蟲害) is finished first — whatever of the
-  // 24 hours the open app did not already apply — so the night only adds the weather, the bonus and growth.
+  // The day's slow drift (水分、養分、抗風力) is finished first — whatever of the 24 hours the open app did not already
+  // apply — then 健康 settles once from those end-of-day values (v1.4.18), with the weather, the bonus and growth.
   const flow = completeFlowDay(state, date, events, meta, nowMs);
   const plan = planNight(state, events, perks, date);
   const eventId = plan.event;
@@ -888,10 +804,10 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   // Wind damage uses the shield as it stood, then the event consumes it (frozen before 青年樹).
   const dmg = plan.damage;
   state.resist = plan.rAfter;
-  const pestDamage = r1(-flow.hp);
+  const pestDamage = plan.pest;
   if (pestDamage) notes.push(`蟲害 −${pestDamage}`);
-  const wf = r1(flow.hw);
-  const nf = r1(flow.hn);
+  const wf = plan.wScore;
+  const nf = plan.nScore;
   state.health = plan.hAfter;
 
   // Growth (v14 curve towards R + floor), computed by planNight so 今晚預計 shows the same numbers.
@@ -1439,8 +1355,6 @@ export function checkRescue(state: GameState): string | null {
   if (!inBand(state.moisture, W_OPTIMAL) || state.nutrients < N_OPTIMAL[0]) return null;
   state.dying = null;
   state.health = RESCUE_HEALTH;
-  // v1.4.18: a rescued tree holds its 健康 for the rest of the day instead of drifting straight back to 0.
-  if (state.flow?.hRate && state.flow.hRate.w + state.flow.hRate.n + state.flow.hRate.p < 0) state.flow.hRate = { w: 0, n: 0, p: 0 };
   addLog(state, state.care.date, `水分同養分都返到最佳範圍，棵樹救返喇（健康度 ${RESCUE_HEALTH}）。`, { kind: 'grow', title: '救返', reward: { text: `健康 ${RESCUE_HEALTH}`, tone: 'green' } });
   return '棵樹救返喇！';
 }
@@ -1677,11 +1591,11 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
     const hit = rainAdd(state.moisture, WEATHER_EVENTS[countdown.event].dW, RAIN_OVER_CAP.heavy);
     if (hit > W_SATURATED) return `${eventLabel(countdown.event)}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
   }
-  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel}，聽日健康每日 ${sgn(wTier(plan.wAfter).score)}。疏水返到 ${W_SATURATED} 以下。`;
-  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱，聽日健康每日 ${sgn(wTier(plan.wAfter).score)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
+  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel} ${sgn(plan.wScore)}。疏水返到 ${W_SATURATED} 以下。`;
+  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱 ${sgn(plan.wScore)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
   if (plan.nAfter < N_OPTIMAL[0]) return `養分今晚會跌到 ${Math.round(plan.nAfter)}，低過 ${N_OPTIMAL[0]}，可以施肥。`;
   if (state.windUnlocked && state.resist < 40) return `有空可以加固：抗風力低過 40，${eventLabel('typhoon8')}一嚟就會倒塌。`;
-  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，聽日健康會慢慢升。`;
+  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，今晚會健康咁長高。`;
 }
 
 export function dayNumber(state: GameState, today: string): number {

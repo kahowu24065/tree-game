@@ -22,7 +22,6 @@ import {
   brokenTop,
   advanceFlow,
   catchUp,
-  healthZeroInMs,
   DYING_MS,
   emergencyOptions,
   fallenLogDay,
@@ -689,10 +688,11 @@ function scheduleReminders(background: boolean): void {
       wateredToday: careToday && state.care.water > 0,
       fertilizedToday: careToday && state.care.fertilize > 0,
       dyingEndsAt: state.dying ? state.dying.at + DYING_MS - offset : null,
+      // v1.4.18: 健康 only changes at midnight — warn when tonight's projected settlement takes it to 0.
       healthZeroAt: (() => {
         if (!state.started || state.over || state.dying) return null;
-        const ms = healthZeroInMs(state, events, meta);
-        return ms == null ? null : Date.now() + ms;
+        const p = previewNight(state, today(), events, meta);
+        return p.hAfter <= 0 || p.waterDeath ? Date.now() + (24 * 60 - clockMinutes(timezone)) * 60_000 : null;
       })(),
       pendingEmergencies: pending,
       background,
@@ -2020,10 +2020,11 @@ let flowKey = '';
 let flowSavedAt = 0;
 
 /**
- * v1.4.17: 水分／養分／健康 drift with real time instead of one nightly settlement. Called every second, after the
+ * v1.4.17: 水分／養分／抗風力 drift with real time (健康 still settles at midnight, v1.4.18). Called every second, after the
  * catch-up on open/resume; closed-app time is caught up in 15-minute steps inside advanceFlow.
  */
 function syncFlow(force = false): void {
+  // v1.4.18: 水分／養分／抗風力 drift; 健康 itself only changes at the midnight settlement.
   if (!state.started || state.over) return;
   if (state.lastSeenDate !== today()) {
     runCatchup(); // midnight passed while open: settle last night first (it also starts today's flow)

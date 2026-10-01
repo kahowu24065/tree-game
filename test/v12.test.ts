@@ -97,8 +97,7 @@ describe('v12 即時警告', () => {
     expect(s.moisture).toBe(50);
     const r = settleDay(s, D, ['hot'], null, NOW);
     expect(r.settlement.wAfter).toBe(40);
-    // v1.4.18: 健康's water score is the day's snapshot (50 = 適中), spread over the day.
-    expect(r.settlement.wFactor).toBe(5);
+    expect(r.settlement.wFactor).toBe(-10);
   });
 
   it('90 + 暴雨 → 即時 110，當晚冇流失', () => {
@@ -213,11 +212,11 @@ describe('v12 夜間健康', () => {
     expect([49, 75, 110, 120, 140].map((w) => wTier(w).label)).toEqual(['乾旱', '適中', '輕度爛根', '嚴重爛根', '根部壞死']);
   });
 
-  it('v1.4.18 健康水分分用半夜快照：110（輕度爛根）→ 全日 −10，日頭跌到 100 都唔變', () => {
+  it('先計水分變化，再計健康：110 晴天 → 100 → +5', () => {
     const r = settleDay(game({ moisture: 110, nutrients: 90 }), D, ['clear'], null, NOW).settlement;
     expect(r.wAfter).toBe(100);
-    expect(r.wFactor).toBe(-10);
-    expect(r.hAfter).toBe(65);
+    expect(r.wFactor).toBe(5);
+    expect(r.hAfter).toBe(80);
   });
 
   it('蟲害：水分超過 100 連續 3 晚觸發', () => {
@@ -253,14 +252,12 @@ describe('v12 夜間健康', () => {
   it('預計即時跟住疏水更新，建議同預計一致', () => {
     const s = game({ moisture: 120 });
     const before = previewNight(s, D, ['clear'], null);
-    // v1.4.18: snapshot 120 = 嚴重爛根 −20 for the day.
-    expect(before).toMatchObject({ wAfter: 110, wScore: -20, wLabel: '輕度爛根' });
-    expect(advice(s, before, null)).toContain('今晚水分預計 110：輕度爛根');
+    expect(before).toMatchObject({ wAfter: 110, wScore: -10, wLabel: '輕度爛根' });
+    expect(advice(s, before, null)).toContain('今晚水分預計 110：輕度爛根 -10');
     drain(s);
-    // No drift has started today yet, so the day's rate is not fixed: the preview follows the drain (snapshot 110 → −10).
     const after = previewNight(s, D, ['clear'], null);
-    expect(after).toMatchObject({ wAfter: 100, wScore: -10 });
-    expect(after.dH).toBe(before.dH + 10);
+    expect(after).toMatchObject({ wAfter: 100, wScore: 5 });
+    expect(after.dH).toBe(before.dH + 15);
     const dry = game({ moisture: 55 });
     expect(advice(dry, previewNight(dry, D, ['clear'], null), null)).toContain('乾旱');
     const doom = game({ moisture: 146 });

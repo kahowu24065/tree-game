@@ -78,7 +78,6 @@ describe('冇高度上限', () => {
     let last = s.heightCm;
     for (let i = 60; i < 200; i++) {
       Object.assign(s, { moisture: 60, nutrients: 80 });
-      delete s.flow; // v1.4.18: the day's 健康 rate is fixed from its midnight values; let this edit count as the day's start
       settleDay(s, d(i), ['clear'], null, NOW);
       expect(s.over).toBeNull();
       expect(s.heightCm).toBeGreaterThan(last);

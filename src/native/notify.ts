@@ -14,7 +14,7 @@ export interface NotifyInput {
   over: boolean;
   wateredToday: boolean;
   fertilizedToday: boolean;
-  /** v1.4.17: real timestamp when 健康 is expected to drift to 0 at the current rates (null = not within 3 days / dying). */
+  /** v1.4.18: tonight's settlement time when its projected 健康 is 0 (null = safe tonight / already 瀕死). */
   healthZeroAt?: number | null;
   /** Real timestamp when 瀕死 runs out (null = not dying). */
   dyingEndsAt: number | null;
@@ -54,9 +54,9 @@ export function planNotifications(i: NotifyInput): PlannedNotice[] {
     if (soon(i.dyingEndsAt - 2 * HOUR)) out.push({ id: NOTIFY_IDS.dying2, at: i.dyingEndsAt - 2 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹只剩大約 2 小時！${hint}` });
   }
   if (i.dyingEndsAt === null && i.healthZeroAt != null) {
-    // 健康 now drifts during the day: warn ~3 hours before it would reach 0 and start 瀕死.
+    // Tonight's settlement is projected to take 健康 to 0: warn ~3 hours before midnight.
     const at = Math.max(i.now + 5 * 60_000, i.healthZeroAt - 3 * HOUR);
-    if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: `${TITLE}：健康好低`, body: '健康度就快跌到 0，入去將水分調返 50–100、養分 60 以上！' });
+    if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: `${TITLE}：健康好低`, body: '照而家咁落去，今晚結算健康度會跌到 0！入去將水分調返 50–100、養分 60 以上。' });
   }
   if (i.hatchAt !== null && soon(i.hatchAt)) {
     out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: '鵲鴝嘅蛋孵化咗，開返嚟睇下。' });
