@@ -791,7 +791,7 @@ const table: Record<string, string> = {
  "prem.eyebrow": "會員",
  "prem.failed": "購買未完成，請再試一次。",
  "prem.free": "照顧樹木、天氣警告和所有玩法永遠免費。",
- "prem.lead": "每月 {price}，移除所有廣告，同時支持我們繼續種樹。",
+ "prem.lead": "每月 {price}，請我喝杯咖啡，支持這個 App 持續更新與開發。",
  "prem.loading": "正在連線商店…",
  "prem.manage": "管理訂閱",
  "prem.none": "找不到可恢復的訂閱",

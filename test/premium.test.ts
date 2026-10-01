@@ -85,6 +85,8 @@ describe('paywall', () => {
     const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing(), today: '2026-10-01' });
     for (const s of ['data-action="premium-buy"', 'data-action="premium-restore"', 'apps.apple.com/account/subscriptions', APPLE_EULA_URL, PRIVACY_URL, 'HK$8.00']) expect(html).toContain(s);
     expect(html).toContain(t('prem.disclosureIos', { price: 'HK$8.00' }).slice(0, 12).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+    expect(html).toContain(t('prem.lead', { price: 'HK$8.00' }));
+    expect(premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ price: null }), today: '2026-10-01' })).toContain(t('prem.lead', { price: 'HK$8' }));
     const android = premiumModal({ mode: 'android', store: emptyPremium(), billing: billing({ manageUrl: defaultManageUrl('android') }), today: '2026-10-01' });
     expect(android).toContain(TERMS_URL);
   });

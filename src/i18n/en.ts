@@ -839,7 +839,7 @@ const table: Record<string, string> = {
  "prem.eyebrow": "Premium",
  "prem.failed": "The purchase didn’t complete. Please try again.",
  "prem.free": "Tree care, weather warnings and all gameplay stay free.",
- "prem.lead": "{price} a month removes all ads and supports the World Tree.",
+ "prem.lead": "{price} a month buys me a coffee and supports ongoing updates and development.",
  "prem.loading": "Connecting to the store…",
  "prem.manage": "Manage subscription",
  "prem.none": "No subscription to restore",
