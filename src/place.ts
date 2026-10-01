@@ -1,5 +1,6 @@
 /** Reverse geocoding via BigDataCloud's free client-side endpoint (CORS-enabled, no key). Cached per ~1 km. */
 import { timeoutSignal } from './hko';
+import { t as tl } from './i18n';
 
 const KEY = 'yiri-yisyu-place-names';
 
@@ -20,7 +21,7 @@ export function parseBigDataCloud(data: unknown): PlaceName | null {
   const admins = (body.localityInfo?.administrative ?? []).filter((a) => a.name).sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
   if (body.countryCode === 'HK') {
     const district = admins.find((a) => (a.adminLevel ?? 0) >= 6)?.name;
-    return { name: district ?? '香港', district };
+    return { name: district ?? tl('ui.346'), district };
   }
   const local = admins.find((a) => (a.adminLevel ?? 0) >= 6 && (a.adminLevel ?? 0) <= 8)?.name;
   const name = body.city || body.locality || local || body.principalSubdivision;

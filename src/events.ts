@@ -4,6 +4,7 @@ import { hkoIconRain, type HkoWarning } from './hko';
 import { pickEvent } from './rules';
 import type { CurrentWeather, DayCond, ForecastDay } from './types';
 import { isRainCode, type HourPoint } from './weather';
+import { t as tl } from './i18n';
 
 /**
  * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告或強烈季候風 → 狂風雷暴;
@@ -173,7 +174,7 @@ export function severeCountdown(opts: {
   const found: Countdown[] = [];
   if (opts.manual) {
     const hours = Math.max(0, (opts.manual.at - opts.nowMs) / 3600000);
-    if (hours <= 12) found.push({ event: opts.manual.event, hours, active: hours === 0, source: '手動預報' });
+    if (hours <= 12) found.push({ event: opts.manual.event, hours, active: hours === 0, source: tl('events.001') });
   }
   const hour = opts.nowIso.slice(0, 13);
   const hourly = opts.hourly ?? [];
@@ -182,13 +183,13 @@ export function severeCountdown(opts: {
   for (let i = 0; i <= 12 && start + i < hourly.length; i++) {
     const e = hourEvent(hourly[start + i]!);
     if (e) {
-      found.push({ event: e, hours: i, active: false, source: '逐小時預報' });
+      found.push({ event: e, hours: i, active: false, source: tl('events.002') });
       break;
     }
   }
   if (opts.tomorrow && opts.minutesToMidnight <= 12 * 60) {
     const e = dayEvent(opts.tomorrow);
-    if (WEATHER_EVENTS[e].severe) found.push({ event: e, hours: opts.minutesToMidnight / 60, active: false, source: '明日預報' });
+    if (WEATHER_EVENTS[e].severe) found.push({ event: e, hours: opts.minutesToMidnight / 60, active: false, source: tl('events.003') });
   }
   if (!found.length) return null;
   found.sort((a, b) => a.hours - b.hours || WEATHER_EVENTS[b.event].damage - WEATHER_EVENTS[a.event].damage);

@@ -5,6 +5,7 @@
  */
 import { parseSave } from './storage';
 import type { GameState, MetaState } from './types';
+import { t as tl } from './i18n';
 
 export const CODE_PREFIX = 'SEKAI1';
 
@@ -60,22 +61,22 @@ export type DecodeResult = { ok: true; payload: SavePayload } | { ok: false; err
 /** Validate a pasted code: prefix, checksum, and that the save passes the normal load + migrations. */
 export async function decodeSave(code: string): Promise<DecodeResult> {
   const parts = code.replace(/\s+/g, '').split('.');
-  if (parts.length !== 3 || parts[0] !== CODE_PREFIX) return { ok: false, error: '唔係《世界之樹》存檔碼。' };
+  if (parts.length !== 3 || parts[0] !== CODE_PREFIX) return { ok: false, error: tl('saveCode.001') };
   let json: Uint8Array;
   try {
     json = await pipe(fromB64url(parts[1]), new DecompressionStream('deflate-raw'));
   } catch {
-    return { ok: false, error: '存檔碼唔完整（可能冇複製晒）。' };
+    return { ok: false, error: tl('saveCode.002') };
   }
-  if (crc32(json) !== parts[2].toLowerCase()) return { ok: false, error: '存檔碼校驗唔啱（可能冇複製晒）。' };
+  if (crc32(json) !== parts[2].toLowerCase()) return { ok: false, error: tl('saveCode.003') };
   try {
     const data = JSON.parse(new TextDecoder().decode(json)) as SavePayload;
-    if (data?.v !== 1 || !data.save) return { ok: false, error: '存檔碼版本唔支援。' };
+    if (data?.v !== 1 || !data.save) return { ok: false, error: tl('saveCode.004') };
     const save = parseSave(JSON.stringify(data.save));
-    if (!save) return { ok: false, error: '存檔內容無效。' };
+    if (!save) return { ok: false, error: tl('saveCode.005') };
     const meta = data.meta && data.meta.version === 1 && data.meta.badges ? data.meta : null;
     return { ok: true, payload: { v: 1, at: String(data.at ?? ''), save, meta } };
   } catch {
-    return { ok: false, error: '存檔內容無效。' };
+    return { ok: false, error: tl('saveCode.005') };
   }
 }

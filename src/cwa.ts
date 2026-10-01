@@ -8,6 +8,7 @@
 import { timeoutSignal, type HkoData, type HkoForecastDay, type HkoWarning } from './hko';
 import { PUSH_SERVER } from './native/push';
 import type { StormKind } from './types';
+import { t as tl } from './i18n';
 
 export type CwaWarningType = 'typhoon' | 'rain' | 'wind' | 'thunder' | 'heat' | 'cold' | 'fog';
 
@@ -113,12 +114,12 @@ export function cwaArea(): { county: string; town: string } | null {
 
 /** Current readings, county week forecast and warnings via the push server. */
 export async function fetchCwa(lat: number, lon: number): Promise<CwaBundle> {
-  let last = '中央氣象署資料暫時攞唔到';
+  let last = tl('cwa.001');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(`${PUSH_SERVER}/cwa?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}`, { signal: timeoutSignal(12000) });
       if (!res.ok) {
-        last = `中央氣象署資料回應 ${res.status}`;
+        last = tl('cwa.002', { status: res.status });
         if (res.status < 500) break;
         continue;
       }
@@ -128,7 +129,7 @@ export async function fetchCwa(lat: number, lon: number): Promise<CwaBundle> {
       lastArea = { county: bundle.county, town: bundle.town };
       return bundle;
     } catch {
-      last = '連唔到中央氣象署資料';
+      last = tl('cwa.003');
     }
   }
   throw new Error(last);

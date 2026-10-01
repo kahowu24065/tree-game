@@ -1,4 +1,5 @@
-const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+import { t as tl } from './i18n';
+const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
 
 export function formatDateInTz(date: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -39,7 +40,7 @@ export function formatLong(ymd: string): string {
   const parts = ymd.split('-');
   const m = Number(parts[1]);
   const d = Number(parts[2]);
-  return `${m}月${d}日（${WEEK[weekdayIndex(ymd)] ?? ''}）`;
+  return tl('dates.001', { m, d, p2: WEEK[weekdayIndex(ymd)] ?? '' });
 }
 
 export function formatShort(ymd: string): string {

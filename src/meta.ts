@@ -4,6 +4,7 @@ import { AGE_MILESTONES, BADGES, LANDMARK_N_BONUS, RECORD_MILESTONE, parseWxAwar
 import { weatherAchievementCopy } from './labels';
 import { createGame } from './sim';
 import type { GameState, MetaState } from './types';
+import { t as tl } from './i18n';
 
 export const META_KEY = 'sekai-tree-meta-v1';
 
@@ -43,7 +44,7 @@ export function bookGameEnd(meta: MetaState, state: GameState): string[] {
   const lines: string[] = [];
   for (const t of over.tiers) {
     meta.badges[String(t) as '1' | '2' | '3'] += 1;
-    lines.push(`${BADGES[t].name}：${BADGES[t].perk}`);
+    lines.push(tl('meta.001', { p0: BADGES[t].name, p1: BADGES[t].perk }));
     if (t === 3) {
       meta.reviveTokens += 1;
       meta.starry = true;
@@ -52,7 +53,7 @@ export function bookGameEnd(meta: MetaState, state: GameState): string[] {
   if (over.kind === 'dead') {
     meta.landmark = { name: state.treeName, heightCm: state.heightCm, date: over.date };
     meta.pendingLegacy = true;
-    lines.push(`${state.treeName}化作養分地標：下一棵樹開局養分 +${LANDMARK_N_BONUS}。`);
+    lines.push(tl('meta.002', { treeName: state.treeName, LANDMARK_N_BONUS }));
   }
   meta.history.unshift({ name: state.treeName, species: state.species, days: state.ageDays || over.days, heightCm: state.heightCm, result: over.kind, date: over.date });
   meta.history.length = Math.min(meta.history.length, 20);
@@ -74,7 +75,7 @@ export function bookMilestones(meta: MetaState, state: GameState): string[] {
     if (m.perk) {
       const t = m.perk;
       meta.badges[String(t) as '1' | '2' | '3'] += 1;
-      lines.push(`${BADGES[t].name}：${BADGES[t].perk}`);
+      lines.push(tl('meta.001', { p0: BADGES[t].name, p1: BADGES[t].perk }));
       if (t === 3) {
         meta.reviveTokens += 1;
         meta.starry = true;

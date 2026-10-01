@@ -2,14 +2,15 @@ import { speciesTargetCm } from './data/species';
 import type { SpeciesId } from './data/species';
 import { parseSave } from './storage';
 import type { GameState, IsleAward } from './types';
+import { t as tl } from './i18n';
 
 /** Both planted trees, plus which island the camera is on. Native persist picks this up via the sekai-tree prefix. */
 export const GROVE_KEY = 'sekai-tree-grove';
 
 export const ISLE_AWARDS: readonly { id: IsleAward['id']; title: string; detail: string }[] = [
-  { id: 'land', title: '踏足新島', detail: '打破世界紀錄之後，滑到第二座空島。' },
-  { id: 'plant', title: '第二棵樹', detail: '喺第二座空島種低新一棵樹。' },
-  { id: 'record', title: '新島破紀錄', detail: '第二棵樹都高過自己品種嘅世界紀錄。' },
+  { id: 'land', title: tl('grove.001'), detail: tl('grove.002') },
+  { id: 'plant', title: tl('grove.003'), detail: tl('grove.004') },
+  { id: 'record', title: tl('grove.005'), detail: tl('grove.006') },
 ];
 
 export interface Grove {

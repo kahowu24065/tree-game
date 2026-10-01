@@ -77,6 +77,7 @@ import {
 } from './rules';
 import type { Care, DayFlow, ForecastDay, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
 import { formatHeight } from './util';
+import { t as tl } from './i18n';
 
 export function freshCare(date: string): Care {
   return { date, water: 0, drain: 0, fertilize: 0, dewormed: false, preps: { stakes: false, ropes: false, prune: false }, credited: false, heatWater: false, rainDrain: false, warmCover: false };
@@ -113,7 +114,7 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     version: 2,
     rules: RULES_VERSION,
     started: false,
-    treeName: opts.name ?? '世界之樹',
+    treeName: opts.name ?? tl('sim.001'),
     species: opts.species ? speciesDef(opts.species).id : defaultSpecies(),
     ageDays: 0,
     milestones: {},
@@ -158,10 +159,10 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     nest: freshNest(),
   };
   state.targetCm = speciesTargetCm(state.species);
-  addLog(state, today, legacyBonus ? `一棵幼苗喺上一棵樹留低嘅養分地標旁邊種低，一開始就有 +${legacyBonus} 養分。` : '一棵幼苗種低咗，由今日開始慢慢陪佢大。', {
+  addLog(state, today, legacyBonus ? tl('sim.002', { legacyBonus }) : tl('sim.003'), {
     kind: 'plant',
-    title: '種低幼苗',
-    reward: { text: legacyBonus ? `+${legacyBonus} 養分` : '新開始', tone: 'green' },
+    title: tl('ui.166'),
+    reward: { text: legacyBonus ? tl('sim.004', { legacyBonus }) : tl('sim.005'), tone: 'green' },
   });
   ensureToday(state, today);
   return state;
@@ -174,11 +175,11 @@ export function ensureToday(state: GameState, today: string): string | null {
   state.dailyEventDate = today;
   state.dailyEventId = event.id;
   event.apply(state);
-  if (event.id !== 'quiet') addLog(state, today, event.text, { kind: 'event', title: `今日小事：${event.title}`, reward: event.chip });
+  if (event.id !== 'quiet') addLog(state, today, event.text, { kind: 'event', title: tl('sim.006', { title: event.title }), reward: event.chip });
   state.health = clamp100(state.health);
   state.moisture = clampW(state.moisture);
   state.nutrients = clamp100(state.nutrients);
-  return `${event.title}：${event.text}`;
+  return tl('sim.007', { title: event.title, text: event.text });
 }
 
 /* ---------- Weather records ---------- */
@@ -237,7 +238,7 @@ export interface WarningHit {
   dying: boolean;
 }
 
-const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: '酷熱天氣警告', rainstorm: '暴雨警告', blackrain: '黑雨警告', drizzle: '毛毛雨' };
+const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: tl('guide.133'), rainstorm: tl('sim.008'), blackrain: tl('sim.009'), drizzle: tl('sim.010') };
 
 /** The tree dies (v14: the only way a game ends). v16: `fallSeen: false` = the death animation is still to play. */
 function killTree(state: GameState, date: string, time: string): void {
@@ -246,7 +247,7 @@ function killTree(state: GameState, date: string, time: string): void {
   const days = daysBetween(state.createdOn, date) + 1;
   // v14: perk badges come with the age milestones (booked while alive), not at death.
   state.over = { kind: 'dead', date, tiers: [], days, fallSeen: false };
-  addLog(state, date, `${state.treeName}枯死咗，會化作小島上嘅養分地標，下一棵樹一開始就有 +${LANDMARK_N_BONUS} 養分。`, { kind: 'dying', title: '枯死', time });
+  addLog(state, date, tl('sim.011', { treeName: state.treeName, LANDMARK_N_BONUS }), { kind: 'dying', title: tl('sim.012'), time });
 }
 
 export const DYING_MS = DYING_HOURS * 3600 * 1000;
@@ -262,7 +263,7 @@ export function resolveDyingExpiry(state: GameState, date: string, meta: MetaSta
     meta.reviveTokens -= 1;
     state.health = REVIVE_HEALTH;
     state.dying = null;
-    addLog(state, date, `免死金牌生效，棵樹重新有咗生氣（健康度 ${REVIVE_HEALTH}）。`, { kind: 'badge', title: '免死金牌', reward: { text: `健康 ${REVIVE_HEALTH}`, tone: 'purple' }, time });
+    addLog(state, date, tl('sim.013', { REVIVE_HEALTH }), { kind: 'badge', title: tl('sim.014'), reward: { text: tl('sim.015', { REVIVE_HEALTH }), tone: 'purple' }, time });
     return 'revived';
   }
   killTree(state, date, time ?? '');
@@ -306,10 +307,10 @@ function enterDying(state: GameState, date: string, nowMs: number, why: string, 
   state.health = 0;
   if (state.dying) return false;
   state.dying = { since: date, at: nowMs };
-  addLog(state, date, `${why}，棵樹進入 24 小時瀕死狀態。將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`, {
+  addLog(state, date, tl('sim.016', { why, p1: W_OPTIMAL[0], p2: W_OPTIMAL[1], p3: N_OPTIMAL[0] }), {
     kind: 'dying',
-    title: '瀕死',
-    reward: { text: '24 小時', tone: 'red' },
+    title: tl('ui.045'),
+    reward: { text: tl('sim.017'), tone: 'red' },
     time,
   });
   return true;
@@ -475,9 +476,9 @@ export function applyWarningWater(
   const push = (event: WarningWaterEvent, before: number, toN: number) => {
     const after = state.moisture;
     const delta = r1(after - before);
-    const hint = after > W_SATURATED ? '記得疏水' : after < W_OPTIMAL[0] ? '記得澆水' : '水分仲喺適中範圍';
-    const message = `${regionalize(WARNING_NAME[event])}！水分 ${sgn(delta)}，而家 ${Math.round(after)}，${hint}${toN ? `（二級徽章：${toN} 水分轉咗做養分）` : ''}`;
-    addLog(state, date, message, { kind: 'event', title: regionalize(WARNING_NAME[event]), reward: { text: `${sgn(delta)} 水分`, tone: delta < 0 ? 'orange' : 'blue' }, time });
+    const hint = after > W_SATURATED ? tl('sim.018') : after < W_OPTIMAL[0] ? tl('sim.019') : tl('sim.020');
+    const message = tl('sim.022', { p0: regionalize(WARNING_NAME[event]), p1: sgn(delta), p2: Math.round(after), hint, p4: toN ? tl('sim.021', { toN }) : '' });
+    addLog(state, date, message, { kind: 'event', title: regionalize(WARNING_NAME[event]), reward: { text: tl('sim.023', { p0: sgn(delta) }), tone: delta < 0 ? 'orange' : 'blue' }, time });
     hits.push({ event, before, after, delta, toN, message, dying: false });
   };
   if (hot && !mark.hot) {
@@ -510,8 +511,8 @@ export function applyWarningWater(
   while (keys.length > 21) delete state.waterFx[keys.shift()!];
   if (waterDeath(state.moisture) && hits.length) {
     const last = hits[hits.length - 1]!;
-    last.dying = enterDying(state, date, nowMs, `水分去到 ${W_MAX}，根部浸死`, time) || Boolean(state.dying);
-    last.message = `${last.message}。水分到 ${W_MAX}，棵樹瀕死！即刻疏水同施肥救返佢。`;
+    last.dying = enterDying(state, date, nowMs, tl('sim.024', { W_MAX }), time) || Boolean(state.dying);
+    last.message = tl('sim.025', { message: last.message, W_MAX });
   }
   return hits;
 }
@@ -519,7 +520,7 @@ export function applyWarningWater(
 /** W ≥ 150 at any moment (e.g. the developer slider) → 瀕死 right away. */
 export function checkWaterDeath(state: GameState, date: string, nowMs: number): boolean {
   if (state.over || !waterDeath(state.moisture)) return false;
-  return enterDying(state, date, nowMs, `水分去到 ${W_MAX}，根部浸死`);
+  return enterDying(state, date, nowMs, tl('sim.024', { W_MAX }));
 }
 
 /** v13 熱／雨 line of the night: flat damage unless the day's 應急行動 was done. */
@@ -766,8 +767,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   // Warnings seen that day but never applied (app closed, or forecast-only days) hit first.
   const pre = applyWarningWater(state, date, events, meta, nowMs, '');
   for (const h of pre) {
-    notes.push(`${regionalize(WARNING_NAME[h.event])}：水分 ${sgn(h.delta)}`);
-    if (h.toN) notes.push(`二級徽章：${h.toN} 水分轉咗做養分`);
+    notes.push(tl('sim.026', { p0: regionalize(WARNING_NAME[h.event]), p1: sgn(h.delta) }));
+    if (h.toN) notes.push(tl('sim.027', { toN: h.toN }));
   }
   // The day's slow drift (水分、養分、抗風力) is finished first — whatever of the 24 hours the open app did not already
   // apply — then 健康 settles once from those end-of-day values (v1.4.18), with the weather, the bonus and growth.
@@ -781,16 +782,16 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const hits = [plan.heat, plan.cold, plan.rain, plan.wind].filter((x) => x);
   const cats = hits.length;
   const severeSeen = [...new Set(events)].filter((e) => WEATHER_EVENTS[e].category);
-  if (severeSeen.length > cats) notes.push(`同一類天氣只計最嚴重嗰個（${hits.map((x) => eventLabel(x!.event)).join('、')}）`);
-  if (cats > 1) notes.push('熱、寒、雨、風唔同類，各自計埋');
+  if (severeSeen.length > cats) notes.push(tl('sim.028', { p0: hits.map((x) => eventLabel(x!.event)).join(tl('ui.206')) }));
+  if (cats > 1) notes.push(tl('sim.029'));
   const rainDay = flowRates(state, events, perks).w === 0;
-  if (!rainDay && perks.waterSaver) notes.push('一級徽章：水分流失減少 10%');
-  if (rainDay) notes.push('落雨日：水分冇自然流失');
-  if (plan.heat) notes.push(plan.heat.handled ? `${eventLabel('hot')}：做咗酷熱澆水，唔扣健康` : `${eventLabel('hot')}：冇做酷熱澆水 −${plan.heat.base}`);
-  if (plan.cold) notes.push(plan.cold.handled ? '寒冷：做咗保暖，唔扣健康' : `寒冷：冇做保暖 −${plan.cold.base}`);
-  if (plan.rain) notes.push(plan.rain.handled ? `${eventLabel(plan.rain.event)}：做咗${emergencyName('rainDrain')}，唔扣健康` : `${eventLabel(plan.rain.event)}：冇做${emergencyName('rainDrain')} −${plan.rain.base}`);
-  if (plan.emergencyBonus) notes.push(`應急獎勵 ${emergencyBonusText(plan.emergencyCount)}`);
-  if (plan.wind?.locked) notes.push(`${eventLabel(plan.wind.event)}：青年樹前唔受風災影響`);
+  if (!rainDay && perks.waterSaver) notes.push(tl('sim.030'));
+  if (rainDay) notes.push(tl('sim.031'));
+  if (plan.heat) notes.push(plan.heat.handled ? tl('sim.032', { p0: eventLabel('hot') }) : tl('sim.033', { p0: eventLabel('hot'), base: plan.heat.base }));
+  if (plan.cold) notes.push(plan.cold.handled ? tl('sim.034') : tl('sim.035', { base: plan.cold.base }));
+  if (plan.rain) notes.push(plan.rain.handled ? tl('sim.036', { p0: eventLabel(plan.rain.event), p1: emergencyName('rainDrain') }) : tl('sim.037', { p0: eventLabel(plan.rain.event), p1: emergencyName('rainDrain'), base: plan.rain.base }));
+  if (plan.emergencyBonus) notes.push(tl('ui.064', { p0: emergencyBonusText(plan.emergencyCount) }));
+  if (plan.wind?.locked) notes.push(tl('sim.038', { p0: eventLabel(plan.wind.event) }));
 
   state.moisture = plan.wAfter;
   state.nutrients = plan.nAfter;
@@ -798,7 +799,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const dmg = plan.damage;
   state.resist = plan.rAfter;
   const pestDamage = plan.pest;
-  if (pestDamage) notes.push(`蟲害 −${pestDamage}`);
+  if (pestDamage) notes.push(tl('sim.039', { pestDamage }));
   const wf = plan.wScore;
   const nf = plan.nScore;
   state.health = plan.hAfter;
@@ -814,33 +815,33 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     if (!hit || hit.handled) continue;
     const label = eventLabel(hit.event);
     const fix = emergencyName(hit.event === 'hot' ? 'heatWater' : hit.event === 'cold' ? 'warmCover' : 'rainDrain');
-    addLog(state, date, `${label}冇做${fix}，健康度 −${hit.base}。下次警告一出記得做${fix}。`, { kind: 'storm-hit', title: `${label}打中棵樹`, reward: { text: `-${hit.base} 健康度`, tone: 'red' }, time: '' });
-    messages.push(`${label}令健康度 −${hit.base}。下次警告一出，記得做「${fix}」。`);
+    addLog(state, date, tl('sim.040', { label, fix, base: hit.base }), { kind: 'storm-hit', title: tl('sim.041', { label }), reward: { text: tl('sim.042', { base: hit.base }), tone: 'red' }, time: '' });
+    messages.push(tl('sim.043', { label, base: hit.base, fix }));
   }
   if (plan.emergencyBonus) {
-    addLog(state, date, plan.emergencyCount > 1 ? `${plan.emergencyCount} 樣應急行動都做咗，應急獎勵 ${emergencyBonusText(plan.emergencyCount)}。` : `應急行動做得啱時，應急獎勵 +${plan.emergencyBonus}。`, { kind: 'emergency', title: '應急獎勵', reward: { text: `+${plan.emergencyBonus} 健康度`, tone: 'green' }, time: '' });
+    addLog(state, date, plan.emergencyCount > 1 ? tl('sim.044', { emergencyCount: plan.emergencyCount, p1: emergencyBonusText(plan.emergencyCount) }) : tl('sim.045', { emergencyBonus: plan.emergencyBonus }), { kind: 'emergency', title: tl('ui.065'), reward: { text: tl('sim.046', { emergencyBonus: plan.emergencyBonus }), tone: 'green' }, time: '' });
   }
   if (w && !w.locked) {
     const label = eventLabel(w.event);
     if (survived) {
       state.stormSurvivals += 1;
       if (state.scars > 0) state.scars -= 1;
-      addLog(state, date, `${label}過咗。抗風力 ${Math.round(rBefore)} 擋咗大部分傷害（${w.base} → ${windDmg}），今晚仲長得特別壯。`, {
+      addLog(state, date, tl('sim.047', { label, p1: Math.round(rBefore), base: w.base, windDmg }), {
         kind: 'storm-safe',
-        title: `捱過${label}`,
-        reward: { text: `生長 ×${STORM_SURVIVE_GROWTH}`, tone: 'green' },
+        title: tl('sim.048', { label }),
+        reward: { text: tl('sim.049', { STORM_SURVIVE_GROWTH }), tone: 'green' },
         time: '',
       });
-      messages.push(`${label}過咗，你預先加固，只受 ${windDmg} 點傷害，仲長得更壯。`);
+      messages.push(tl('sim.050', { label, windDmg }));
     } else if (windDmg >= 10) {
       state.scars = Math.min(4, state.scars + 1);
-      addLog(state, date, `${label}令健康度 −${windDmg}（基礎 ${w.base}，抗風力 ${Math.round(rBefore)} 減免咗 ${r1(w.base - windDmg)}）。`, {
+      addLog(state, date, tl('sim.051', { label, windDmg, base: w.base, p3: Math.round(rBefore), p4: r1(w.base - windDmg) }), {
         kind: 'storm-hit',
-        title: `${label}打中棵樹`,
-        reward: { text: `-${windDmg} 健康度`, tone: 'red' },
+        title: tl('sim.041', { label }),
+        reward: { text: tl('sim.052', { windDmg }), tone: 'red' },
         time: '',
       });
-      messages.push(`${label}令健康度 −${windDmg}。下次預警一出，先加固推高抗風力。`);
+      messages.push(tl('sim.053', { label, windDmg }));
     }
   }
 
@@ -856,25 +857,25 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     if (c.fatal && !(meta && meta.reviveTokens > 0)) {
       collapseDied = true;
       state.health = 0;
-      addLog(state, date, `${label}吹到主幹完全斷裂（抗風力 ${Math.round(c.r)} 低過門檻 ${c.threshold}），第 ${c.count} 次倒塌，棵樹捱唔住。`, { kind: 'collapse', title: '倒塌・枯死', reward: { text: `倒塌 ${c.count} 次`, tone: 'red' }, time: '' });
-      messages.push(`${label}令棵樹第 ${c.count} 次倒塌，主幹斷晒，救唔返喇。`);
+      addLog(state, date, tl('sim.054', { label, p1: Math.round(c.r), threshold: c.threshold, count: c.count }), { kind: 'collapse', title: tl('sim.055'), reward: { text: tl('sim.056', { count: c.count }), tone: 'red' }, time: '' });
+      messages.push(tl('sim.057', { label, count: c.count }));
     } else {
       if (c.fatal && meta) {
         meta.reviveTokens -= 1;
         collapseRevived = true;
         state.health = Math.max(state.health, REVIVE_HEALTH);
-        addLog(state, date, `第 ${c.count} 次倒塌本來會令棵樹死，免死金牌擋咗一劫（健康度 ${Math.round(state.health)}）。倒塌次數唔會重設，下次再倒就冇得救。`, { kind: 'badge', title: '免死金牌', reward: { text: '擋咗一劫', tone: 'purple' }, time: '' });
-        messages.push('免死金牌擋咗今次致命倒塌！倒塌次數唔會重設，下次再倒就會死。');
+        addLog(state, date, tl('sim.058', { count: c.count, p1: Math.round(state.health) }), { kind: 'badge', title: tl('sim.014'), reward: { text: tl('sim.059'), tone: 'purple' }, time: '' });
+        messages.push(tl('sim.060'));
       }
       state.heightCm = Math.max(5, r1(state.heightCm * (1 - COLLAPSE_HEIGHT_LOSS)));
       state.doubleRPending = true;
-      addLog(state, date, `${label}吹斷咗部分主幹（抗風力 ${Math.round(c.r)} 低過門檻 ${c.threshold}），高度 ${formatHeight(hBeforeCollapse)} → ${formatHeight(state.heightCm)}。倒塌 ${Math.min(c.count, COLLAPSE_MAX)}/${COLLAPSE_MAX}${c.count >= COLLAPSE_MAX ? '，再倒就會死' : ''}。聽日加固效果雙倍。`, {
+      addLog(state, date, tl('sim.062', { label, p1: Math.round(c.r), threshold: c.threshold, p3: formatHeight(hBeforeCollapse), p4: formatHeight(state.heightCm), p5: Math.min(c.count, COLLAPSE_MAX), COLLAPSE_MAX, p7: c.count >= COLLAPSE_MAX ? tl('sim.061') : '' }), {
         kind: 'collapse',
-        title: '棵樹倒塌',
-        reward: { text: `−${Math.round(COLLAPSE_HEIGHT_LOSS * 100)}% 高度`, tone: 'red' },
+        title: tl('ui.181'),
+        reward: { text: tl('sim.063', { p0: Math.round(COLLAPSE_HEIGHT_LOSS * 100) }), tone: 'red' },
         time: '',
       });
-      messages.push(`${label}令棵樹倒塌，斷咗部分主幹（高度 −20%，倒塌 ${Math.min(c.count, COLLAPSE_MAX)}/${COLLAPSE_MAX}）。聽日加固效果雙倍，快啲補返抗風力。`);
+      messages.push(tl('sim.064', { label, p1: Math.min(c.count, COLLAPSE_MAX), COLLAPSE_MAX }));
     }
     collapseInfo = { event: c.event, threshold: c.threshold, count: c.count, heightBefore: hBeforeCollapse, heightAfter: state.heightCm, fatal: c.fatal, revived: collapseRevived };
     // v16 (visual only): what the scene needs for the collapse animation, the broken top and the fallen log.
@@ -887,10 +888,10 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   if (!state.pest.active && (state.pest.lowNDays >= need || state.pest.wetDays >= need)) {
     state.pest.active = true;
     state.pest.since = date;
-    const why = state.pest.lowNDays >= need ? `連續 ${need} 日營養不良` : `連續 ${need} 晚水分超過 ${W_SATURATED}（爛根）`;
+    const why = state.pest.lowNDays >= need ? tl('sim.065', { need }) : tl('sim.066', { need, W_SATURATED });
     const dmg = pestDamageWith(state.residents.length);
-    addLog(state, date, `${why}，葉底生咗蟲。每日會扣 ${dmg} 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: `-${dmg}/日`, tone: 'red' }, time: '' });
-    messages.push(`${why}，生咗蟲！記得除蟲。`);
+    addLog(state, date, tl('sim.067', { why, dmg }), { kind: 'pest', title: tl('ui.068'), reward: { text: tl('sim.068', { dmg }), tone: 'red' }, time: '' });
+    messages.push(tl('sim.069', { why }));
   }
 
   // Resident animals: consecutive nights at H ≥ 85 — 5 for the 1st species, 5 more for the 2nd, then 10 more each.
@@ -902,10 +903,10 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
         state.residents.push(pick);
         state.highStreak = 0;
         const name = ANIMALS.find((a) => a.id === pick)?.name ?? pick;
-        addLog(state, date, `${name}鍾意呢棵咁健康嘅樹，成群（最少一對）決定長駐。佢哋會幫手食蟲（蟲害傷害 −${RESIDENT_PEST_CUT}、遲 1 晚先生蟲，最多計 3 種）。`, {
+        addLog(state, date, tl('sim.070', { name, RESIDENT_PEST_CUT }), {
           kind: 'animal',
-          title: '動物長駐',
-          reward: { text: '長駐', tone: 'purple' },
+          title: tl('sim.071'),
+          reward: { text: tl('sim.072'), tone: 'purple' },
           time: '',
         });
       }
@@ -916,7 +917,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     if (state.health < RESIDENT_LEAVE_H && state.residents.length) {
       const gone = state.residents.pop()!;
       const name = ANIMALS.find((a) => a.id === gone)?.name ?? gone;
-      addLog(state, date, `健康度跌穿 ${RESIDENT_LEAVE_H}，${name}搬走咗。再連續 ${residentStreakNeeded(state.residents.length)} 晚健康 ${RESIDENT_MIN_H} 以上，會有動物返嚟長駐。`, { kind: 'animal', title: '動物離開', time: '' });
+      addLog(state, date, tl('sim.073', { RESIDENT_LEAVE_H, name, p2: residentStreakNeeded(state.residents.length), RESIDENT_MIN_H }), { kind: 'animal', title: tl('sim.074'), time: '' });
     }
   }
 
@@ -930,19 +931,19 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   } else if (state.health <= 0) {
     state.health = 0;
     if (!wasDying) {
-      enterDying(state, date, nowMs, plan.waterDeath ? `水分去到 ${W_MAX}，根部浸死` : '健康度跌到 0', '');
-      messages.push(`棵樹瀕死！24 小時內將水分調返 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就救得返。`);
+      enterDying(state, date, nowMs, plan.waterDeath ? tl('sim.024', { W_MAX }) : tl('sim.075'), '');
+      messages.push(tl('sim.076', { p0: W_OPTIMAL[0], p1: W_OPTIMAL[1], p2: N_OPTIMAL[0] }));
     } else {
       const end = resolveDyingExpiry(state, date, meta, nowMs, '');
       if (end === 'dead') died = true;
       if (end === 'revived') {
         revived = true;
-        messages.push('免死金牌救返棵樹！');
+        messages.push(tl('sim.077'));
       }
     }
   } else if (wasDying) {
     state.dying = null;
-    addLog(state, date, '棵樹捱過瀕死，慢慢回復生氣。', { kind: 'grow', title: '救返', reward: { text: `健康 ${Math.round(state.health)}`, tone: 'green' }, time: '' });
+    addLog(state, date, tl('sim.078'), { kind: 'grow', title: tl('sim.079'), reward: { text: tl('sim.080', { p0: Math.round(state.health) }), tone: 'green' }, time: '' });
   }
 
   const nestNight = settleNest(state, nowMs, date);
@@ -951,25 +952,25 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     const build = nestBuildAt(nestNight.count);
     if (build) {
       const phrase = nestBuildPhrase(build);
-      notes.push(`${parent}嘅蛋孵化咗，島上多咗${phrase}`);
-      messages.push(`${parent}嘅蛋孵化咗。島上多咗${phrase}。`);
-      addLog(state, date, `${parent}嘅蛋孵化咗。島上多咗${phrase}。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: phrase, tone: 'blue' }, time: '' });
+      notes.push(tl('sim.081', { parent, phrase }));
+      messages.push(tl('sim.082', { parent, phrase }));
+      addLog(state, date, tl('sim.082', { parent, phrase }), { kind: 'animal', title: tl('sim.083'), reward: { text: phrase, tone: 'blue' }, time: '' });
     } else if (isNestHeightCount(nestNight.count)) {
       const extra = dG > 0 ? Math.max(0.1, r1(dG * 0.3)) : 0;
       if (extra > 0) state.heightCm = r1(state.heightCm + extra);
-      const gift = extra > 0 ? `今晚多長 ${extra} 厘米` : '今晚冇加高';
-      notes.push(`${parent}嘅蛋孵化咗，${gift}`);
-      messages.push(`${parent}嘅蛋孵化咗。${gift}。`);
-      addLog(state, date, `${parent}嘅蛋孵化咗。${gift}。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: extra > 0 ? `+${extra} 厘米` : '孵化', tone: 'green' }, time: '' });
+      const gift = extra > 0 ? tl('sim.084', { extra }) : tl('sim.085');
+      notes.push(tl('sim.086', { parent, gift }));
+      messages.push(tl('sim.087', { parent, gift }));
+      addLog(state, date, tl('sim.087', { parent, gift }), { kind: 'animal', title: tl('sim.083'), reward: { text: extra > 0 ? tl('sim.088', { extra }) : tl('sim.089'), tone: 'green' }, time: '' });
     } else {
-      notes.push(`${parent}嘅蛋孵化咗`);
-      messages.push(`${parent}嘅蛋孵化咗。`);
-      addLog(state, date, `${parent}嘅蛋孵化咗。`, { kind: 'animal', title: '蛋孵化咗', reward: { text: '孵化', tone: 'green' }, time: '' });
+      notes.push(tl('sim.090', { parent }));
+      messages.push(tl('sim.091', { parent }));
+      addLog(state, date, tl('sim.091', { parent }), { kind: 'animal', title: tl('sim.083'), reward: { text: tl('sim.089'), tone: 'green' }, time: '' });
     }
     for (const n of nestNight.awards) {
       const title = nestAwardTitle(n);
-      messages.push(`成就：${title}`);
-      addLog(state, date, `成就：${title}。`, { kind: 'badge', title, reward: { text: '成就', tone: 'purple' }, time: '' });
+      messages.push(tl('sim.092', { title }));
+      addLog(state, date, tl('sim.093', { title }), { kind: 'badge', title, reward: { text: tl('ui.192'), tone: 'purple' }, time: '' });
     }
   }
 
@@ -1013,8 +1014,8 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   addLog(
     state,
     date,
-    `${dailySummaryText(settlement)} 天氣：${eventLabel(eventId)}，天氣分 ${sgn(-dmg)}${plan.emergencyBonus ? `，應急獎勵 +${plan.emergencyBonus}` : ''}${pestDamage ? `，蟲害 −${pestDamage}` : ''}；健康 ${Math.round(state.health)}，${tier.label} ×${mult}。`,
-    { kind: 'settle', title: '每日總結', reward: { text: `${dG >= 0 ? '+' : ''}${settlement.deltaG} 厘米`, tone: dG >= 0 ? 'blue' : 'red' }, time: '' },
+    tl('sim.096', { p0: dailySummaryText(settlement), p1: eventLabel(eventId), p2: sgn(-dmg), p3: plan.emergencyBonus ? tl('sim.094', { emergencyBonus: plan.emergencyBonus }) : '', p4: pestDamage ? tl('sim.095', { pestDamage }) : '', p5: Math.round(state.health), label: tier.label, mult }),
+    { kind: 'settle', title: tl('ui.086'), reward: { text: tl('sim.097', { p0: dG >= 0 ? '+' : '', deltaG: settlement.deltaG }), tone: dG >= 0 ? 'blue' : 'red' }, time: '' },
   );
   // The next day starts drifting from this moment.
   if (!state.over) state.flow = newFlow(state, addDays(date, 1), nowMs, 0);
@@ -1044,7 +1045,7 @@ export function dailySummaryText(s: Pick<Settlement, 'day'>): string {
   const d = s.day;
   if (!d) return '';
   const f = (v: number) => (Math.abs(v) < 0.05 ? '±0' : sgn(r1(v)));
-  return `今日：健康 ${f(d.dH)}、水分 ${f(d.dW)}、養分 ${f(d.dN)}、鞏固度 ${f(d.dR)}。`;
+  return tl('sim.098', { p0: f(d.dH), p1: f(d.dW), p2: f(d.dN), p3: f(d.dR) });
 }
 
 function rWindOf(state: GameState, flow: DayFlow): number {
@@ -1085,10 +1086,10 @@ export function checkMilestones(state: GameState, date: string, opts: { retro?: 
     const award: MilestoneAward = { id: m.id, tier, date, ageDays: opts.retro ? state.ageDays : m.days, heightCm: state.heightCm, share: r1(share * 1000) / 1000, ...(opts.retro ? { retro: true } : {}), ...(perk ? { perk } : {}) };
     state.milestones[m.id] = award;
     got.push(award);
-    addLog(state, date, `${state.treeName}樹齡${m.label}！高 ${formatHeight(state.heightCm)}，係紀錄高度嘅 ${Math.round(share * 100)}%，攞到${MILESTONE_TIER_LABEL[tier]}章。${opts.retro ? '（v14 補發）' : ''}`, {
+    addLog(state, date, tl('sim.100', { treeName: state.treeName, label: m.label, p2: formatHeight(state.heightCm), p3: Math.round(share * 100), p4: MILESTONE_TIER_LABEL[tier], p5: opts.retro ? tl('sim.099') : '' }), {
       kind: 'badge',
-      title: `樹齡${m.label}`,
-      reward: { text: `${MILESTONE_TIER_LABEL[tier]}章`, tone: 'purple' },
+      title: tl('sim.101', { label: m.label }),
+      reward: { text: tl('sim.102', { p0: MILESTONE_TIER_LABEL[tier] }), tone: 'purple' },
       time,
     });
   }
@@ -1097,7 +1098,7 @@ export function checkMilestones(state: GameState, date: string, opts: { retro?: 
     state.milestones.record = award;
     state.passedTargetOn ??= date;
     got.push(award);
-    addLog(state, date, `${state.treeName}長到 ${formatHeight(state.heightCm)}，超越咗${speciesDef(state.species).name}嘅世界紀錄（${formatHeight(R)}）！冇上限，繼續長。`, {
+    addLog(state, date, tl('sim.103', { treeName: state.treeName, p1: formatHeight(state.heightCm), p2: speciesDef(state.species).name, p3: formatHeight(R) }), {
       kind: 'badge',
       title: RECORD_MILESTONE.label,
       reward: { text: formatHeight(state.heightCm), tone: 'purple' },
@@ -1180,10 +1181,10 @@ export function checkWeatherAchievements(state: GameState, date: string, night: 
     wx.awards[id] = award;
     got.push(award);
     const copy = weatherAchievementCopy(id);
-    addLog(state, date, `${state.treeName}達成「${copy.title}」。`, {
+    addLog(state, date, tl('sim.104', { treeName: state.treeName, title: copy.title }), {
       kind: 'badge',
       title: copy.title,
-      reward: { text: '成就', tone: 'purple' },
+      reward: { text: tl('ui.192'), tone: 'purple' },
       time: '',
     });
   }
@@ -1229,8 +1230,8 @@ function noteStage(state: GameState, beforeCm: number, date: string, time = ''):
   const before = stageFor(beforeCm, target);
   const after = stageFor(state.heightCm, target);
   if (before.id === after.id || state.heightCm < beforeCm) return null;
-  addLog(state, date, `棵樹長成${after.name}，高 ${formatHeight(state.heightCm)}。`, { kind: 'stage', title: '進入新階段', reward: { text: after.name, tone: 'blue' }, time });
-  return `棵樹進入新階段：${after.name}。`;
+  addLog(state, date, tl('sim.105', { name: after.name, p1: formatHeight(state.heightCm) }), { kind: 'stage', title: tl('ui.173'), reward: { text: after.name, tone: 'blue' }, time });
+  return tl('sim.106', { name: after.name });
 }
 
 /**
@@ -1242,10 +1243,10 @@ export function checkWindUnlock(state: GameState, date: string, time = ''): bool
   if (state.heightCm < windStageCm(state)) return false;
   state.windUnlocked = true;
   state.windExplained = false;
-  addLog(state, date, `棵樹長成${STAGE_NAMES[WIND_UNLOCK_STAGE]}：加固解鎖，抗風力開始生效（每晚 −${R_DAILY_DECAY}，風災會消耗），風災開始會傷樹，抗風力太低仲會倒塌。`, {
+  addLog(state, date, tl('sim.107', { p0: STAGE_NAMES[WIND_UNLOCK_STAGE], R_DAILY_DECAY }), {
     kind: 'unlock',
-    title: '風災同加固解鎖',
-    reward: { text: '加固解鎖', tone: 'orange' },
+    title: tl('ui.182'),
+    reward: { text: tl('sim.108'), tone: 'orange' },
     time,
   });
   return true;
@@ -1287,21 +1288,21 @@ export function actionLimit(state: GameState, action: CareAction): { used: numbe
 }
 
 export function performAction(state: GameState, action: CareAction): ActionResult {
-  if (state.over) return { ok: false, message: '呢局已經完結。' };
+  if (state.over) return { ok: false, message: tl('sim.109') };
   const lim = actionLimit(state, action);
-  if (lim.used >= lim.max) return { ok: false, message: '今日做夠喇，聽日再嚟。' };
+  if (lim.used >= lim.max) return { ok: false, message: tl('sim.110') };
   let message = '';
   let reward: LogReward;
-  const title = { water: '已澆水', fertilize: '已施肥', deworm: '已除蟲', drain: '已疏水' }[action];
+  const title = { water: tl('ui.167'), fertilize: tl('ui.168'), deworm: tl('ui.169'), drain: tl('ui.170') }[action];
   if (action === 'water') {
     // Saturated soil: watering does nothing and does not use up one of today's turns.
-    if (state.moisture >= W_SATURATED) return { ok: false, message: '水分去到 100，今日唔使再澆。水分跌咗先可以再澆。' };
+    if (state.moisture >= W_SATURATED) return { ok: false, message: tl('sim.111') };
     state.care.water += 1;
     const before = state.moisture;
     state.moisture = waterAdd(before, CARE.water.amount);
     const got = r1(state.moisture - before);
-    message = state.moisture >= W_SATURATED ? `泥土飽和喇，水分 ${Math.round(state.moisture)}。再多就會爛根。` : `水滲入泥度，水分 ${Math.round(state.moisture)}。`;
-    reward = { text: `+${got} 水分`, tone: 'blue' };
+    message = state.moisture >= W_SATURATED ? tl('sim.112', { p0: Math.round(state.moisture) }) : tl('sim.113', { p0: Math.round(state.moisture) });
+    reward = { text: tl('sim.114', { got }), tone: 'blue' };
   } else if (action === 'drain') {
     state.care.drain += 1;
     const before = state.moisture;
@@ -1309,27 +1310,27 @@ export function performAction(state: GameState, action: CareAction): ActionResul
     const got = r1(state.moisture - before);
     message =
       state.moisture > W_SATURATED
-        ? `疏走咗啲水，水分 ${Math.round(state.moisture)}，仲係爛根區，可以再疏。`
+        ? tl('sim.115', { p0: Math.round(state.moisture) })
         : state.moisture < W_OPTIMAL[0]
-          ? `疏走咗啲水，水分 ${Math.round(state.moisture)}，有啲乾喇。`
-          : `開咗排水溝，泥土透返氣，水分 ${Math.round(state.moisture)}。`;
-    reward = { text: `${got} 水分`, tone: 'blue' };
+          ? tl('sim.116', { p0: Math.round(state.moisture) })
+          : tl('sim.117', { p0: Math.round(state.moisture) });
+    reward = { text: tl('sim.118', { got }), tone: 'blue' };
   } else if (action === 'fertilize') {
     state.care.fertilize += 1;
     state.nutrients = clamp100(state.nutrients + CARE.fertilize.amount);
-    message = `養分滲入泥度，養分 ${Math.round(state.nutrients)}。`;
-    reward = { text: `+${CARE.fertilize.amount} 養分`, tone: 'green' };
+    message = tl('sim.119', { p0: Math.round(state.nutrients) });
+    reward = { text: tl('sim.120', { amount: CARE.fertilize.amount }), tone: 'green' };
   } else {
     state.care.dewormed = true;
     if (state.pest.active) {
       state.pest = { active: false, lowNDays: 0, wetDays: 0, since: null };
-      message = '用咗除蟲道具，蟲害清除咗。';
-      reward = { text: '清除蟲害', tone: 'green' };
+      message = tl('sim.121');
+      reward = { text: tl('sim.122'), tone: 'green' };
     } else {
       state.pest.lowNDays = 0;
       state.pest.wetDays = 0;
-      message = '冇蟲，不過你預防咗一次，計數重新開始。';
-      reward = { text: '預防', tone: 'green' };
+      message = tl('sim.123');
+      reward = { text: tl('ui.214'), tone: 'green' };
     }
   }
   if (!state.care.credited) {
@@ -1340,7 +1341,7 @@ export function performAction(state: GameState, action: CareAction): ActionResul
   const rescue = checkRescue(state);
   if (rescue) message = `${message} ${rescue}`;
   const animals = refreshUnlocks(state, { date: state.care.date });
-  if (animals.length) message = `${message} ${animals.map((id) => ANIMALS.find((a) => a.id === id)?.name ?? id).join('、')}嚟咗。`;
+  if (animals.length) message = tl('sim.124', { message, p1: animals.map((id) => ANIMALS.find((a) => a.id === id)?.name ?? id).join(tl('ui.206')) });
   return { ok: true, message };
 }
 
@@ -1350,15 +1351,15 @@ export function checkRescue(state: GameState): string | null {
   if (!inBand(state.moisture, W_OPTIMAL) || state.nutrients < N_OPTIMAL[0]) return null;
   state.dying = null;
   state.health = RESCUE_HEALTH;
-  addLog(state, state.care.date, `水分同養分都返到最佳範圍，棵樹救返喇（健康度 ${RESCUE_HEALTH}）。`, { kind: 'grow', title: '救返', reward: { text: `健康 ${RESCUE_HEALTH}`, tone: 'green' } });
-  return '棵樹救返喇！';
+  addLog(state, state.care.date, tl('sim.125', { RESCUE_HEALTH }), { kind: 'grow', title: tl('sim.079'), reward: { text: tl('sim.126', { RESCUE_HEALTH }), tone: 'green' } });
+  return tl('sim.127');
 }
 
 export function reinforce(state: GameState, prep: PrepId): ActionResult {
-  if (state.over) return { ok: false, message: '呢局已經完結。' };
-  if (!state.windUnlocked) return { ok: false, message: `加固要等棵樹長到${STAGE_NAMES[WIND_UNLOCK_STAGE]}先解鎖。之前風災唔會傷到佢。` };
-  if (state.care.preps[prep]) return { ok: false, message: `今日${PREPS[prep].label}過喇。` };
-  if (state.resist >= R_MAX) return { ok: false, message: '抗風力已經滿咗。' };
+  if (state.over) return { ok: false, message: tl('sim.109') };
+  if (!state.windUnlocked) return { ok: false, message: tl('sim.128', { p0: STAGE_NAMES[WIND_UNLOCK_STAGE] }) };
+  if (state.care.preps[prep]) return { ok: false, message: tl('sim.129', { p0: PREPS[prep].label }) };
+  if (state.resist >= R_MAX) return { ok: false, message: tl('sim.130') };
   state.care.preps[prep] = true;
   const before = state.resist;
   const double = doubleRActive(state);
@@ -1368,8 +1369,8 @@ export function reinforce(state: GameState, prep: PrepId): ActionResult {
     state.daysCared += 1;
     state.care.credited = true;
   }
-  addLog(state, state.care.date, `${PREPS[prep].label}${double ? '（倒塌後雙倍）' : ''}，抗風力 ${Math.round(before)} → ${Math.round(state.resist)}。`, { kind: 'reinforce', title: '已加固', reward: { text: `+${gain} 抗風力`, tone: 'orange' } });
-  return { ok: true, message: `${PREPS[prep].label}${double ? '（雙倍）' : ''}：抗風力 +${gain}（而家 ${Math.round(state.resist)}）。` };
+  addLog(state, state.care.date, tl('sim.132', { p0: PREPS[prep].label, p1: double ? tl('sim.131') : '', p2: Math.round(before), p3: Math.round(state.resist) }), { kind: 'reinforce', title: tl('ui.171'), reward: { text: tl('sim.133', { gain }), tone: 'orange' } });
+  return { ok: true, message: tl('sim.135', { p0: PREPS[prep].label, p1: double ? tl('sim.134') : '', gain, p3: Math.round(state.resist) }) };
 }
 
 /* ---------- v13 應急行動 ---------- */
@@ -1387,36 +1388,36 @@ export function emergencyOptions(events: readonly WeatherEventId[]): { heatWater
  * Doing it that day cancels the category's damage and earns 應急獎勵 at settlement.
  */
 export function performEmergency(state: GameState, action: EmergencyAction, events: readonly WeatherEventId[]): ActionResult {
-  if (state.over) return { ok: false, message: '呢局已經完結。' };
+  if (state.over) return { ok: false, message: tl('sim.109') };
   const opts = emergencyOptions(events);
   const name = emergencyName(action);
   if (!opts[action])
     return {
       ok: false,
-      message: action === 'heatWater' ? '今日冇酷熱警告，唔使做酷熱澆水。' : action === 'warmCover' ? '今日冇寒冷警告，唔使做保暖。' : regionalize('今日冇暴雨／黑雨警告，唔使做暴雨疏水。'),
+      message: action === 'heatWater' ? tl('sim.136') : action === 'warmCover' ? tl('sim.137') : regionalize(tl('sim.138')),
     };
-  if (state.care[action]) return { ok: false, message: `今日做咗${name}喇。` };
+  if (state.care[action]) return { ok: false, message: tl('sim.139', { name }) };
   state.care[action] = true;
   const before = state.moisture;
   let message: string;
   if (action === 'heatWater') {
     state.moisture = before < W_SATURATED ? Math.min(W_SATURATED, r1(before + EMERGENCY.heatWater.amount)) : before;
     const got = r1(state.moisture - before);
-    message = got > 0 ? `酷熱澆水：水分 +${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因酷熱扣健康，仲有應急獎勵。` : `酷熱澆水：泥土已經飽和，冇加水，不過都算做咗。今晚唔會因酷熱扣健康，仲有應急獎勵。`;
+    message = got > 0 ? tl('sim.140', { got, p1: Math.round(state.moisture) }) : tl('sim.141');
   } else if (action === 'warmCover') {
-    message = '保暖：喺樹根周圍鋪好覆蓋物（樹皮、乾樹葉、稻草、木屑），保持土溫，防止根部凍傷。今晚唔會因寒冷扣健康，仲有應急獎勵。';
+    message = tl('sim.142');
   } else {
     const floor = EMERGENCY.rainDrain.floor;
     state.moisture = before > floor ? Math.max(floor, r1(before + EMERGENCY.rainDrain.amount)) : before;
     const got = r1(state.moisture - before);
-    message = regionalize(got < 0 ? `暴雨疏水：水分 ${got}（而家 ${Math.round(state.moisture)}）。今晚唔會因暴雨扣健康，仲有應急獎勵。` : `暴雨疏水：水分已經唔高過 ${floor}，冇疏走水，不過都算做咗。今晚唔會因暴雨扣健康，仲有應急獎勵。`);
+    message = regionalize(got < 0 ? tl('sim.143', { got, p1: Math.round(state.moisture) }) : tl('sim.144', { floor }));
   }
   if (!state.care.credited) {
     state.daysCared += 1;
     state.care.credited = true;
   }
   const delta = r1(state.moisture - before);
-  addLog(state, state.care.date, message, { kind: 'emergency', title: name, reward: { text: delta ? `${sgn(delta)} 水分` : '已應對', tone: action === 'warmCover' ? 'purple' : 'blue' } });
+  addLog(state, state.care.date, message, { kind: 'emergency', title: name, reward: { text: delta ? tl('sim.023', { p0: sgn(delta) }) : tl('ui.221'), tone: action === 'warmCover' ? 'purple' : 'blue' } });
   const rescue = checkRescue(state);
   if (rescue) message = `${message} ${rescue}`;
   return { ok: true, message };
@@ -1450,7 +1451,7 @@ export function refreshUnlocks(state: GameState, opts: { date: string; events?: 
     if (animal.minAgeDays && (state.ageDays || 0) < animal.minAgeDays) continue;
     state.animals.push(animal.id);
     got.push(animal.id);
-    addLog(state, opts.date, `${animal.name}嚟咗，${animal.about}`, { kind: 'animal', title: '新朋友來訪', reward: { text: '+1 圖鑑', tone: 'purple' } });
+    addLog(state, opts.date, tl('sim.145', { name: animal.name, about: animal.about }), { kind: 'animal', title: tl('ui.172'), reward: { text: tl('sim.146'), tone: 'purple' } });
   }
   return got;
 }
@@ -1459,7 +1460,7 @@ export function triggerPest(state: GameState, date: string): void {
   state.pest.active = true;
   state.pest.since = date;
   const dmg = pestDamageWith(state.residents.length);
-  addLog(state, date, `葉底生咗蟲。每晚會扣 ${dmg} 健康度，要用除蟲處理。`, { kind: 'pest', title: '蟲害', reward: { text: `-${dmg}/日`, tone: 'red' } });
+  addLog(state, date, tl('sim.147', { dmg }), { kind: 'pest', title: tl('ui.068'), reward: { text: tl('sim.068', { dmg }), tone: 'red' } });
 }
 
 /* ---------- Day changes ---------- */
@@ -1519,7 +1520,7 @@ export function catchUp(
     eventText = ensureToday(state, today);
     animals = refreshUnlocks(state, { date: today, events: [...(settlements.at(-1)?.events ?? []), ...eventsFor(today)] });
     if (gap === 1) state.morningNote = nightNote(settlements[0]);
-    else if (gap > 1) state.morningNote = `你離開咗 ${gap} 日。健康 ${Math.round(healthBefore)} → ${Math.round(state.health)}，高度 ${growthCm >= 0 ? '+' : ''}${growthCm.toFixed(1)} 厘米。`;
+    else if (gap > 1) state.morningNote = tl('sim.148', { gap, p1: Math.round(healthBefore), p2: Math.round(state.health), p3: growthCm >= 0 ? '+' : '', p4: growthCm.toFixed(1) });
     if (messages.length && gap > 0) state.morningNote = `${state.morningNote ?? ''} ${messages.join(' ')}`.trim();
   }
   return { daysPassed: Math.max(0, gap), growthCm, healthBefore, healthAfter: state.health, messages, eventText, animals, settlements, over: Boolean(state.over), milestones };
@@ -1527,7 +1528,7 @@ export function catchUp(
 
 function nightNote(s: Settlement | undefined): string {
   if (!s) return '';
-  return `昨日總結：${s.day ? dailySummaryText(s).replace(/^今日：/, '') : `健康 ${Math.round(s.hBefore)} → ${Math.round(s.hAfter)}。`}${eventLabel(s.event)}，高度 ${s.deltaG >= 0 ? '+' : ''}${s.deltaG} 厘米。`;
+  return tl('sim.150', { p0: s.day ? dailySummaryText(s).replace(/^今日：/, '') : tl('sim.149', { p0: Math.round(s.hBefore), p1: Math.round(s.hAfter) }), p1: eventLabel(s.event), p2: s.deltaG >= 0 ? '+' : '', deltaG: s.deltaG });
 }
 
 /** Developer: settle today now and move to tomorrow. */
@@ -1565,33 +1566,33 @@ export function advanceVirtualDay(state: GameState, today: string, events: Weath
 
 /** One line of advice, consistent with the 今晚預計 preview (same NightPlan). */
 export function advice(state: GameState, plan: NightPlan, countdown: { event: WeatherEventId; hours: number } | null): string {
-  if (state.dying) return `瀕死！將水分調到 ${W_OPTIMAL[0]}–${W_OPTIMAL[1]}、養分 ${N_OPTIMAL[0]} 以上就即刻救得返。`;
+  if (state.dying) return tl('sim.151', { p0: W_OPTIMAL[0], p1: W_OPTIMAL[1], p2: N_OPTIMAL[0] });
   if (plan.collapse) {
     const c = plan.collapse;
     const label = eventLabel(c.event);
-    if (c.fatal && !c.revive) return `危險！抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚再倒塌棵樹就會死！即刻加固。`;
-    return `抗風力 ${Math.round(c.r)} 低過${label}門檻 ${c.threshold}，今晚會倒塌（高度 −20%）。快啲加固到 ${c.threshold} 或以上。`;
+    if (c.fatal && !c.revive) return tl('sim.152', { p0: Math.round(c.r), label, threshold: c.threshold });
+    return tl('sim.153', { p0: Math.round(c.r), label, threshold: c.threshold });
   }
-  if (state.pest.active) return `生咗蟲，每晚扣 ${pestDamageWith(state.residents.length)} 健康度，快啲除蟲。`;
-  if (plan.waterDeath) return `今晚水分會去到 ${W_MAX}，棵樹會即刻瀕死！快啲疏水。`;
-  if (plan.heat && !plan.heat.handled) return `${eventLabel('hot')}生效：做「酷熱澆水」（額外一次）就唔會扣 ${plan.heat.base} 健康，仲有應急獎勵 +3。`;
-  if (plan.cold && !plan.cold.handled) return `寒冷警告生效：做「保暖」（喺樹根周圍鋪覆蓋物，每日一次）就唔會扣 ${plan.cold.base} 健康，仲有應急獎勵 +3。`;
-  if (plan.rain && !plan.rain.handled) return `${eventLabel(plan.rain.event)}警告生效：做「${emergencyName('rainDrain')}」（額外一次）就唔會扣 ${plan.rain.base} 健康，仲有應急獎勵 +3。`;
+  if (state.pest.active) return tl('sim.154', { p0: pestDamageWith(state.residents.length) });
+  if (plan.waterDeath) return tl('sim.155', { W_MAX });
+  if (plan.heat && !plan.heat.handled) return tl('sim.156', { p0: eventLabel('hot'), base: plan.heat.base });
+  if (plan.cold && !plan.cold.handled) return tl('sim.157', { base: plan.cold.base });
+  if (plan.rain && !plan.rain.handled) return tl('sim.158', { p0: eventLabel(plan.rain.event), p1: emergencyName('rainDrain'), base: plan.rain.base });
   if (countdown && WEATHER_EVENTS[countdown.event].category === 'wind') {
     const def = { ...WEATHER_EVENTS[countdown.event], label: eventLabel(countdown.event) };
-    if (!state.windUnlocked) return `${def.label}就嚟，不過棵樹未到${STAGE_NAMES[WIND_UNLOCK_STAGE]}，風災唔會傷到佢。照顧好水分同養分就得。`;
-    if (state.resist < (def.collapseBelow ?? 0)) return `${def.label}就嚟：抗風力 ${Math.round(state.resist)} 低過倒塌門檻 ${def.collapseBelow}，快啲加固！`;
-    if (state.resist < 60) return `${def.label}就嚟，先加固推高抗風力（而家 ${Math.round(state.resist)}）。`;
+    if (!state.windUnlocked) return tl('sim.159', { label: def.label, p1: STAGE_NAMES[WIND_UNLOCK_STAGE] });
+    if (state.resist < (def.collapseBelow ?? 0)) return tl('sim.160', { label: def.label, p1: Math.round(state.resist), collapseBelow: def.collapseBelow });
+    if (state.resist < 60) return tl('sim.161', { label: def.label, p1: Math.round(state.resist) });
   }
   if (countdown && countdown.hours > 0 && (countdown.event === 'rainstorm' || countdown.event === 'blackrain')) {
     const hit = rainAdd(state.moisture, WEATHER_EVENTS[countdown.event].dW, RAIN_OVER_CAP.heavy);
-    if (hit > W_SATURATED) return `${eventLabel(countdown.event)}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
+    if (hit > W_SATURATED) return tl('sim.162', { p0: eventLabel(countdown.event), p1: Math.round(hit), W_SATURATED });
   }
-  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel} ${sgn(plan.wScore)}。疏水返到 ${W_SATURATED} 以下。`;
-  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱 ${sgn(plan.wScore)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
-  if (plan.nAfter < N_OPTIMAL[0]) return `養分今晚會跌到 ${Math.round(plan.nAfter)}，低過 ${N_OPTIMAL[0]}，可以施肥。`;
-  if (state.windUnlocked && state.resist < 40) return `有空可以加固：抗風力低過 40，${eventLabel('typhoon8')}一嚟就會倒塌。`;
-  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，今晚會健康咁長高。`;
+  if (plan.wAfter > W_SATURATED) return tl('sim.163', { p0: Math.round(plan.wAfter), wLabel: plan.wLabel, p2: sgn(plan.wScore), W_SATURATED });
+  if (plan.wAfter < W_OPTIMAL[0]) return tl('sim.164', { p0: Math.round(plan.wAfter), p1: sgn(plan.wScore), W_SATURATED });
+  if (plan.nAfter < N_OPTIMAL[0]) return tl('sim.165', { p0: Math.round(plan.nAfter), p1: N_OPTIMAL[0] });
+  if (state.windUnlocked && state.resist < 40) return tl('sim.166', { p0: eventLabel('typhoon8') });
+  return tl('sim.167', { p0: Math.round(plan.wAfter) });
 }
 
 export function dayNumber(state: GameState, today: string): number {

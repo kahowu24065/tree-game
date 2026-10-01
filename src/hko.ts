@@ -3,6 +3,7 @@
  * Sends `Access-Control-Allow-Origin: *`, so the browser can call it directly.
  */
 import type { StormKind } from './types';
+import { t as tl } from './i18n';
 
 const BASE = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php';
 
@@ -53,25 +54,25 @@ export interface HkoData {
 }
 
 const TC_NAME: Record<string, string> = {
-  TC1: '一號戒備信號',
-  TC3: '三號強風信號',
-  TC8NE: '八號東北烈風或暴風信號',
-  TC8SE: '八號東南烈風或暴風信號',
-  TC8NW: '八號西北烈風或暴風信號',
-  TC8SW: '八號西南烈風或暴風信號',
-  TC9: '九號烈風或暴風風力增強信號',
-  TC10: '十號颶風信號',
+  TC1: tl('hko.001'),
+  TC3: tl('hko.002'),
+  TC8NE: tl('hko.003'),
+  TC8SE: tl('hko.004'),
+  TC8NW: tl('hko.005'),
+  TC8SW: tl('hko.006'),
+  TC9: tl('hko.007'),
+  TC10: tl('hko.008'),
 };
 
 const TC_SHORT: Record<string, string> = {
-  TC1: '一號風球',
-  TC3: '三號風球',
-  TC8NE: '八號東北風球',
-  TC8SE: '八號東南風球',
-  TC8NW: '八號西北風球',
-  TC8SW: '八號西南風球',
-  TC9: '九號風球',
-  TC10: '十號風球',
+  TC1: tl('hko.009'),
+  TC3: tl('hko.010'),
+  TC8NE: tl('hko.011'),
+  TC8SE: tl('hko.012'),
+  TC8NW: tl('hko.013'),
+  TC8SW: tl('hko.014'),
+  TC9: tl('hko.015'),
+  TC10: tl('hko.016'),
 };
 
 /** What the warning card shows. The signal stays specific; the game grade is chosen separately. */
@@ -84,29 +85,29 @@ export function warningDisplay(w: HkoWarning): string {
 export function mapWarning(group: string, raw: { code?: string; name?: string; type?: string; actionCode?: string; issueTime?: string }): HkoWarning | null {
   if (!raw || raw.actionCode === 'CANCEL') return null;
   const code = raw.code || group;
-  const name = group === 'WTCSGNL' ? (TC_NAME[code] ?? raw.name ?? '熱帶氣旋警告信號') : `${raw.type ?? ''}${raw.name ?? code}`;
+  const name = group === 'WTCSGNL' ? (TC_NAME[code] ?? raw.name ?? tl('hko.017')) : `${raw.type ?? ''}${raw.name ?? code}`;
   const base = { group, code, name, issued: raw.issueTime ?? '', standby: false } as const;
   if (group === 'WTCSGNL') {
-    const short = TC_SHORT[code] ?? '熱帶氣旋警告';
+    const short = TC_SHORT[code] ?? tl('hko.018');
     if (code === 'TC1') return { ...base, short, kind: null, standby: true, tone: 'yellow' };
     if (code === 'TC3') return { ...base, short, kind: 'gale', tone: 'amber' };
     return { ...base, short, kind: 'typhoon', tone: 'red' };
   }
   if (group === 'WRAIN') {
-    if (code === 'WRAINA') return { ...base, name: '黃色暴雨警告信號', short: '黃雨', kind: 'heavy-rain', tone: 'amber' };
-    if (code === 'WRAINR') return { ...base, name: '紅色暴雨警告信號', short: '紅雨', kind: 'heavy-rain', tone: 'red' };
-    if (code === 'WRAINB') return { ...base, name: '黑色暴雨警告信號', short: '黑雨', kind: 'heavy-rain', tone: 'black' };
-    return { ...base, short: '暴雨警告', kind: 'heavy-rain', tone: 'amber' };
+    if (code === 'WRAINA') return { ...base, name: tl('hko.019'), short: tl('hko.020'), kind: 'heavy-rain', tone: 'amber' };
+    if (code === 'WRAINR') return { ...base, name: tl('hko.021'), short: tl('hko.022'), kind: 'heavy-rain', tone: 'red' };
+    if (code === 'WRAINB') return { ...base, name: tl('hko.023'), short: tl('guide.139'), kind: 'heavy-rain', tone: 'black' };
+    return { ...base, short: tl('sim.008'), kind: 'heavy-rain', tone: 'amber' };
   }
-  if (group === 'WMSGNL') return { ...base, short: '強烈季候風', kind: 'gale', tone: 'amber' };
-  if (group === 'WHOT') return { ...base, short: '酷熱天氣警告', kind: null, tone: 'red' };
-  if (group === 'WCOLD') return { ...base, short: '寒冷', kind: null, tone: 'blue' };
-  if (group === 'WTS') return { ...base, short: '雷暴', kind: null, tone: 'yellow' };
-  if (group === 'WFIRE') return { ...base, short: code === 'WFIRER' ? '紅色火災' : '黃色火災', kind: null, tone: code === 'WFIRER' ? 'red' : 'yellow' };
-  if (group === 'WFNTSA') return { ...base, short: '新界北水浸', kind: null, tone: 'blue' };
-  if (group === 'WL') return { ...base, short: '山泥傾瀉', kind: null, tone: 'amber' };
-  if (group === 'WFROST') return { ...base, short: '霜凍', kind: null, tone: 'blue' };
-  if (group === 'WTMW') return { ...base, short: '海嘯', kind: null, tone: 'red' };
+  if (group === 'WMSGNL') return { ...base, short: tl('hko.024'), kind: 'gale', tone: 'amber' };
+  if (group === 'WHOT') return { ...base, short: tl('guide.133'), kind: null, tone: 'red' };
+  if (group === 'WCOLD') return { ...base, short: tl('balance.010'), kind: null, tone: 'blue' };
+  if (group === 'WTS') return { ...base, short: tl('weather.011'), kind: null, tone: 'yellow' };
+  if (group === 'WFIRE') return { ...base, short: code === 'WFIRER' ? tl('hko.025') : tl('hko.026'), kind: null, tone: code === 'WFIRER' ? 'red' : 'yellow' };
+  if (group === 'WFNTSA') return { ...base, short: tl('hko.027'), kind: null, tone: 'blue' };
+  if (group === 'WL') return { ...base, short: tl('balance.017'), kind: null, tone: 'amber' };
+  if (group === 'WFROST') return { ...base, short: tl('hko.028'), kind: null, tone: 'blue' };
+  if (group === 'WTMW') return { ...base, short: tl('hko.029'), kind: null, tone: 'red' };
   return { ...base, short: raw.name ?? code, kind: null, tone: 'gray' };
 }
 
@@ -145,11 +146,11 @@ export function hkoIconToWmo(icon: number): number {
 
 /** Official HKO wording for each weather icon (https://www.hko.gov.hk/tc/textonly/explain/wxicon.htm). */
 const HKO_ICON_LABELS: Record<number, string> = {
-  50: '陽光充沛', 51: '間有陽光', 52: '短暫陽光', 53: '間有陽光 幾陣驟雨', 54: '短暫陽光 有驟雨',
-  60: '多雲', 61: '密雲', 62: '微雨', 63: '雨', 64: '大雨', 65: '雷暴',
-  70: '天色良好', 71: '天色良好', 72: '天色良好', 73: '天色良好', 74: '天色良好', 75: '天色良好', 76: '大致多雲', 77: '天色大致良好',
-  80: '大風', 81: '乾燥', 82: '潮濕', 83: '霧', 84: '薄霧', 85: '煙霞',
-  90: '熱', 91: '暖', 92: '涼', 93: '冷',
+  50: tl('hko.030'), 51: tl('weather.004'), 52: tl('hko.031'), 53: tl('hko.032'), 54: tl('hko.033'),
+  60: tl('weather.013'), 61: tl('hko.034'), 62: tl('weather.007'), 63: tl('guide.100'), 64: tl('balance.044'), 65: tl('weather.011'),
+  70: tl('hko.035'), 71: tl('hko.035'), 72: tl('hko.035'), 73: tl('hko.035'), 74: tl('hko.035'), 75: tl('hko.035'), 76: tl('weather.015'), 77: tl('hko.036'),
+  80: tl('hko.037'), 81: tl('hko.038'), 82: tl('hko.039'), 83: tl('habitat.022'), 84: tl('hko.040'), 85: tl('hko.041'),
+  90: tl('guide.097'), 91: tl('hko.042'), 92: tl('hko.043'), 93: tl('hko.044'),
 };
 
 export function hkoIconLabel(icon: number): string {
@@ -280,14 +281,14 @@ async function getJson(dataType: string, timeoutMs: number): Promise<unknown> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(`${BASE}?dataType=${dataType}&lang=tc`, { signal: timeoutSignal(timeoutMs) });
-      if (!res.ok) throw new Error(`天文台回應 ${res.status}`);
+      if (!res.ok) throw new Error(tl('hko.045', { status: res.status }));
       const text = await res.text();
       return JSON.parse(text) as unknown;
     } catch (err) {
       last = err;
     }
   }
-  throw last instanceof Error ? last : new Error('天文台資料暫時攞唔到');
+  throw last instanceof Error ? last : new Error(tl('hko.046'));
 }
 
 export function timeoutSignal(ms: number): AbortSignal | undefined {
@@ -316,7 +317,7 @@ export async function fetchHko(lat: number, lon: number, timeoutMs = 8000): Prom
   const warn = await loadOne('warnsum', timeoutMs);
   const now = await loadOne('rhrread', timeoutMs);
   const fnd = await loadOne('fnd', timeoutMs);
-  if (!warn.ok && !now.ok && !fnd.ok) throw new Error('天文台資料暫時攞唔到');
+  if (!warn.ok && !now.ok && !fnd.ok) throw new Error(tl('hko.046'));
   const rh = now.ok ? parseRhrread(now.value, lat, lon) : null;
   const f = fnd.ok ? parseFnd(fnd.value) : { forecast: [], situation: '' };
   return {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import zhHK from '../src/i18n/zh-HK';
 import { describe, expect, it } from 'vitest';
 import { WEATHER_EVENTS } from '../src/balance';
 import { campfireNightK, campfireSpot, mulchLaid, mulchRadii } from '../src/campfire';
@@ -43,7 +44,8 @@ describe('v15.2 保暖 = 根部覆蓋物', () => {
     expect(WEATHER_EVENTS.cold.tip).toContain('5–10 厘米');
     expect(WEATHER_EVENTS.cold.tip).toContain('樹皮、乾樹葉、稻草或木屑');
     const ui = fs.readFileSync(path.resolve(__dirname, '../src/ui.ts'), 'utf8');
-    expect(ui).toContain('防止根部凍傷');
+    // v1.4.19: UI text lives in the locale tables.
+    expect(Object.values(zhHK).join('\n')).toContain('防止根部凍傷');
     expect(ui).toContain("icon('mulch')");
     expect(ui).not.toContain("icon('campfire')");
   });

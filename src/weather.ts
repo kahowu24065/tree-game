@@ -5,6 +5,7 @@ import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeou
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } from './types';
 import { isNative } from './native/platform';
 import { nativePosition } from './native/location';
+import { t as tl } from './i18n';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
@@ -98,7 +99,7 @@ export function describePlace(lat: number, lon: number, timezone: string): strin
   if (inMacau(lat, lon) || timezone === 'Asia/Macau') return '澳門';
   if (inHongKong(lat, lon) || timezone === 'Asia/Hong_Kong') return '香港';
   const city = timezone.split('/').pop()?.replaceAll('_', ' ');
-  return city || '當地';
+  return city || tl('weather.001');
 }
 
 export function isRainCode(code: number): boolean {
@@ -111,19 +112,19 @@ export function isSnowCode(code: number): boolean {
 }
 
 export function weatherLabel(code: number): string {
-  if (code === 0) return '天晴';
-  if (code === 1) return '大致天晴';
-  if (code === 2) return '間有陽光';
-  if (code === 3) return '陰天';
-  if (code === 45 || code === 48) return '有霧';
-  if (code >= 51 && code <= 55) return '微雨';
-  if (code === 61 || code === 80) return '小雨';
-  if (code === 63 || code === 81) return '中雨';
-  if (code === 65 || code === 82) return '大雨';
-  if (isSnowCode(code)) return '落雪';
-  if (code >= 95) return '雷暴';
-  if (isRainCode(code)) return '有雨';
-  return '多雲';
+  if (code === 0) return tl('weather.002');
+  if (code === 1) return tl('weather.003');
+  if (code === 2) return tl('weather.004');
+  if (code === 3) return tl('weather.005');
+  if (code === 45 || code === 48) return tl('weather.006');
+  if (code >= 51 && code <= 55) return tl('weather.007');
+  if (code === 61 || code === 80) return tl('weather.008');
+  if (code === 63 || code === 81) return tl('weather.009');
+  if (code === 65 || code === 82) return tl('balance.044');
+  if (isSnowCode(code)) return tl('weather.010');
+  if (code >= 95) return tl('weather.011');
+  if (isRainCode(code)) return tl('weather.012');
+  return tl('weather.013');
 }
 
 /**
@@ -131,10 +132,10 @@ export function weatherLabel(code: number): string {
  * Open-Meteo 「間有陽光」 speak of sunshine; after dark the art is already a moon, so the text follows it.
  */
 const NIGHT_WORDS: [RegExp, string][] = [
-  [/^陽光充沛/, '天晴'],
-  [/^間有陽光/, '天晴間有雲'],
-  [/^短暫陽光/, '大致多雲'],
-  [/^陽光/, '天晴'],
+  [/^陽光充沛/, tl('weather.002')],
+  [/^間有陽光/, tl('weather.014')],
+  [/^短暫陽光/, tl('weather.015')],
+  [/^陽光/, tl('weather.002')],
 ];
 export function nightLabel(label: string, night: boolean): string {
   if (!night || !label) return label;
@@ -164,12 +165,12 @@ export function withHkoDays(daily: ForecastDay[], hko: HkoData | null | undefine
 }
 
 export function windWords(kmh: number): string {
-  if (kmh < 12) return '微風';
-  if (kmh < 30) return '和風';
-  if (kmh < 41) return '清勁';
-  if (kmh < 63) return '強風';
-  if (kmh < 88) return '烈風';
-  return '暴風';
+  if (kmh < 12) return tl('weather.016');
+  if (kmh < 30) return tl('weather.017');
+  if (kmh < 41) return tl('weather.018');
+  if (kmh < 63) return tl('weather.019');
+  if (kmh < 88) return tl('balance.065');
+  return tl('balance.038');
 }
 
 export interface Severity {
@@ -197,9 +198,9 @@ export function classify(input: { precipMm: number; gustKmh: number; windKmh: nu
 }
 
 export function stormLabel(kind: StormKind): string {
-  if (kind === 'typhoon') return '颱風';
-  if (kind === 'gale') return '強風';
-  return '暴雨';
+  if (kind === 'typhoon') return tl('weather.020');
+  if (kind === 'gale') return tl('weather.019');
+  return tl('balance.012');
 }
 
 export function condFromForecast(day: ForecastDay, tempC = day.tempMax): DayCond {
@@ -344,11 +345,11 @@ export function rainSoon(hourly: OpenMeteoHourly | undefined, nowIso: string): n
 }
 
 export function parseOpenMeteo(data: unknown): ForecastResult {
-  if (!data || typeof data !== 'object') throw new Error('天氣資料格式不對');
+  if (!data || typeof data !== 'object') throw new Error(tl('weather.021'));
   const body = data as { timezone?: string; current?: OpenMeteoCurrent; daily?: OpenMeteoDaily; hourly?: OpenMeteoHourly };
   const daily = body.daily;
   const dates = daily?.time ?? [];
-  if (!dates.length) throw new Error('沒有預報');
+  if (!dates.length) throw new Error(tl('weather.022'));
   const all: ForecastDay[] = dates.map((date, i) => ({
     date,
     code: num(daily?.weather_code?.[i], 2),
@@ -417,7 +418,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function fetchForecast(lat: number, lon: number, opts: { tries?: number; timeoutMs?: number } = {}): Promise<ForecastResult> {
   const url = forecastUrl(lat, lon);
   const tries = opts.tries ?? 3;
-  let lastError = '天氣服務冇回應';
+  let lastError = tl('weather.023');
   let wait = 0;
   for (let attempt = 0; attempt < tries; attempt++) {
     if (attempt > 0) await sleep(wait || 1000 * 3 ** (attempt - 1));
@@ -426,11 +427,11 @@ export async function fetchForecast(lat: number, lon: number, opts: { tries?: nu
     try {
       res = await fetch(url, { signal: timeoutSignal(opts.timeoutMs ?? 8000) });
     } catch {
-      lastError = '連唔到天氣服務';
+      lastError = tl('weather.024');
       continue;
     }
     if (res.ok) return parseOpenMeteo(await res.json());
-    lastError = res.status === 429 ? '天氣服務暫時太繁忙（429）' : `天氣服務回應 ${res.status}`;
+    lastError = res.status === 429 ? tl('weather.025') : tl('weather.026', { status: res.status });
     const retryAfter = Number(res.headers.get('retry-after'));
     if (Number.isFinite(retryAfter) && retryAfter > 0) wait = Math.min(8000, retryAfter * 1000);
     if (res.status !== 429 && res.status < 500) break;
@@ -501,7 +502,7 @@ export function districtRain(hko: HkoData | null | undefined, district: string |
   const table = hko?.current?.rainByDistrict;
   if (!table || !district) return null;
   const bare = district.replace(/區$/, '');
-  for (const key of [district, bare, `${bare}區`]) if (key in table) return table[key] ?? 0;
+  for (const key of [district, bare, tl('weather.027', { bare })]) if (key in table) return table[key] ?? 0;
   return null;
 }
 

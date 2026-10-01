@@ -2,6 +2,7 @@ import type { GameState, LogReward } from './types';
 import { clamp, hashString } from './util';
 
 import { STAGE_NAMES, STAGE_SHARES } from './data/species';
+import { t as tl } from './i18n';
 export { ANIMALS, animalById, type AnimalDef } from './data/animals';
 
 export interface StageDef {
@@ -64,13 +65,13 @@ export interface Milestone {
 }
 
 export const MILESTONES: Milestone[] = [
-  { meters: 0.5, title: '幼苗站穩', detail: '第一段真葉展開，樹有自己的名字。' },
-  { meters: 1.7, title: '高過大多數人', detail: '大約一個成年人的高度。' },
-  { meters: 5, title: '街燈左右', detail: '大概是行人路燈柱的高度。' },
-  { meters: 12, title: '三層舊唐樓', detail: '舊式唐樓一層大約四米，三層左右這個高度。' },
-  { meters: 44, title: '尖沙咀鐘樓', detail: '尖沙咀前九廣鐵路鐘樓高約 44 米。' },
-  { meters: SHERMAN_M, title: '將軍樹的高度', detail: '美國巨杉「將軍樹」高 83.8 米。以體積計，牠是世界上最大的樹。' },
-  { meters: HYPERION_M, title: '海波龍', detail: '加州紅木「海波龍」是已知最高的樹，2026 年測量約 116.2 米。' },
+  { meters: 0.5, title: tl('content.001'), detail: tl('content.002') },
+  { meters: 1.7, title: tl('content.003'), detail: tl('content.004') },
+  { meters: 5, title: tl('content.005'), detail: tl('content.006') },
+  { meters: 12, title: tl('content.007'), detail: tl('content.008') },
+  { meters: 44, title: tl('content.009'), detail: tl('content.010') },
+  { meters: SHERMAN_M, title: tl('content.011'), detail: tl('content.012') },
+  { meters: HYPERION_M, title: tl('content.013'), detail: tl('content.014') },
 ];
 
 export interface DailyEvent {
@@ -84,9 +85,9 @@ export interface DailyEvent {
 export const EVENTS: DailyEvent[] = [
   {
     id: 'mist',
-    chip: { text: '+6 水分', tone: 'blue' },
-    title: '晨霧',
-    text: '薄霧濕潤咗葉面同泥土。',
+    chip: { text: tl('content.015'), tone: 'blue' },
+    title: tl('content.016'),
+    text: tl('content.017'),
     apply: (s) => {
       // Mist tops up to 泥土飽和 (100) at most; it never lowers a wetter soil.
       if (s.moisture < 100) s.moisture = Math.min(100, s.moisture + 6);
@@ -94,77 +95,77 @@ export const EVENTS: DailyEvent[] = [
   },
   {
     id: 'compost',
-    chip: { text: '+16 養分', tone: 'green' },
-    title: '鄰居的堆肥',
-    text: '樓下街坊分咗一袋堆肥畀你。',
+    chip: { text: tl('content.018'), tone: 'green' },
+    title: tl('content.019'),
+    text: tl('content.020'),
     apply: (s) => {
       s.nutrients = Math.min(100, s.nutrients + 16);
     },
   },
   {
     id: 'birds',
-    chip: { text: '+2 健康度', tone: 'green' },
-    title: '鳥仔來探',
-    text: '有小鳥停低又飛走，樹頂多咗幾分生氣。',
+    chip: { text: tl('content.021'), tone: 'green' },
+    title: tl('content.022'),
+    text: tl('content.023'),
     apply: (s) => {
       s.health = Math.min(100, s.health + 2);
     },
   },
   {
     id: 'drywind',
-    chip: { text: '-10 水分', tone: 'red' },
-    title: '乾風',
-    text: '風有啲乾，泥土會快啲渴。',
+    chip: { text: tl('content.024'), tone: 'red' },
+    title: tl('content.025'),
+    text: tl('content.026'),
     apply: (s) => {
       s.moisture = Math.max(0, s.moisture - 10);
     },
   },
   {
     id: 'leaves',
-    chip: { text: '+8 養分', tone: 'green' },
-    title: '落葉',
-    text: '舊葉落返泥度，慢慢變養分。',
+    chip: { text: tl('content.027'), tone: 'green' },
+    title: tl('content.028'),
+    text: tl('content.029'),
     apply: (s) => {
       s.nutrients = Math.min(100, s.nutrients + 8);
     },
   },
   {
     id: 'drawing',
-    chip: { text: '+3 健康度', tone: 'green' },
-    title: '小朋友的畫',
-    text: '有孩童在樹下留低一張畫，棵樹好像被好好對待。',
+    chip: { text: tl('content.030'), tone: 'green' },
+    title: tl('content.031'),
+    text: tl('content.032'),
     apply: (s) => {
       s.health = Math.min(100, s.health + 3);
     },
   },
   {
     id: 'aphids',
-    chip: { text: '留意蟲害', tone: 'red' },
-    title: '蚜蟲',
-    text: '葉底見到幾隻蚜蟲。養分唔夠或者泥土太濕，好易生蟲，可以除一除預防。',
+    chip: { text: tl('content.033'), tone: 'red' },
+    title: tl('content.034'),
+    text: tl('content.035'),
     apply: (s) => {
       if (!s.pest.active) s.pest.lowNDays = Math.max(s.pest.lowNDays, 1);
     },
   },
   {
     id: 'sunbeam',
-    chip: { text: '生長 ×1.15', tone: 'blue' },
-    title: '陽光正好',
-    text: '雲隙透出柔和陽光，今日會長得順一點。',
+    chip: { text: tl('content.036'), tone: 'blue' },
+    title: tl('content.037'),
+    text: tl('content.038'),
     apply: (s) => {
       s.eventBonus = 1.15;
     },
   },
   {
     id: 'cat',
-    title: '花貓經過',
-    text: '一隻花貓在樹蔭攤咗一陣，冇搞破壞。',
+    title: tl('content.039'),
+    text: tl('content.040'),
     apply: () => {},
   },
   {
     id: 'quiet',
-    title: '安靜的一日',
-    text: '冇特別事，樹就係咁慢慢大。',
+    title: tl('content.041'),
+    text: tl('content.042'),
     apply: () => {},
   },
 ];

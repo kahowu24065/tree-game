@@ -1,6 +1,7 @@
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
 import { isNative } from './platform';
+import { t as tl } from '../i18n';
 
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
 export const PUSH_SERVER = 'https://158-101-140-210.sslip.io';
@@ -97,7 +98,7 @@ export async function syncPush(enabled: boolean): Promise<void> {
     let perm = await PushNotifications.checkPermissions();
     if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
-    await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: '天氣警告', description: '天文台警告生效時提醒你照顧棵樹', importance: 5, visibility: 1, vibration: true });
+    await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
     await listen();
     await PushNotifications.register();
   } catch {

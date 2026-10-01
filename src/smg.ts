@@ -9,6 +9,7 @@ import { mapWarning, rainFromPsr, timeoutSignal, windFromText, type HkoData, typ
 import type { ForecastDay } from './types';
 import { isNative } from './native/platform';
 import { PUSH_SERVER } from './native/push';
+import { t as tl } from './i18n';
 
 /** Approximate station positions, used only to pick the nearest reading. */
 const STATIONS: { code: string; name: string; lat: number; lon: number }[] = [
@@ -133,9 +134,9 @@ export function smgWarnings(xml: SmgXml): HkoWarning[] {
   const rain = blocks(xml.rain ?? '', 'Rainstorm').find(active);
   if (rain) pushWarning(out, mapWarning('WRAIN', { code: rainCode(rain), issueTime: issued(rain) }));
   const thunder = blocks(xml.thunder ?? '', 'Thunderstorm').find(active);
-  if (thunder) pushWarning(out, mapWarning('WTS', { code: 'WTS', name: '雷暴警告信號', issueTime: issued(thunder) }));
+  if (thunder) pushWarning(out, mapWarning('WTS', { code: 'WTS', name: tl('smg.001'), issueTime: issued(thunder) }));
   const monsoon = blocks(xml.monsoon ?? '', 'Monsoon').find(active);
-  if (monsoon) pushWarning(out, mapWarning('WMSGNL', { code: 'WMSGNL', name: '強烈季候風信號', issueTime: issued(monsoon) }));
+  if (monsoon) pushWarning(out, mapWarning('WMSGNL', { code: 'WMSGNL', name: tl('smg.002'), issueTime: issued(monsoon) }));
   for (const item of blocks(xml.temp ?? '', 'item')) {
     const title = inner(item, 'title');
     const desc = inner(item, 'description');
@@ -286,17 +287,17 @@ function urlsFor(file: string, host: 'xml' | 'rss'): string[] {
 }
 
 async function fetchText(file: string, host: 'xml' | 'rss'): Promise<string> {
-  let last = '地球物理氣象局冇回應';
+  let last = tl('smg.003');
   for (const url of urlsFor(file, host)) {
     try {
       const res = await fetch(url, { signal: timeoutSignal(8000) });
       if (!res.ok) {
-        last = `地球物理氣象局回應 ${res.status}`;
+        last = tl('smg.004', { status: res.status });
         continue;
       }
       return await res.text();
     } catch {
-      last = '連唔到地球物理氣象局';
+      last = tl('smg.005');
     }
   }
   throw new Error(last);
@@ -310,6 +311,6 @@ export async function fetchSmg(lat: number, lon: number): Promise<SmgBundle> {
     const r = results[i];
     if (r?.status === 'fulfilled') xml[f.key] = r.value;
   });
-  if (!xml.brief && !xml.actual) throw new Error('連唔到地球物理氣象局');
+  if (!xml.brief && !xml.actual) throw new Error(tl('smg.005'));
   return parseSmg(xml, lat, lon);
 }

@@ -1,5 +1,6 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isNative } from './platform';
+import { t as tl } from '../i18n';
 
 export const NOTIFY_KEY = 'sekai-tree-notify';
 const HOUR = 3600_000;
@@ -33,7 +34,7 @@ export interface PlannedNotice {
   body: string;
 }
 
-const TITLE = '世界之樹';
+const TITLE = tl('sim.001');
 
 /** Pure: which reminders to schedule right now. */
 export function planNotifications(i: NotifyInput): PlannedNotice[] {
@@ -43,27 +44,27 @@ export function planNotifications(i: NotifyInput): PlannedNotice[] {
   const soon = (t: number) => t > i.now + 60_000;
   const careAt = settle - 1.5 * HOUR;
   if ((!i.wateredToday || !i.fertilizedToday) && soon(careAt)) {
-    const what = [!i.wateredToday && '澆水', !i.fertilizedToday && '施肥'].filter(Boolean).join('／');
-    out.push({ id: NOTIFY_IDS.careToday, at: careAt, title: TITLE, body: `今日之內記得${what}，水分同養分全日都會慢慢減！` });
+    const what = [!i.wateredToday && tl('ui.115'), !i.fertilizedToday && tl('ui.099')].filter(Boolean).join(tl('notify.001'));
+    out.push({ id: NOTIFY_IDS.careToday, at: careAt, title: TITLE, body: tl('notify.002', { what }) });
   }
   // Tomorrow's care is certainly undone if the app is not opened again before then.
-  out.push({ id: NOTIFY_IDS.careTomorrow, at: careAt + 24 * HOUR, title: TITLE, body: '今日之內記得澆水／施肥！' });
+  out.push({ id: NOTIFY_IDS.careTomorrow, at: careAt + 24 * HOUR, title: TITLE, body: tl('notify.003') });
   if (i.dyingEndsAt !== null) {
-    const hint = '將水分調返 50–100、養分 60 以上就救得返。';
-    if (soon(i.dyingEndsAt - 12 * HOUR)) out.push({ id: NOTIFY_IDS.dying12, at: i.dyingEndsAt - 12 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹瀕死，仲有大約 12 小時！${hint}` });
-    if (soon(i.dyingEndsAt - 2 * HOUR)) out.push({ id: NOTIFY_IDS.dying2, at: i.dyingEndsAt - 2 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹只剩大約 2 小時！${hint}` });
+    const hint = tl('notify.004');
+    if (soon(i.dyingEndsAt - 12 * HOUR)) out.push({ id: NOTIFY_IDS.dying12, at: i.dyingEndsAt - 12 * HOUR, title: tl('notify.005', { TITLE }), body: tl('notify.006', { hint }) });
+    if (soon(i.dyingEndsAt - 2 * HOUR)) out.push({ id: NOTIFY_IDS.dying2, at: i.dyingEndsAt - 2 * HOUR, title: tl('notify.005', { TITLE }), body: tl('notify.007', { hint }) });
   }
   if (i.dyingEndsAt === null && i.healthZeroAt != null) {
     // Tonight's settlement is projected to take 健康 to 0: warn ~3 hours before midnight.
     const at = Math.max(i.now + 5 * 60_000, i.healthZeroAt - 3 * HOUR);
-    if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: `${TITLE}：健康好低`, body: '照而家咁落去，今晚結算健康度會跌到 0！入去將水分調返 50–100、養分 60 以上。' });
+    if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: tl('notify.008', { TITLE }), body: tl('notify.009') });
   }
   if (i.hatchAt !== null && soon(i.hatchAt)) {
-    out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: '鵲鴝嘅蛋孵化咗，開返嚟睇下。' });
+    out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: tl('notify.010') });
   }
   if (i.background && i.pendingEmergencies.length) {
     const at = i.now + HOUR;
-    if (at < settle) out.push({ id: NOTIFY_IDS.weather, at, title: `${TITLE}：天氣警告`, body: `${i.pendingEmergencies.join('、')}未做，今晚結算前記得做！` });
+    if (at < settle) out.push({ id: NOTIFY_IDS.weather, at, title: tl('notify.011', { TITLE }), body: tl('notify.012', { p0: i.pendingEmergencies.join(tl('ui.206')) }) });
   }
   return out;
 }

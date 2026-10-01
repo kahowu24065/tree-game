@@ -128,6 +128,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
+import { t as tl } from './i18n';
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
@@ -159,14 +160,14 @@ let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
 let weather: WeatherSnapshot = initialWeather();
 let weatherLoading = weather.provider === 'sim';
 setLabelRegion(regionFor(weather.source, nearHongKong(weather.lat, weather.lon), inMacau(weather.lat, weather.lon)));
-let statusLine = weather.origin === 'live' ? '天氣啱啱更新過' : '攞緊真實天氣…';
+let statusLine = weather.origin === 'live' ? tl('main.001') : tl('ui.152');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
 let pick: Pick = { species: defaultSpecies() };
 let quality: Quality = localStorage.getItem(QUALITY_KEY) === 'high' ? 'high' : 'low';
 
 const canvas = document.getElementById('scene');
-if (!(canvas instanceof HTMLCanvasElement)) throw new Error('找不到畫面');
+if (!(canvas instanceof HTMLCanvasElement)) throw new Error(tl('main.002'));
 let scene3d: Scene3D | null = null;
 let scene2d: Scene | null = null;
 try {
@@ -178,7 +179,7 @@ try {
   );
 } catch (error) {
   scene3d = null;
-  console.warn('WebGL 用唔到，改用簡化畫面', error);
+  console.warn(tl('main.003'), error);
   scene2d = new Scene(canvas);
   document.body.classList.add('flat');
 }
@@ -320,7 +321,7 @@ function countdown(): Countdown | null {
     minutesToMidnight: 24 * 60 - clockMinutes(timezone),
     manual: manual() ? dev.forecast : null,
     nowMs: Date.now(),
-    activeSource: manual() ? '手動天氣' : usesSmg() ? '氣象局' : usesCwa() ? '氣象署' : officialActive() ? '天文台' : '即時天氣',
+    activeSource: manual() ? tl('main.004') : usesSmg() ? tl('main.005') : usesCwa() ? tl('main.006') : officialActive() ? tl('main.007') : tl('main.008'),
   });
 }
 
@@ -331,8 +332,8 @@ function choiceKey(): string {
 function placeLabel(): { place: string; note: string } {
   const m = PLACES.find((p) => p.id === placeChoice);
   if (m) return { place: m.name, note: '' };
-  if (weather.provider === 'sim' && !weather.fetchedAt) return { place: '香港', note: '' };
-  return { place: weather.place || '你嘅位置', note: weather.source === 'fallback' ? '預設' : '' };
+  if (weather.provider === 'sim' && !weather.fetchedAt) return { place: tl('ui.346'), note: '' };
+  return { place: weather.place || tl('main.009'), note: weather.source === 'fallback' ? tl('main.010') : '' };
 }
 
 /** How hard the tree sways (0 calm … 1 typhoon), from the weather in force now; the dev panel can force it. */
@@ -482,7 +483,7 @@ function finishCoach(step: 'water' | 'feed' | 'health' | 'carbon' | 'skip'): voi
   coach = next;
   saveCoach(coach);
   render();
-  if (finished) toast('健康會影響今晚長高幾多。跟住現實天氣打理，棵樹先會長得好。');
+  if (finished) toast(tl('main.011'));
 }
 
 function beginCoach(): void {
@@ -530,8 +531,8 @@ function canShare(): boolean {
 
 async function shareText(text: string): Promise<void> {
   try {
-    if (isNative()) await Share.share({ title: '世界之樹存檔', text });
-    else await navigator.share({ title: '世界之樹存檔', text });
+    if (isNative()) await Share.share({ title: tl('main.012'), text });
+    else await navigator.share({ title: tl('main.012'), text });
   } catch {
     /* cancelled */
   }
@@ -553,9 +554,9 @@ async function importSave(): Promise<void> {
     return;
   }
   const s = res.payload.save;
-  const when = res.payload.at ? `（${new Date(res.payload.at).toLocaleDateString('en-CA')} 匯出）` : '';
-  const height = s.heightCm >= 100 ? `${(s.heightCm / 100).toFixed(1)} 米` : `${Math.round(s.heightCm)} 厘米`;
-  if (!window.confirm(`匯入「${s.treeName || '棵樹'}」${when}：樹齡 ${shownAge(s)} 日、高 ${height}${s.over ? '（已枯死）' : ''}。\n而家嘅存檔會被取代，確定？`)) return;
+  const when = res.payload.at ? tl('main.013', { p0: new Date(res.payload.at).toLocaleDateString('en-CA') }) : '';
+  const height = s.heightCm >= 100 ? tl('main.014', { p0: (s.heightCm / 100).toFixed(1) }) : tl('ui.308', { p0: Math.round(s.heightCm) });
+  if (!window.confirm(tl('main.017', { p0: s.treeName || tl('main.015'), when, p2: shownAge(s), height, p4: s.over ? tl('main.016') : '' }))) return;
   importing = true;
   clearGrove();
   localStorage.setItem(SAVE_KEY, JSON.stringify(s));
@@ -606,8 +607,8 @@ function arriveIsle(next: 0 | 1): void {
     persist();
     render();
   }
-  if (landed) toast('成就：踏足新島');
-  else if (next === 1 && !second) toast('第二座空島。種一棵新樹，或者向右滑返第一座。');
+  if (landed) toast(tl('main.018'));
+  else if (next === 1 && !second) toast(tl('main.019'));
 }
 
 function handleIslandSwipe(dx: number): void {
@@ -615,7 +616,7 @@ function handleIslandSwipe(dx: number): void {
   const toSecond = dx < 0;
   if (isle === 0 && toSecond) {
     if (!canOpenSecond(state)) {
-      toast('打破世界紀錄之後，先可以滑去第二座空島。');
+      toast(tl('main.020'));
       return;
     }
     scene3d.sailToOther(reducedMotion, () => arriveIsle(1));
@@ -625,12 +626,12 @@ function handleIslandSwipe(dx: number): void {
     scene3d.sailToOther(reducedMotion, () => arriveIsle(0));
     return;
   }
-  toast(isle === 0 ? '向左滑先至去到第二座空島。' : '向右滑返第一座島。');
+  toast(isle === 0 ? tl('main.021') : tl('main.022'));
 }
 
 function plantSecond(species?: SpeciesId): void {
   const input = document.getElementById('tree-name');
-  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '第二棵';
+  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || tl('main.023');
   if (isle === 0 || !second) home = state;
   second = newGame(meta, realToday(), name, species ?? pick.species);
   isle = 1;
@@ -642,7 +643,7 @@ function plantSecond(species?: SpeciesId): void {
   persist();
   closeModal();
   render();
-  toast(fresh ? `${state.treeName}種好喇。成就：第二棵樹。` : coachOpen(coach) ? `${state.treeName}種好喇。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
+  toast(fresh ? tl('main.024', { treeName: state.treeName }) : coachOpen(coach) ? tl('main.025', { treeName: state.treeName }) : tl('main.026', { treeName: state.treeName }));
   syncWarningWater();
 }
 
@@ -654,11 +655,11 @@ function scheduleReminders(background: boolean): void {
   const careToday = state.care.date === today();
   const done = (k: 'heatWater' | 'rainDrain' | 'warmCover') => careToday && Boolean(state.care[k]);
   const pending: string[] = [];
-  if (opts.heatWater && !done('heatWater')) pending.push('酷熱澆水');
-  if (opts.rainDrain && !done('rainDrain')) pending.push('暴雨疏水');
-  if (opts.warmCover && !done('warmCover')) pending.push('保暖');
+  if (opts.heatWater && !done('heatWater')) pending.push(tl('ui.097'));
+  if (opts.rainDrain && !done('rainDrain')) pending.push(tl('main.027'));
+  if (opts.warmCover && !done('warmCover')) pending.push(tl('ui.197'));
   const windy = state.windUnlocked && events.some((e) => WEATHER_EVENTS[e].category === 'wind');
-  if (windy && !(careToday && Object.values(state.care.preps).some(Boolean))) pending.push('加固');
+  if (windy && !(careToday && Object.values(state.care.preps).some(Boolean))) pending.push(tl('ui.123'));
   if (notifyEnabled())
     reportPushState({
       day: today(),
@@ -715,9 +716,9 @@ function handleOver(): boolean {
     if ((!awards.length && !weather.length) || !state.started) return false;
     const lines = bookMilestones(meta, state);
     bookWeather(meta, state);
-    if (isle === 1 && state.milestones?.record && grantIsle('record')) lines.push('成就：新島破紀錄');
+    if (isle === 1 && state.milestones?.record && grantIsle('record')) lines.push(tl('main.028'));
     persist();
-    const recordHint = isle === 0 && awards.some((a) => a?.id === 'record') ? '向左滑去第二座空島，可以再種一棵。鏡頭自轉嗰陣都會見到其他空島。' : '';
+    const recordHint = isle === 0 && awards.some((a) => a?.id === 'record') ? tl('main.029') : '';
     playCelebrate();
     openModal(awards.length ? milestoneModal(state, meta, awards, lines, weather, recordHint) : weatherModal(state, meta, weather), 'celebrate');
     return true;
@@ -775,7 +776,7 @@ function playPendingCollapse(report: CatchupReport | null, after: () => void): b
   lc.seen = true;
   persist();
   const count = report ? report.settlements.filter((s) => s.collapse).length : 1;
-  if (count > 1) toast(`你唔喺度嗰陣棵樹倒塌咗 ${count} 次，而家重播最近一次。`);
+  if (count > 1) toast(tl('main.030', { count }));
   const healthBefore = report?.settlements.find((s) => s.date === lc.date)?.hBefore ?? healthBeforeOn(lc.date);
   if (scene3d) {
     return scene3d.playCollapse({ heightBefore: lc.heightBefore, stageBefore: stageOf(lc.heightBefore), healthBefore, fatal: false, reduced: reducedMotion }, after);
@@ -814,7 +815,7 @@ function showReport(report: CatchupReport): void {
     }
     maybeExplainWind();
     const names = report.animals.map(animalName);
-    if (names.length) toast(`${names.join('、')}嚟咗。`);
+    if (names.length) toast(tl('main.031', { p0: names.join(tl('ui.206')) }));
   };
   // v16: a fresh collapse plays first; the night's card and any other modal wait until it is over.
   if (!playPendingCollapse(report, rest)) rest();
@@ -838,13 +839,13 @@ let nestPending = { laid: false, hatched: false };
 
 function flushNestToast(): void {
   const bird = state.nest?.egg?.bird;
-  const name = bird ? animalName(bird) : '雀鳥';
-  if (nestPending.laid) toast(`${name}生咗蛋。`);
+  const name = bird ? animalName(bird) : tl('main.032');
+  if (nestPending.laid) toast(tl('main.033', { name }));
   if (nestPending.hatched) {
     const next = (state.nest?.hatched ?? 0) + 1;
     const build = nestBuildAt(next);
-    const gift = build ? `島上會多${nestBuildPhrase(build)}` : isNestHeightCount(next) ? '今晚會多長一截' : '開返嚟睇下';
-    toast(`${name}嘅蛋孵化咗，${gift}。`);
+    const gift = build ? tl('main.034', { p0: nestBuildPhrase(build) }) : isNestHeightCount(next) ? tl('main.035') : tl('main.036');
+    toast(tl('main.037', { name, gift }));
   }
   nestPending = { laid: false, hatched: false };
 }
@@ -889,7 +890,7 @@ function checkDyingExpiry(): void {
   if (!res) return;
   persist();
   render();
-  if (res === 'revived') toast('免死金牌救返棵樹！');
+  if (res === 'revived') toast(tl('sim.077'));
   if (state.over) handleOver();
 }
 
@@ -920,10 +921,10 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   if (snapshot.origin === 'live') saveWeatherCache(snapshot);
   statusLine =
     snapshot.origin === 'live'
-      ? `天氣 ${clockOf(snapshot.fetchedAt)} 更新`
+      ? tl('main.038', { p0: clockOf(snapshot.fetchedAt) })
       : snapshot.origin === 'cache'
-        ? `更新唔到（${snapshot.error ?? '網絡問題'}），用緊 ${clockOf(snapshot.fetchedAt)} 的記錄。`
-        : `而家攞唔到真實天氣，暫時用模擬天氣。${snapshot.error ?? ''}`;
+        ? tl('main.040', { p0: snapshot.error ?? tl('main.039'), p1: clockOf(snapshot.fetchedAt) })
+        : tl('main.041', { p0: snapshot.error ?? '' });
   reconcileClock();
   if (snapshot.provider !== 'sim' || snapshot.hko) {
     const events = liveEvents();
@@ -931,11 +932,11 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     recordEvents(state, today(), events, officialActive(snapshot));
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
-    if (fresh.length && state.started && !manual() && !watered) toast(`${usesSmg(snapshot) ? '氣象局' : usesCwa(snapshot) ? '氣象署' : officialActive(snapshot) ? '天文台' : '天氣'}：${fresh.map((e) => eventLabel(e)).join('、')}生效，今晚結算前仲可以準備。`);
+    if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: usesSmg(snapshot) ? tl('main.005') : usesCwa(snapshot) ? tl('main.006') : officialActive(snapshot) ? tl('main.007') : tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
-    if (got.length) toast(`${got.map(animalName).join('、')}嚟咗。`);
+    if (got.length) toast(tl('main.031', { p0: got.map(animalName).join(tl('ui.206')) }));
   }
   if (today() !== before) {
     const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
@@ -989,7 +990,7 @@ function relocateNow(): void {
 function refreshWeather(forceLocate = false): Promise<void> {
   if (refreshing) return refreshing;
   weatherLoading = true;
-  statusLine = '攞緊真實天氣…';
+  statusLine = tl('ui.152');
   render();
   refreshing = loadWeather(forceLocate).finally(() => {
     refreshing = null;
@@ -1034,12 +1035,12 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const found = placeRes.status === 'fulfilled' ? placeRes.value : null;
   // Taiwan: the CWA station's town (the same area its warnings are checked for) beats the reverse geocoder.
   const cwaPlace = tw && smg ? cwaArea()?.town || cwaArea()?.county || undefined : undefined;
-  const place = manual?.name ?? cwaPlace ?? found?.name ?? (macau ? '澳門' : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? '香港' : '你嘅位置');
+  const place = manual?.name ?? cwaPlace ?? found?.name ?? (macau ? tl('main.044') : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? tl('ui.346') : tl('main.009'));
   const district = manual?.name ?? found?.district;
   const openMeteo = om.status === 'fulfilled' ? om.value : null;
   let base: ForecastResult | null = hk || mo ? null : openMeteo;
   let provider: WeatherProvider = 'open-meteo';
-  const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : '未知錯誤') : undefined;
+  const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : tl('main.045')) : undefined;
   if (official && (hk || mo)) {
     const bureau = hkoForecast(official, today());
     if (bureau) {
@@ -1131,11 +1132,11 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
 }
 
 function openStart(): void {
-  openModal(startModal('世界之樹', meta, false, pick));
+  openModal(startModal(tl('sim.001'), meta, false, pick));
 }
 
 function openName(): void {
-  openModal(nameModal(plantingSecond ? '第二棵' : '世界之樹'));
+  openModal(nameModal(plantingSecond ? tl('main.023') : tl('sim.001')));
 }
 
 /** Species card is up, the HUD is hidden, and the camera sits on the far islands. */
@@ -1156,7 +1157,7 @@ function revealHud(): void {
   syncBanner(true);
   beginCoach();
   render();
-  toast(coachOpen(coach) ? `${state.treeName}種好喇。先澆一次水。` : `${state.treeName}種好喇。今日先澆水、施肥。`);
+  toast(coachOpen(coach) ? tl('main.046', { treeName: state.treeName }) : tl('main.026', { treeName: state.treeName }));
   if (pendingNote) {
     const message = pendingNote;
     pendingNote = '';
@@ -1193,7 +1194,7 @@ function startGame(species?: SpeciesId): void {
     return;
   }
   const input = document.getElementById('tree-name');
-  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || '世界之樹';
+  const name = (input instanceof HTMLInputElement ? input.value.trim().slice(0, 12) : '') || tl('sim.001');
   const wasStarted = state.started && !state.over;
   if (wasStarted) {
     state.treeName = name;
@@ -1366,7 +1367,7 @@ function bindSheetDrag(): void {
 
 function doAction(action: string, target: HTMLElement): void {
   if (isle === 1 && !second && ['water', 'fertilize', 'deworm', 'drain', 'heat-water', 'rain-drain', 'warm-cover'].includes(action)) {
-    toast('呢座島未有樹。先種一棵，或者向右滑返第一座。');
+    toast(tl('main.047'));
     return;
   }
   if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'drain') {
@@ -1412,7 +1413,7 @@ function doAction(action: string, target: HTMLElement): void {
       render();
       return;
     case 'retry-weather':
-      toast('再試緊攞真實天氣…');
+      toast(tl('main.048'));
       void refreshWeather(false);
       return;
     case 'coach-skip':
@@ -1423,7 +1424,7 @@ function doAction(action: string, target: HTMLElement): void {
       openName();
       return;
     case 'back-species':
-      openModal(startModal(plantingSecond ? '第二棵' : '世界之樹', meta, false, pick));
+      openModal(startModal(plantingSecond ? tl('main.023') : tl('sim.001'), meta, false, pick));
       return;
     case 'lesson-next':
       if (!lesson) return;
@@ -1448,7 +1449,7 @@ function doAction(action: string, target: HTMLElement): void {
       void exportSave();
       return;
     case 'copy-save':
-      void copyText(saveCodeText()).then((ok) => toast(ok ? '已複製存檔碼。' : '複製唔到，請長按手動複製。'));
+      void copyText(saveCodeText()).then((ok) => toast(ok ? tl('main.049') : tl('main.050')));
       return;
     case 'share-save':
       void shareText(saveCodeText());
@@ -1497,7 +1498,7 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'plant-isle':
       plantingSecond = true;
-      openModal(startModal('第二棵', meta, false, pick));
+      openModal(startModal(tl('main.023'), meta, false, pick));
       return;
     case 'close-modal':
       plantingSecond = false;
@@ -1557,7 +1558,7 @@ document.addEventListener('click', (event) => {
   if ((!state.started || state.over) && !inModal) return;
   if (target.dataset.species) {
     const nameEl = document.getElementById('tree-name');
-    const name = nameEl instanceof HTMLInputElement ? nameEl.value : '世界之樹';
+    const name = nameEl instanceof HTMLInputElement ? nameEl.value : tl('sim.001');
     pick = { species: target.dataset.species as SpeciesId };
     updateModal(startModal(name, meta, false, pick));
     return;
@@ -1599,8 +1600,8 @@ document.addEventListener('click', (event) => {
     placeChoice = target.dataset.place;
     localStorage.setItem(PLACE_KEY, placeChoice);
     closeModal();
-    const name = PLACES.find((p) => p.id === placeChoice)?.name ?? '你所在位置';
-    toast(`天氣改為跟住${name}。`);
+    const name = PLACES.find((p) => p.id === placeChoice)?.name ?? tl('main.051');
+    toast(tl('main.052', { name }));
     void refreshWeather(placeChoice === 'geo');
     return;
   }
@@ -1726,7 +1727,7 @@ if (DEV_PANEL) {
 
   function applyHatched(n: number, remember: boolean, announce: boolean): void {
     if (!state.started || state.over) {
-      toast('未種樹，加唔到蛋。');
+      toast(tl('main.053'));
       return;
     }
     const nest = (state.nest ??= freshNest());
@@ -1738,7 +1739,7 @@ if (DEV_PANEL) {
     render();
     if (!announce) return;
     const built = nestBuilds(next);
-    toast(built.length ? `已孵化 ${next} 粒。島上：${built.map(nestBuildPhrase).join('、')}。` : `已孵化 ${next} 粒。`);
+    toast(built.length ? tl('main.054', { next, p1: built.map(nestBuildPhrase).join(tl('ui.206')) }) : tl('main.055', { next }));
   }
 
   const api: DevApi = {
@@ -1782,7 +1783,7 @@ if (DEV_PANEL) {
       triggerPest(state, today());
       persist();
       render();
-      toast('觸發咗蟲害。');
+      toast(tl('main.056'));
     },
     setCollapses: (n) => {
       state.collapses = Math.max(0, Math.min(3, Math.round(n)));
@@ -1875,7 +1876,7 @@ if (DEV_PANEL) {
       for (const a of ANIMALS) if (!state.animals.includes(a.id)) state.animals.push(a.id);
       persist();
       render();
-      toast(`解鎖咗全部 ${ANIMALS.length} 種動物。`);
+      toast(tl('main.057', { length: ANIMALS.length }));
     },
     ecoInfo: () => (scene3d?.animalInfo() ?? []).map((g) => ({ id: g.id, name: animalName(g.id), count: g.count, resident: g.resident })),
     ecoCaps: () => scene3d?.animalCaps() ?? null,
@@ -1883,13 +1884,13 @@ if (DEV_PANEL) {
     setHatched: (n) => applyHatched(n, true, true),
     restoreHatched: () => {
       if (hatchBeforePreview === null) {
-        toast('未有改過孵化次數。');
+        toast(tl('main.058'));
         return;
       }
       const back = hatchBeforePreview;
       hatchBeforePreview = null;
       applyHatched(back, false, false);
-      toast('還原咗孵化次數。');
+      toast(tl('main.059'));
     },
     viewInfo: () => (scene3d ? { ...scene3d.cameraInfo(), ...scene3d.fenceInfo() } : null),
     habitatInfo: () => {
@@ -1897,7 +1898,7 @@ if (DEV_PANEL) {
       const island = input.islandStage ?? input.stage;
       const h = habitatDef(input.species);
       const feats = habitatFeatures(input.species, island).map((f) => FEATURE_LABEL[f]);
-      return `島嶼：${STAGE_NAMES[island]}島（半徑 ${islandRadius(island)}）・${h.name}${feats.length ? `：${feats.join('、')}` : '：淨係庭園'}`;
+      return tl('main.062', { p0: STAGE_NAMES[island], p1: islandRadius(island), name: h.name, p3: feats.length ? tl('main.060', { p0: feats.join(tl('ui.206')) }) : tl('main.061') });
     },
     sway: () => swayLevel(todayCond()),
   };
@@ -1977,7 +1978,7 @@ function syncViewButton(): void {
   const key = `${v.active}|${v.following ?? ''}`;
   if (key !== viewKey) {
     viewKey = key;
-    btn.innerHTML = `${ICONS.locate}<span>${v.following ? `跟緊${esc(v.following)}・返回全景` : '返回全景'}</span>`;
+    btn.innerHTML = tl('main.065', { locate: ICONS.locate, p1: v.following ? tl('main.063', { p0: esc(v.following) }) : tl('main.064') });
     if (v.active) document.getElementById('zoom-hint')?.setAttribute('hidden', '');
   }
   const want = v.active && plantingShow === null && performance.now() - scene3d.viewNudgedAt() < VIEW_BTN_MS;

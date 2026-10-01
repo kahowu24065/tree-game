@@ -2,6 +2,7 @@ import type { AnimalArrival, AnimalMarker } from './three/animals3d';
 import type { AnimalCategory, LookKind, Motion } from './data/animals';
 import { playAnimal } from './audio';
 import { esc } from './util';
+import { t as tl } from './i18n';
 
 /**
  * v9 animal HUD: overview markers for animals too small to see, a 「一群…飛咗嚟」 arrival toast, and a
@@ -70,26 +71,26 @@ export function animalIcon(category: AnimalCategory, kind: LookKind): string {
 }
 
 const VERB: Record<Motion, string> = {
-  perch: '飛咗嚟',
-  flock: '飛咗嚟',
-  soar: '喺天上盤旋',
-  hover: '飛咗嚟',
-  flutter: '飛咗嚟',
-  bat: '飛咗嚟',
-  walk: '行咗嚟',
-  hop: '跳咗嚟',
-  wade: '嚟咗水邊',
-  climb: '爬上咗樹',
-  crawl: '爬咗出嚟',
-  glow: '亮起嚟',
-  nest: '喺樹上築咗巢',
-  hollow: '喺樹洞探頭',
+  perch: tl('animalHud.001'),
+  flock: tl('animalHud.001'),
+  soar: tl('animalHud.002'),
+  hover: tl('animalHud.001'),
+  flutter: tl('animalHud.001'),
+  bat: tl('animalHud.001'),
+  walk: tl('animalHud.003'),
+  hop: tl('animalHud.004'),
+  wade: tl('animalHud.005'),
+  climb: tl('animalHud.006'),
+  crawl: tl('animalHud.007'),
+  glow: tl('animalHud.008'),
+  nest: tl('animalHud.009'),
+  hollow: tl('animalHud.010'),
 };
 
 function quantity(count: number): string {
-  if (count >= 3) return '一群';
-  if (count === 2) return '兩隻';
-  return '一隻';
+  if (count >= 3) return tl('animalHud.011');
+  if (count === 2) return tl('animalHud.012');
+  return tl('animalHud.013');
 }
 
 /** 「一群暗綠繡眼鳥飛咗嚟」 / 「兩隻獼猴行咗嚟」 / several at once: 「麻雀、獼猴同菜粉蝶嚟咗」. */
@@ -99,8 +100,8 @@ export function arrivalText(list: AnimalArrival[]): string {
     return `${quantity(a.count)}${a.name}${VERB[a.motion]}`;
   }
   const names = list.map((a) => a.name);
-  const head = names.slice(0, -1).join('、');
-  return names.length > 3 ? `${names.slice(0, 3).join('、')}等 ${names.length} 群動物嚟咗` : `${head}同${names[names.length - 1]}嚟咗`;
+  const head = names.slice(0, -1).join(tl('ui.206'));
+  return names.length > 3 ? tl('animalHud.014', { p0: names.slice(0, 3).join(tl('ui.206')), length: names.length }) : tl('animalHud.015', { head, p1: names[names.length - 1] });
 }
 
 function smooth(a: number, b: number, x: number): number {
@@ -133,7 +134,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   listBtn.type = 'button';
   listBtn.id = 'animal-list-btn';
   listBtn.className = 'glass animal-list-btn';
-  listBtn.setAttribute('aria-label', '島上動物');
+  listBtn.setAttribute('aria-label', tl('animalHud.016'));
   listBtn.setAttribute('aria-expanded', 'false');
   app.appendChild(listBtn);
 
@@ -141,7 +142,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   panel.id = 'animal-list';
   panel.className = 'glass animal-list';
   panel.hidden = true;
-  panel.setAttribute('aria-label', '島上動物');
+  panel.setAttribute('aria-label', tl('animalHud.016'));
   app.appendChild(panel);
 
   let enabled = true;
@@ -224,14 +225,10 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
       .slice()
       .sort((a, b) => Number(isFresh(b.id)) - Number(isFresh(a.id)) || b.count - a.count)
       .map(
-        (c) => `<li><button type="button" data-uid="${c.uid}" class="${c.uid === following ? 'on' : ''}" data-cat="${c.category}">
-          <span class="al-ic">${animalIcon(c.category, c.kind)}</span>
-          <span class="al-name">${esc(c.name)}${isFresh(c.id) ? '<em class="al-new">新</em>' : ''}${c.resident ? '<small>長駐</small>' : ''}</span>
-          <span class="al-n">×${c.count}</span></button></li>`,
+        (c) => tl('animalHud.019', { uid: c.uid, p1: c.uid === following ? 'on' : '', category: c.category, p3: animalIcon(c.category, c.kind), p4: esc(c.name), p5: isFresh(c.id) ? tl('animalHud.017') : '', p6: c.resident ? tl('animalHud.018') : '', count: c.count }),
       )
       .join('');
-    panel.innerHTML = `<header><b>島上動物</b><small>${crews.length} 群・${total} 隻</small><button type="button" class="al-close" data-close aria-label="關閉">×</button></header>
-      ${rows ? `<ul>${rows}</ul><p class="al-hint">撳一下跟拍・「新」＝圖鑑未睇過</p>` : '<p class="al-empty">暫時未有動物，照顧好棵樹佢哋就會嚟。</p>'}`;
+    panel.innerHTML = tl('animalHud.022', { length: crews.length, total, p2: rows ? tl('animalHud.020', { rows }) : tl('animalHud.021') });
   }
 
   function hudRects(): Rect[] {
@@ -293,11 +290,11 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
         els.set(m.uid, el);
         layer.appendChild(el);
       }
-      const html = `<span class="amk-ic">${animalIcon(m.category, m.kind)}</span>${m.count > 1 ? `<b>${m.count}</b>` : ''}${k.cluster ? `<i>+${k.cluster}</i>` : ''}${isFresh(m.id) ? '<em>新</em>' : ''}`;
+      const html = tl('animalHud.023', { p0: animalIcon(m.category, m.kind), p1: m.count > 1 ? `<b>${m.count}</b>` : '', p2: k.cluster ? `<i>+${k.cluster}</i>` : '', p3: isFresh(m.id) ? tl('ui.279') : '' });
       if (el.dataset.html !== html) {
         el.innerHTML = html;
         el.dataset.html = html;
-        el.setAttribute('aria-label', `跟拍${m.name}`);
+        el.setAttribute('aria-label', tl('animalHud.024', { name: m.name }));
       }
       el.style.transform = `translate(${m.x.toFixed(1)}px, ${m.y.toFixed(1)}px)`;
       el.style.opacity = k.alpha.toFixed(2);
@@ -349,8 +346,7 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
       const a = still[0]!;
       const isNew = still.some((x) => isFresh(x.id));
       toastEl.dataset.cat = a.category;
-      toastEl.innerHTML = `<span class="at-ic">${animalIcon(a.category, a.id === 'firefly' ? 'firefly' : (live.find((c) => c.uid === a.uid)?.kind ?? 'bird'))}</span>
-        <span class="at-text">${isNew ? '<em>新</em>' : ''}${esc(arrivalText(still))}</span><small>撳一下跟拍</small>`;
+      toastEl.innerHTML = tl('animalHud.025', { p0: animalIcon(a.category, a.id === 'firefly' ? 'firefly' : (live.find((c) => c.uid === a.uid)?.kind ?? 'bird')), p1: isNew ? tl('ui.279') : '', p2: esc(arrivalText(still)) });
       toastEl.hidden = false;
       // v16.1: the general toast steps up a row while an arrival toast shows (class, not :has(), for older browsers).
       document.body.classList.add('animal-toast-on');

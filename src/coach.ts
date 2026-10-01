@@ -1,3 +1,4 @@
+import { t as tl } from './i18n';
 /** First-plant coach. Stored beside the save so an existing tree is not interrupted. */
 
 export interface Coach {
@@ -22,8 +23,8 @@ export function freshCoach(): Coach {
 
 export function coachTasks(c: Coach): { id: 'water' | 'feed'; label: string; done: boolean }[] {
   return [
-    { id: 'water', label: '澆第一次水', done: c.water },
-    { id: 'feed', label: '施第一次肥', done: c.feed },
+    { id: 'water', label: tl('coach.001'), done: c.water },
+    { id: 'feed', label: tl('coach.002'), done: c.feed },
   ];
 }
 

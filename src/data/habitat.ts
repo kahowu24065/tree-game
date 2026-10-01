@@ -1,4 +1,5 @@
 import type { SpeciesId } from './species';
+import { t as tl } from '../i18n';
 
 /**
  * The floating island grows with the tree (automatic, no cost). Each growth stage widens the
@@ -38,11 +39,11 @@ export type Feature =
   | 'forest';
 
 export const FEATURE_LABEL: Record<Feature, string> = {
-  rocks: '石頭', boulders: '大石', shrubs: '灌木', flowers: '野花', drygrass: '乾草', hills: '山丘', mountains: '遠山',
-  snowpeaks: '雪峰', scree: '碎石坡', snow: '積雪', pond: '池塘', lotus: '荷葉', lake: '湖泊', river: '河流', creek: '小溪',
-  wetland: '濕地', reeds: '蘆葦', waterfall: '瀑布', inlet: '水灣', ferns: '蕨類', treeferns: '樹蕨', fog: '霧', coast: '海岸',
-  wall: '石牆', village: '村屋', shrine: '土地廟', steps: '石級', courtyard: '庭院', lanterns: '石燈籠', pavilion: '亭',
-  forest: '同種樹林',
+  rocks: tl('habitat.001'), boulders: tl('habitat.002'), shrubs: tl('habitat.003'), flowers: tl('habitat.004'), drygrass: tl('habitat.005'), hills: tl('habitat.006'), mountains: tl('habitat.007'),
+  snowpeaks: tl('habitat.008'), scree: tl('habitat.009'), snow: tl('habitat.010'), pond: tl('habitat.011'), lotus: tl('habitat.012'), lake: tl('habitat.013'), river: tl('habitat.014'), creek: tl('habitat.015'),
+  wetland: tl('habitat.016'), reeds: tl('habitat.017'), waterfall: tl('habitat.018'), inlet: tl('habitat.019'), ferns: tl('habitat.020'), treeferns: tl('habitat.021'), fog: tl('habitat.022'), coast: tl('habitat.023'),
+  wall: tl('habitat.024'), village: tl('habitat.025'), shrine: tl('habitat.026'), steps: tl('habitat.027'), courtyard: tl('habitat.028'), lanterns: tl('habitat.029'), pavilion: tl('habitat.030'),
+  forest: tl('habitat.031'),
 };
 
 export interface HabitatDef {
@@ -59,15 +60,15 @@ export interface HabitatDef {
 export const ISLAND_RADII = [7, 9.4, 11.4, 13.8, 16.6] as const;
 
 export const HABITATS: HabitatDef[] = [
-  { species: 'camphor', name: '山坡林地', blurb: '香港郊野山坡：石塊、灌叢、山澗水潭，遠處青山同溪流。', grass: '#78b64c', adds: [[], ['rocks', 'shrubs', 'pond'], ['hills', 'flowers', 'creek', 'pond'], ['boulders', 'forest', 'lake'], ['mountains', 'creek', 'inlet', 'pond']] },
-  { species: 'cotton', name: '河畔草地', blurb: '華南河岸同乾草地：河灘水氹、河邊蘆葦濕地，遠處黃土丘同河口。', grass: '#a9b75a', adds: [[], ['drygrass', 'rocks', 'pond'], ['river', 'pond'], ['reeds', 'forest', 'wetland', 'lake'], ['hills', 'waterfall', 'inlet', 'river']] },
-  { species: 'banyan', name: '圍村風水林', blurb: '新界圍村：風水塘、石牆、魚塘荷葉、村屋同土地廟，村邊小溪出海。', grass: '#6fae48', adds: [[], ['wall', 'shrubs', 'pond'], ['pond', 'lotus'], ['village', 'shrine', 'creek', 'lake'], ['forest', 'flowers', 'pond', 'inlet']] },
-  { species: 'metasequoia', name: '溪澗濕地', blurb: '湖北水杉壩：溪流、池塘、濕地蘆葦，背後青山，清晨起霧。', grass: '#6db255', adds: [[], ['reeds', 'creek', 'pond'], ['pond', 'lotus', 'river'], ['wetland', 'forest', 'inlet'], ['lake', 'fog', 'hills']] },
-  { species: 'ginkgo', name: '古剎庭院', blurb: '古寺庭院：石級、石燈籠、亭同放生池，山溪繞寺，四周山丘。', grass: '#7cb350', adds: [[], ['rocks', 'flowers', 'pond'], ['steps', 'courtyard', 'pond'], ['lanterns', 'pavilion', 'pond', 'creek'], ['wall', 'forest', 'hills', 'creek', 'lake']] },
-  { species: 'deodar', name: '喜馬拉雅山坡', blurb: '高山碎石坡，雪水匯成小溪同高山湖，雪峰連綿，雪松成林。', grass: '#8aa866', adds: [[], ['rocks', 'scree', 'creek'], ['hills', 'boulders', 'creek', 'pond'], ['snowpeaks', 'forest', 'lake'], ['snow', 'mountains', 'creek', 'river']] },
-  { species: 'redwood', name: '霧鎖海岸', blurb: '加州海岸霧林：蕨類、小溪、潟湖、海蝕柱同海霧，後面係海岸山脈。', grass: '#5f9f4a', adds: [[], ['ferns', 'pond'], ['creek', 'shrubs', 'pond'], ['coast', 'forest', 'fog', 'inlet'], ['treeferns', 'boulders', 'hills', 'creek', 'lake']] },
-  { species: 'eucalyptus', name: '桉樹山谷', blurb: '澳洲東南山谷：蕨叢、山溪、樹蕨、瀑布水潭同藍霧山嶺。', grass: '#8aa65c', adds: [[], ['ferns', 'rocks', 'creek', 'pond'], ['hills', 'treeferns', 'pond'], ['waterfall', 'forest', 'creek'], ['mountains', 'fog', 'lake']] },
-  { species: 'douglas', name: '山湖針葉林', blurb: '北美太平洋山區：溪流、湖泊、河灣、針葉林，遠處雪山。', grass: '#6aa250', adds: [[], ['rocks', 'shrubs', 'creek', 'pond'], ['lake'], ['mountains', 'forest', 'river'], ['snowpeaks', 'reeds', 'inlet', 'lake']] },
+  { species: 'camphor', name: tl('habitat.032'), blurb: tl('habitat.033'), grass: '#78b64c', adds: [[], ['rocks', 'shrubs', 'pond'], ['hills', 'flowers', 'creek', 'pond'], ['boulders', 'forest', 'lake'], ['mountains', 'creek', 'inlet', 'pond']] },
+  { species: 'cotton', name: tl('habitat.034'), blurb: tl('habitat.035'), grass: '#a9b75a', adds: [[], ['drygrass', 'rocks', 'pond'], ['river', 'pond'], ['reeds', 'forest', 'wetland', 'lake'], ['hills', 'waterfall', 'inlet', 'river']] },
+  { species: 'banyan', name: tl('habitat.036'), blurb: tl('habitat.037'), grass: '#6fae48', adds: [[], ['wall', 'shrubs', 'pond'], ['pond', 'lotus'], ['village', 'shrine', 'creek', 'lake'], ['forest', 'flowers', 'pond', 'inlet']] },
+  { species: 'metasequoia', name: tl('habitat.038'), blurb: tl('habitat.039'), grass: '#6db255', adds: [[], ['reeds', 'creek', 'pond'], ['pond', 'lotus', 'river'], ['wetland', 'forest', 'inlet'], ['lake', 'fog', 'hills']] },
+  { species: 'ginkgo', name: tl('habitat.040'), blurb: tl('habitat.041'), grass: '#7cb350', adds: [[], ['rocks', 'flowers', 'pond'], ['steps', 'courtyard', 'pond'], ['lanterns', 'pavilion', 'pond', 'creek'], ['wall', 'forest', 'hills', 'creek', 'lake']] },
+  { species: 'deodar', name: tl('habitat.042'), blurb: tl('habitat.043'), grass: '#8aa866', adds: [[], ['rocks', 'scree', 'creek'], ['hills', 'boulders', 'creek', 'pond'], ['snowpeaks', 'forest', 'lake'], ['snow', 'mountains', 'creek', 'river']] },
+  { species: 'redwood', name: tl('habitat.044'), blurb: tl('habitat.045'), grass: '#5f9f4a', adds: [[], ['ferns', 'pond'], ['creek', 'shrubs', 'pond'], ['coast', 'forest', 'fog', 'inlet'], ['treeferns', 'boulders', 'hills', 'creek', 'lake']] },
+  { species: 'eucalyptus', name: tl('habitat.046'), blurb: tl('habitat.047'), grass: '#8aa65c', adds: [[], ['ferns', 'rocks', 'creek', 'pond'], ['hills', 'treeferns', 'pond'], ['waterfall', 'forest', 'creek'], ['mountains', 'fog', 'lake']] },
+  { species: 'douglas', name: tl('habitat.048'), blurb: tl('habitat.049'), grass: '#6aa250', adds: [[], ['rocks', 'shrubs', 'creek', 'pond'], ['lake'], ['mountains', 'forest', 'river'], ['snowpeaks', 'reeds', 'inlet', 'lake']] },
 ];
 
 export function habitatDef(species: SpeciesId | string): HabitatDef {

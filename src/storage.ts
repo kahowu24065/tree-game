@@ -5,6 +5,7 @@ import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
 import { addLog, checkMilestones, migrateWx, RULES_VERSION, windStageCm } from './sim';
 import { formatHeight } from './util';
+import { t as tl } from './i18n';
 
 /** Fields of saves made before v14 (seasons). */
 type LegacySave = GameState & { season?: string; completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean } };
@@ -40,7 +41,7 @@ export function migrateV14(data: GameState): void {
   } else if (data.started !== false) {
     const date = data.lastSeenDate ?? data.createdOn;
     const got = checkMilestones(data, date, { retro: true, perks: ([1, 2, 3] as const).filter((t) => !given.includes(t)) });
-    if (got.length === 0 && data.ageDays > 0) addLog(data, date, '新規則：棵樹冇完結日，會一直陪住你。生長會慢慢接近紀錄高度，樹齡里程碑會發徽章。', { kind: 'badge', title: 'v14 新規則', time: '' });
+    if (got.length === 0 && data.ageDays > 0) addLog(data, date, tl('storage.001'), { kind: 'badge', title: tl('storage.002'), time: '' });
   }
   data.rules = RULES_VERSION;
 }
@@ -62,7 +63,7 @@ export function migrateTarget(data: GameState): void {
   else data.passedTargetOn ??= data.log?.[0]?.date ?? data.createdOn;
   if (old !== t && data.started !== false) {
     const sp = speciesDef(data.species);
-    addLog(data, data.lastSeenDate ?? data.createdOn, `紀錄高度更新：${sp.name}由 ${formatHeight(old)} 改為 ${formatHeight(t)}（真實最高紀錄 ${sp.maxM} 米，取最接近嘅 10 米）。高度照舊，冇上限。`, { kind: 'badge', title: '紀錄高度更新', reward: { text: formatHeight(t), tone: 'purple' }, time: '' });
+    addLog(data, data.lastSeenDate ?? data.createdOn, tl('storage.003', { name: sp.name, p1: formatHeight(old), p2: formatHeight(t), maxM: sp.maxM }), { kind: 'badge', title: tl('storage.004'), reward: { text: formatHeight(t), tone: 'purple' }, time: '' });
   }
 }
 
