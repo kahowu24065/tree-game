@@ -3955,3 +3955,78 @@ body.sheet-open .animal-toast.show {
   min-width: 4.8em;
   font-weight: 600;
 }
+
+/* ---------- 1.4.20 English layout (zh layouts unchanged) ---------- */
+html[lang='en'] .status-sub {
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+/* Stat rows: the letter keys (H/W/N/R) only; full names stay in the title tooltip. */
+html[lang='en'] .bar {
+  grid-template-columns: 13px 1fr 24px;
+}
+html[lang='en'] .bar .bar-label {
+  display: none;
+}
+/* Mini emergency button: label on top, status underneath, so "Heat watering" fits the card. */
+html[lang='en'] .emerg {
+  grid-template-columns: 15px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 5px;
+  row-gap: 0;
+  height: auto;
+  min-height: 32px;
+  padding: 3px 6px 3px 7px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+html[lang='en'] .emerg svg {
+  grid-row: 1 / span 2;
+}
+html[lang='en'] .emerg > span,
+html[lang='en'] .emerg small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[lang='en'] .dock-btn.d-warm .dock-label {
+  font-size: 12px;
+}
+html[lang='en'] .dock-btn {
+  font-size: 14px;
+  padding-left: 3px;
+  padding-right: 3px;
+  min-width: 0;
+}
+html[lang='en'] .dock-btn small {
+  left: 3px;
+  right: 3px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[lang='en'] .dock-btn.short {
+  padding: 0 3px;
+}
+html[lang='en'] .dock-btn.short .dock-label,
+html[lang='en'] .dock-btn.short:has(small) .dock-label {
+  font-size: 13.5px;
+}
+html[lang='en'] .dock-btn .dock-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[lang='en'] .dock-sub {
+  min-width: 0;
+}
+html[lang='en'] .dock-btn:not(.short):has(small) .dock-label {
+  margin-bottom: 11px;
+}
+html[lang='en'] .emerg > span {
+  white-space: normal;
+}

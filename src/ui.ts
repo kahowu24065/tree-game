@@ -19,7 +19,7 @@ import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, Mil
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
-import { LOCALES, LOCALE_NAMES, getLocale, t as tl } from './i18n';
+import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables } from './i18n';
 
 const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
 
@@ -506,7 +506,7 @@ export function renderChrome(view: View): void {
     const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying), state.collapses || 0) : null;
     const emerg = state.started && !state.over ? emergencyButtons(view, 'mini') : '';
     status.classList.toggle('pop-open', Boolean(night?.pop));
-    status.innerHTML = tl('ui.113', { p0: icon('chevronRight'), p1: esc(state.treeName), p2: esc(speciesDef(state.species).name), p3: esc(stage.name), p4: shownAge(state), p5: realAgeDays(state.heightCm, state.species), p6: carbonKg(state.heightCm, state.species), p7: statBar('H', tl('ui.110'), state.health, [50, 100], 'health', state.dying ? tl('ui.045') : ''), p8: night?.chip ?? '', p9: waterBar(state.moisture), p10: statBar('N', tl('ui.111'), state.nutrients, N_OPTIMAL, 'food', '', N_MALNOURISHED), p11: statBar('R', tl('ui.112'), state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked'), p12: state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : '', p13: emerg ? `<div class="emerg-acts">${emerg}</div>` : '', p14: night?.pop ?? '' });
+    status.innerHTML = tl('ui.113', { p0: icon('chevronRight'), p1: statusName(state.treeName), p2: esc(speciesDef(state.species).name), p3: esc(stage.name), p4: shownAge(state), p5: realAgeDays(state.heightCm, state.species), p6: carbonKg(state.heightCm, state.species), p7: statBar('H', tl('ui.110'), state.health, [50, 100], 'health', state.dying ? tl('ui.045') : ''), p8: night?.chip ?? '', p9: waterBar(state.moisture), p10: statBar('N', tl('ui.111'), state.nutrients, N_OPTIMAL, 'food', '', N_MALNOURISHED), p11: statBar('R', tl('ui.112'), state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked'), p12: state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : '', p13: emerg ? `<div class="emerg-acts">${emerg}</div>` : '', p14: night?.pop ?? '' });
   }
 
   const rail = document.getElementById('rail');
@@ -698,6 +698,18 @@ export function warnIcon(w: HkoWarning): string {
   if (w.group === 'WL') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 18.5L8 5l3.5 5 2-2 5 10.5z" fill="currentColor"/><circle cx="13" cy="14.5" r="1.4" fill="#fff"/><circle cx="9.5" cy="15.5" r="1" fill="#fff"/></svg>';
   if (w.group === 'WTS') return '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.5 1.5L4 11h5l-1.5 7.5L16 8h-5z" fill="currentColor"/></svg>';
   return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path d="M10 5.5v5.5M10 13.8v.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
+}
+
+/**
+ * Status-card name. Chinese templates read "{name} · {species}{stage}" (unchanged).
+ * The English template is "{p1}{species} · {stage}", so p1 carries its own separator and is
+ * dropped when the tree still has a default name (e.g. the Chinese default from an old save).
+ */
+function statusName(name: string): string {
+  if (isChinese()) return esc(name);
+  const n = name.trim();
+  const defaults = Object.values(tables()).map((tb) => tb['sim.001']);
+  return !n || defaults.includes(n) ? '' : `${esc(n)} · `;
 }
 
 function statBar(key: string, label: string, value: number, band: readonly [number, number], tone: string, flag = '', warnAt?: number): string {
