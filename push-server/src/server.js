@@ -69,7 +69,9 @@ const isMoDevice = (r) => r.state?.isMO === true;
 const isTwDevice = (r) => r.state?.isTW === true && !isMoDevice(r);
 const isHkDevice = (r) => !isMoDevice(r) && !isTwDevice(r) && (!r.state || r.state.isHK);
 
-const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_forecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
+const SMG_C = ['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_forecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml'];
+// Chinese feed plus SMG's English feed (e_*) for English players' bulletins and forecasts.
+const SMG_ALLOW = new Set([...SMG_C, ...SMG_C.map((f) => f.replace('/c_', '/e_'))]);
 const SMG_HOST = { xml: 'https://xml.smg.gov.mo', rss: 'https://rss.smg.gov.mo' };
 
 function forSmg(msg, loc) {

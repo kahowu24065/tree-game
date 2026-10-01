@@ -9,7 +9,8 @@ import { mapWarning, rainFromPsr, timeoutSignal, windFromText, type HkoData, typ
 import type { ForecastDay } from './types';
 import { isNative } from './native/platform';
 import { PUSH_SERVER } from './native/push';
-import { t as tl } from './i18n';
+import { getLocale, t as tl } from './i18n';
+import { localizeBureauText } from './zhconv';
 
 /** Approximate station positions, used only to pick the nearest reading. */
 const STATIONS: { code: string; name: string; lat: number; lon: number }[] = [
@@ -178,8 +179,9 @@ export function smgMessages(xml: SmgXml): string[] {
   for (const item of blocks(xml.temp ?? '', 'item')) {
     const title = inner(item, 'title');
     const desc = inner(item, 'description');
-    if (!title || /取消|沒有|並無/.test(`${title}${desc}`)) continue;
-    if (/高溫|酷熱|低溫|寒冷|降溫/.test(title)) add(desc);
+    // Chinese feed (c_*) or SMG's English feed (e_*), same structure.
+    if (!title || /取消|沒有|並無|cancel|\bno\b/i.test(`${title}${desc}`)) continue;
+    if (/高溫|酷熱|低溫|寒冷|降溫|\bhot\b|\bcold\b/i.test(title)) add(desc);
   }
   return out;
 }
@@ -243,7 +245,7 @@ export function withSmgDays(daily: ForecastDay[], data: HkoData): ForecastDay[] 
 }
 
 /** Pure parser. `lat`/`lon` pick the nearest station that reports a temperature. */
-export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()): SmgBundle {
+export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now(), local?: SmgXml): SmgBundle {
   const station = nearestStation(xml.actual ?? '', lat, lon);
   const brief = xml.brief ?? '';
   const status = inner(brief, 'WeatherStatus');
@@ -253,9 +255,14 @@ export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()
   const windKmh = station ? valueOfType(station.block, 'WindSpeed', '3') : valueOfType(brief, 'WindSpeed', '3');
   const gustKmh = station ? valueOfType(station.block, 'WindGust', '3') : null;
   const precipMm = station ? valueOfType(station.block, 'Rainfall', '3') : null;
-  const days = forecastDays(xml.week ?? '');
+  // Signals, wind force and rain grade come from the Chinese feed; `local` (SMG's English e_* feed) only
+  // replaces the text the player reads: advisory sentences, the situation paragraph and each day's forecast.
+  const localText = new Map(local?.week ? forecastDays(local.week).map((d) => [d.date, d.text] as const) : []);
+  const days = forecastDays(xml.week ?? '').map((d) => (localText.get(d.date) ? { ...d, text: localText.get(d.date)! } : d));
   const warnings = smgWarnings(xml);
-  const messages = smgMessages(xml);
+  const localMessages = local && (local.typhoon || local.rain || local.thunder || local.monsoon || local.temp) ? smgMessages(local) : null;
+  const messages = localMessages && (localMessages.length || !smgMessages(xml).length) ? localMessages : smgMessages(xml);
+  const situation = (local?.outlook && inner(local.outlook, 'TodaySituation')) || inner(xml.outlook ?? '', 'TodaySituation');
   return {
     windKmh,
     gustKmh: gustKmh ?? (windKmh !== null ? windKmh : null),
@@ -264,7 +271,7 @@ export function parseSmg(xml: SmgXml, lat: number, lon: number, now = Date.now()
       fetchedAt: now,
       warnings,
       messages,
-      situation: inner(xml.outlook ?? '', 'TodaySituation'),
+      situation,
       forecast: days,
       current: {
         tempC,
@@ -315,14 +322,26 @@ async function fetchText(file: string, host: 'xml' | 'rss'): Promise<string> {
   throw new Error(last);
 }
 
-/** Current readings, 7-day forecast and warnings. Throws when the live observation cannot be read. */
-export async function fetchSmg(lat: number, lon: number): Promise<SmgBundle> {
+/** SMG's English feed: the free-text files only (same names with e_ instead of c_). */
+const EN_FILES = FILES.filter((f) => ['week', 'outlook', 'typhoon', 'rain', 'thunder', 'monsoon', 'temp'].includes(f.key)).map((f) => ({ ...f, file: f.file.replace(/^c_/, 'e_') }));
+
+async function loadAll(files: typeof FILES): Promise<SmgXml> {
   const xml: SmgXml = {};
-  const results = await Promise.allSettled(FILES.map((f) => fetchText(f.file, f.host)));
-  FILES.forEach((f, i) => {
+  const results = await Promise.allSettled(files.map((f) => fetchText(f.file, f.host)));
+  files.forEach((f, i) => {
     const r = results[i];
     if (r?.status === 'fulfilled') xml[f.key] = r.value;
   });
+  return xml;
+}
+
+/**
+ * Current readings, 7-day forecast and warnings. Throws when the live observation cannot be read.
+ * English players also get SMG's English bulletins; zh-CN gets the Chinese text converted to Simplified.
+ */
+export async function fetchSmg(lat: number, lon: number): Promise<SmgBundle> {
+  const [xml, local] = await Promise.all([loadAll(FILES), getLocale() === 'en' ? loadAll(EN_FILES) : Promise.resolve(undefined)]);
   if (!xml.brief && !xml.actual) throw new Error(tl('smg.005'));
-  return parseSmg(xml, lat, lon);
+  const bundle = parseSmg(xml, lat, lon, Date.now(), local);
+  return { ...bundle, data: await localizeBureauText(bundle.data, 'hk') };
 }

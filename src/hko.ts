@@ -78,8 +78,8 @@ const TC_SHORT: Record<string, string> = {
 /** What the warning card shows. The signal stays specific; the game grade is chosen separately. */
 export function warningDisplay(w: HkoWarning): string {
   if (w.group === 'WTCSGNL' || w.group === 'WRAIN') return w.short;
-  // The feed's own (Traditional Chinese) name only where it reads natively; elsewhere the translated short name.
-  const nativeName = getLocale() === 'zh-HK' || getLocale() === 'zh-TW';
+  // The feed's own name (HKO is fetched in the player's language) unless it is Chinese and the player reads English.
+  const nativeName = getLocale() !== 'en' || !/[\u3400-\u9fff]/.test(w.name);
   if ((w.group === 'WHOT' || w.group === 'WCOLD') && w.name && w.name !== w.code && nativeName) return w.name;
   return w.short || w.name;
 }
@@ -87,7 +87,7 @@ export function warningDisplay(w: HkoWarning): string {
 export function mapWarning(group: string, raw: { code?: string; name?: string; type?: string; actionCode?: string; issueTime?: string }): HkoWarning | null {
   if (!raw || raw.actionCode === 'CANCEL') return null;
   const code = raw.code || group;
-  const name = group === 'WTCSGNL' ? (TC_NAME[code] ?? raw.name ?? tl('hko.017')) : `${raw.type ?? ''}${raw.name ?? code}`;
+  const name = group === 'WTCSGNL' ? (TC_NAME[code] ?? raw.name ?? tl('hko.017')) : [raw.type ?? '', raw.name ?? code].join(/^[A-Za-z]/.test(raw.type ?? '') ? ' ' : '');
   const base = { group, code, name, issued: raw.issueTime ?? '', standby: false } as const;
   if (group === 'WTCSGNL') {
     const short = TC_SHORT[code] ?? tl('hko.018');
@@ -257,14 +257,19 @@ export function parseFnd(data: unknown): { forecast: HkoForecastDay[]; situation
 
 /** Beaufort force from HKO wind text like 「東風4至5級，間中6級」 → km/h of the strongest force mentioned. */
 export function windFromText(text: string): number {
-  const levels = [...text.matchAll(/(\d{1,2})\s*級/g)].map((m) => Number(m[1]));
+  // 「東風4至5級」(tc), 「东风4至5级」(sc), "East force 4 to 5, occasionally 6" (en / SMG English).
+  let levels = [...text.matchAll(/(\d{1,2})\s*[級级]/g)].map((m) => Number(m[1]));
+  if (!levels.length && /force/i.test(text)) levels = [...text.replace(/^[\s\S]*?force/i, '').matchAll(/\b(\d{1,2})\b/g)].map((m) => Number(m[1])).filter((n) => n <= 12);
   const force = levels.length ? Math.max(...levels) : 2;
   const kmh = [1, 3, 9, 15, 24, 34, 44, 56, 68, 82, 96, 110, 120];
   return kmh[Math.min(12, Math.max(0, force))] ?? 12;
 }
 
+/** HKO English PSR (fnd lang=en) → the Chinese grades used below. */
+const PSR_EN: Record<string, string> = { high: '高', 'medium high': '中高', medium: '中', 'medium low': '中低', low: '低' };
+
 export function rainFromPsr(psr: string): { mm: number; prob: number } {
-  switch (psr) {
+  switch (PSR_EN[psr.trim().toLowerCase()] ?? psr) {
     case '高':
       return { mm: 18, prob: 85 };
     case '中高':
@@ -278,11 +283,18 @@ export function rainFromPsr(psr: string): { mm: number; prob: number } {
   }
 }
 
-async function getJson(dataType: string, timeoutMs: number): Promise<unknown> {
+export type HkoLang = 'tc' | 'sc' | 'en';
+/** The Observatory's own language versions: tc for zh-HK / zh-TW, sc for zh-CN, en for English. */
+export function hkoLang(): HkoLang {
+  const l = getLocale();
+  return l === 'en' ? 'en' : l === 'zh-CN' ? 'sc' : 'tc';
+}
+
+async function getJson(dataType: string, timeoutMs: number, lang: HkoLang = 'tc'): Promise<unknown> {
   let last: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(`${BASE}?dataType=${dataType}&lang=tc`, { signal: timeoutSignal(timeoutMs) });
+      const res = await fetch(`${BASE}?dataType=${dataType}&lang=${lang}`, { signal: timeoutSignal(timeoutMs) });
       if (!res.ok) throw new Error(tl('hko.045', { status: res.status }));
       const text = await res.text();
       return JSON.parse(text) as unknown;
@@ -301,9 +313,9 @@ export function timeoutSignal(ms: number): AbortSignal | undefined {
   return c.signal;
 }
 
-async function loadOne(dataType: string, timeoutMs: number): Promise<{ ok: true; value: unknown } | { ok: false }> {
+async function loadOne(dataType: string, timeoutMs: number, lang: HkoLang = 'tc'): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
-    return { ok: true, value: await getJson(dataType, timeoutMs) };
+    return { ok: true, value: await getJson(dataType, timeoutMs, lang) };
   } catch {
     return { ok: false };
   }
@@ -316,11 +328,22 @@ async function loadOne(dataType: string, timeoutMs: number): Promise<{ ok: true;
  * while the forecast still arrived.
  */
 export async function fetchHko(lat: number, lon: number, timeoutMs = 8000): Promise<HkoData> {
-  const warn = await loadOne('warnsum', timeoutMs);
+  // Warning names and forecast text come in the player's language (codes / PSR / wind force are the same in all
+  // three). The live reading stays tc: station and district names are matched in Chinese; only its advisory
+  // sentences are re-read in the player's language when there are any.
+  const lang = hkoLang();
+  let warn = await loadOne('warnsum', timeoutMs, lang);
+  if (!warn.ok && lang !== 'tc') warn = await loadOne('warnsum', timeoutMs);
   const now = await loadOne('rhrread', timeoutMs);
-  const fnd = await loadOne('fnd', timeoutMs);
+  let fnd = await loadOne('fnd', timeoutMs, lang);
+  if (!fnd.ok && lang !== 'tc') fnd = await loadOne('fnd', timeoutMs);
   if (!warn.ok && !now.ok && !fnd.ok) throw new Error(tl('hko.046'));
   const rh = now.ok ? parseRhrread(now.value, lat, lon) : null;
+  if (rh && rh.messages.length && lang !== 'tc') {
+    const local = await loadOne('rhrread', timeoutMs, lang);
+    const msgs = local.ok ? parseRhrread(local.value, lat, lon)?.messages : null;
+    if (msgs?.length) rh.messages = msgs;
+  }
   const f = fnd.ok ? parseFnd(fnd.value) : { forecast: [], situation: '' };
   return {
     fetchedAt: Date.now(),

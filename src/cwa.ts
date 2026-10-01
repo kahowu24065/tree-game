@@ -9,6 +9,7 @@ import { timeoutSignal, type HkoData, type HkoForecastDay, type HkoWarning } fro
 import { PUSH_SERVER } from './native/push';
 import type { StormKind } from './types';
 import { t as tl } from './i18n';
+import { localizeBureauText } from './zhconv';
 
 export type CwaWarningType = 'typhoon' | 'rain' | 'wind' | 'thunder' | 'heat' | 'cold' | 'fog';
 
@@ -151,9 +152,10 @@ export async function fetchCwa(lat: number, lon: number): Promise<CwaBundle> {
       }
       const body = (await res.json()) as CwaResponse;
       if (!body?.ok) throw new Error(last);
-      const bundle = parseCwa(body);
-      lastArea = { county: bundle.county, town: bundle.town };
-      return bundle;
+      const parsed = parseCwa(body);
+      lastArea = { county: parsed.county, town: parsed.town };
+      // CWA free text stays Chinese; zh-CN players get it in Simplified.
+      return { ...parsed, data: await localizeBureauText(parsed.data, 'tw') };
     } catch {
       last = tl('cwa.003');
     }
