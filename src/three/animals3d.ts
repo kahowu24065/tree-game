@@ -1098,6 +1098,30 @@ export function pickFlyOrbit(time: number, motion: string, existing: FlyOrbit[],
 }
 
 /** Slots around a flock leader, in gap-units, so members don't share one point. */
+/** Hover flyers (bee, sunbird, dragonfly) hop between nearby perches at most this far apart (metres). */
+export const HOVER_HOP_M = 3;
+
+/**
+ * Pick the next hover spot: a random point within `maxDist` of `from` (but not right on top of it). With none in
+ * range, one of the `fallback` nearest. Returns −1 for an empty list. Pure (used by the hover motion and tests).
+ */
+export function pickNearbySpot(
+  points: readonly { x: number; y: number; z: number }[],
+  from: { x: number; y: number; z: number },
+  rng: () => number,
+  maxDist = HOVER_HOP_M,
+  fallback = 3,
+  minDist = 0.3,
+): number {
+  if (!points.length) return -1;
+  const dist = points.map((p, i) => ({ i, d: Math.hypot(p.x - from.x, p.y - from.y, p.z - from.z) }));
+  const near = dist.filter((e) => e.d <= maxDist && e.d >= minDist);
+  if (near.length) return near[Math.floor(rng() * near.length)]!.i;
+  const sorted = dist.filter((e) => e.d >= minDist).sort((a, b) => a.d - b.d);
+  const pool = (sorted.length ? sorted : dist).slice(0, Math.max(1, fallback));
+  return pool[Math.floor(rng() * pool.length)]!.i;
+}
+
 export function flockSlots(n: number): { x: number; y: number; z: number }[] {
   const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, n))));
   const rows = Math.ceil(Math.max(1, n) / cols);
@@ -1981,6 +2005,18 @@ export class Animals3D {
     return tree.group.localToWorld(out.copy(p.pos));
   }
 
+  /**
+   * A hover spot a little outside a perch (in front of the flowers). `first`: start from the nearest few to `from`
+   * (e.g. just arrived); otherwise a random perch within HOVER_HOP_M of `from` (nearest few if none in range).
+   */
+  private hoverSpot(tree: NonNullable<typeof this.tree>, from: THREE.Vector3, first: boolean): THREE.Vector3 {
+    if (!tree.perches.length) return new THREE.Vector3((this.rng() - 0.5) * 2, 1, (this.rng() - 0.5) * 2);
+    const pts = tree.perches.map((p) => tree.group.localToWorld(new THREE.Vector3().copy(p.pos).addScaledVector(p.out, 0.4)));
+    const idx = first ? pickNearbySpot(pts, from, this.rng, 0, 4, 0) : pickNearbySpot(pts, from, this.rng);
+    const spot = tree.perches[idx]!;
+    return tree.group.localToWorld(new THREE.Vector3().copy(spot.pos).addScaledVector(spot.out, 0.3 + this.rng() * 0.2));
+  }
+
   private trunkWorld(i: number, lift: number, out: THREE.Vector3, off = 0): THREE.Vector3 {
     const tree = this.tree!;
     const s = tree.trunkSpots[i % Math.max(1, tree.trunkSpots.length)];
@@ -2270,13 +2306,18 @@ export class Animals3D {
             // Swarm: stay around the first member (bees round the same flower, dragonflies in a loose knot).
             m.target.copy(c.members[0]!.target).addScaledVector(m.offset, spacing);
           } else if (def.motion === 'hover') {
-            m.timer -= dt;
-            if (m.timer <= 0) {
-              const spot = tree.perches[Math.floor(this.rng() * Math.max(1, tree.perches.length))];
-              if (spot) tree.group.localToWorld(m.target.copy(spot.pos).addScaledVector(spot.out, 0.3 + this.rng() * 0.4 * Math.max(1, H * 0.1)));
-              else m.target.set((this.rng() - 0.5) * 2, 1, (this.rng() - 0.5) * 2);
-              m.timer = 0.8 + this.rng() * 1.6;
+            // Visit flowers: hover at a spot for a while, then drift slowly to a nearby one (within HOVER_HOP_M).
+            const anchor = (m.rest ??= this.hoverSpot(tree, m.pos, true));
+            const reach = 0.25 + len * 2;
+            if (m.pos.distanceTo(anchor) < reach) {
+              m.timer -= dt;
+              if (m.timer <= 0) {
+                m.rest = this.hoverSpot(tree, anchor, false);
+                m.timer = 2.5 + this.rng() * 4;
+              }
             }
+            const wob = 0.05 + len * 0.6;
+            m.target.set(Math.sin(ph * 2.1) * wob, Math.sin(ph * 3.3) * wob * 0.7, Math.cos(ph * 1.7) * wob).add(m.rest!);
           } else if (bfly && m.rest) {
             // Settled on a leaf or a flower: slow wing opening, then off again.
             m.target.copy(m.rest);
@@ -2318,7 +2359,13 @@ export class Animals3D {
             }
           }
           const settled = bfly && m.rest !== null && m.pos.distanceTo(m.target) < 0.08;
-          m.pos.lerp(m.target, k(def.motion === 'hover' ? 4 : bfly && m.rest ? 3.5 : 2.5));
+          if (def.motion === 'hover' && !c.leaving) {
+            // Slow, eased flight capped at ~1.2 m/s (followers trail the leader a little more softly).
+            const step = tmp2.copy(m.target).sub(m.pos).multiplyScalar(k(i > 0 && swarm ? 2.2 : 1.6));
+            const cap = 1.2 * dt;
+            if (step.length() > cap) step.setLength(cap);
+            m.pos.add(step);
+          } else m.pos.lerp(m.target, k(def.motion === 'hover' ? 4 : bfly && m.rest ? 3.5 : 2.5));
           if (settled) m.pos.copy(m.target);
           perched = settled;
           flap = settled ? 0 : 1;
