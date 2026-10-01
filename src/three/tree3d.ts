@@ -89,6 +89,12 @@ export const healthUniforms = {
   uPulse: { value: 0 },
 };
 
+/** Premium leaf skin: uSkin = colour (linear), uSkinK = 0 (species colour) … 1 (full skin). Thumbnails zero it. */
+export const skinUniforms = {
+  uSkin: { value: new THREE.Color(1, 1, 1) },
+  uSkinK: { value: 0 },
+};
+
 /** 0 solid … 1 semi-transparent, while the camera is looking at the nest. */
 export const peekUniform = { uPeek: { value: 0 } };
 
@@ -98,6 +104,8 @@ const WITHER_LEAF = `
   {
     vec3 c0 = diffuseColor.rgb;
     float l = dot(c0, vec3(0.299, 0.587, 0.114));
+    c0 = mix(c0, uSkin * clamp(l * 3.2, 0.25, 1.15), uSkinK);
+    l = dot(c0, vec3(0.299, 0.587, 0.114));
     vec3 dull = mix(c0, vec3(l), min(1.0, uWither * 1.6) * 0.5);
     vec3 sick = mix(vec3(0.42, 0.3, 0.06), vec3(0.17, 0.08, 0.025), smoothstep(0.45, 0.95, uWither)) * (0.55 + l * 2.2);
     diffuseColor.rgb = mix(dull, sick, smoothstep(0.12, 0.95, uWither) * 0.95);
@@ -117,9 +125,9 @@ export function leafMat(): THREE.MeshStandardMaterial {
   if (leafMaterial) return leafMaterial;
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.82, side: THREE.DoubleSide });
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, windUniforms, healthUniforms, peekUniform);
+    Object.assign(shader.uniforms, windUniforms, healthUniforms, peekUniform, skinUniforms);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD}`)
+      .replace('#include <common>', `#include <common>\n${HEALTH_FRAG_HEAD} uniform vec3 uSkin; uniform float uSkinK;`)
       .replace('#include <color_fragment>', `#include <color_fragment>${WITHER_LEAF}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>${PULSE}${PEEK}`);
     shader.vertexShader = shader.vertexShader

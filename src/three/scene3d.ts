@@ -7,7 +7,7 @@ import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
-import { buildTree, healthUniforms, peekUniform, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
+import { buildTree, healthUniforms, peekUniform, skinUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
 import type { NestBuildKind } from '../nest';
 import { buildNestDecor } from './nestDecor3d';
@@ -449,11 +449,13 @@ export class Scene3D {
 
   /** v16: tree materials without the health look (thumbnails, line-ups). */
   private neutralLook(fn: () => void): void {
-    const saved = { w: healthUniforms.uWither.value, d: healthUniforms.uDroop.value, p: healthUniforms.uPulse.value };
+    const saved = { w: healthUniforms.uWither.value, d: healthUniforms.uDroop.value, p: healthUniforms.uPulse.value, s: skinUniforms.uSkinK.value };
     healthUniforms.uWither.value = healthUniforms.uDroop.value = healthUniforms.uPulse.value = 0;
+    skinUniforms.uSkinK.value = 0;
     try {
       fn();
     } finally {
+      skinUniforms.uSkinK.value = saved.s;
       healthUniforms.uWither.value = saved.w;
       healthUniforms.uDroop.value = saved.d;
       healthUniforms.uPulse.value = saved.p;
@@ -685,6 +687,8 @@ export class Scene3D {
     // Health look (continuous, no rebuild).
     const look = healthLook(input.health, Boolean(input.dying), Boolean(input.dead));
     healthUniforms.uWither.value = look.wither;
+    if (input.skin) skinUniforms.uSkin.value.setRGB(input.skin.rgb[0], input.skin.rgb[1], input.skin.rgb[2], THREE.SRGBColorSpace);
+    skinUniforms.uSkinK.value = input.skin && !input.dead ? input.skin.k : 0;
     healthUniforms.uDroop.value = look.droop * (input.reducedMotion ? 0.7 : 1);
     healthUniforms.uPulse.value = look.pulse ? (input.reducedMotion ? 0.07 : 0.04 + 0.09 * (0.5 + 0.5 * Math.sin(t * 2.6))) : 0;
     const rate = hideTree ? 0 : look.leafFall * (input.reducedMotion ? 0.25 : 1);

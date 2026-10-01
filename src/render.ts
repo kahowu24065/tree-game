@@ -59,6 +59,8 @@ export interface SceneInput {
   dead?: boolean;
   /** v16: dead, but the death animation has not played yet (keep the standing tree until it does). */
   deathPending?: boolean;
+  /** Premium leaf skin (sRGB colour + strength), null = species colour. Visual only. */
+  skin?: { rgb: [number, number, number]; k: number } | null;
   /** Standing on the second island before a tree is planted. */
   bare?: boolean;
   /** 0 = home island, 1 = the second island. */

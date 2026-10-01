@@ -119,7 +119,10 @@ import { fetchSmg } from './smg';
 import { cwaArea, fetchCwa, inTaiwan } from './cwa';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
-import { syncBanner } from './native/banner';
+import { setAdsPremium, syncBanner } from './native/banner';
+import { billingInfo, billingSupported, initBilling, onBilling, purchase, restore } from './native/billing';
+import { activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
+import { premiumModal, premiumRow, weatherAlbumModal, type PremiumMode } from './premiumUi';
 import { isNative, platformName } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
 import { decodeSave, encodeSave } from './saveCode';
@@ -138,8 +141,13 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 
 // Android app: load the save from native Preferences into localStorage before anything reads it (web: no-op).
 await hydrateNative();
-// iOS app: no banner ad (AdMob plugin is Android-only) → drop the empty 50px slot.
-if (platformName() === 'ios') document.documentElement.classList.add('no-ad');
+// Premium: cached entitlement (refreshed from the store below); browsers never have it.
+const premium = loadPremium();
+if (!isNative()) premium.active = false;
+setAdsPremium(premium.active);
+const premiumMode = (): PremiumMode => (isNative() ? (platformName() === 'ios' ? 'ios' : 'android') : 'web');
+let premiumOpen: 'none' | 'paywall' | 'album' = 'none';
+let buying = false;
 
 let timezone = 'Asia/Hong_Kong';
 setLogClock(() => {
@@ -407,6 +415,7 @@ function sceneInput(): SceneInput {
     bare,
     isleHere: isle,
     otherTree: isle === 1 || Boolean(second),
+    skin: skinInput(),
   };
 }
 
@@ -573,6 +582,75 @@ async function importSave(): Promise<void> {
 /** Set while an imported save is being written, so nothing overwrites it before the reload. */
 let importing = false;
 
+function skinInput(): { rgb: [number, number, number]; k: number } | null {
+  const s = activeSkin(premium);
+  return s ? { rgb: s.rgb, k: s.k } : null;
+}
+
+function modalOpen(): boolean {
+  const m = document.getElementById('modal');
+  return Boolean(m && !m.hidden && m.querySelector('[data-prem]'));
+}
+
+function showPremium(kind: 'paywall' | 'album' = 'paywall', update = false): void {
+  premiumOpen = kind;
+  const html = '<span data-prem hidden></span>' + (kind === 'album' ? weatherAlbumModal(premium, premium.active) : premiumModal({ mode: premiumMode(), store: premium, billing: billingInfo(), today: today(), busy: buying }));
+  if (update) updateModal(html);
+  else openModal(html);
+}
+
+/** Store entitlement changed (start-up refresh, purchase, restore, renewal, expiry). */
+function applyPremium(active: boolean): void {
+  const was = premium.active;
+  premium.active = active;
+  premium.checkedAt = Date.now();
+  const got = claimMonthlySkin(premium, today());
+  if (got && !premium.equipped) premium.equipped = got.id;
+  savePremium(premium);
+  setAdsPremium(active);
+  if (got && was) toast(tl('prem.skinGot', { name: skinName(got.id) }));
+  if (premiumOpen !== 'none' && modalOpen()) showPremium(premiumOpen, true);
+}
+
+if (billingSupported()) {
+  onBilling((info) => {
+    if (info.state === 'ready' && info.active !== premium.active) applyPremium(info.active);
+    else if (premiumOpen !== 'none' && modalOpen()) showPremium(premiumOpen, true);
+  });
+  void initBilling().then(() => {
+    if (billingInfo().state === 'ready') applyPremium(billingInfo().active);
+  });
+}
+
+async function buyPremium(): Promise<void> {
+  if (buying) return;
+  buying = true;
+  showPremium('paywall', true);
+  const res = await purchase();
+  buying = false;
+  if (res === 'ok') {
+    applyPremium(true);
+    toast(tl('prem.ok'));
+  } else {
+    if (res !== 'cancelled') toast(tl(res === 'unavailable' ? 'prem.unavailable' : 'prem.failed'));
+    showPremium('paywall', true);
+  }
+}
+
+async function restorePremium(): Promise<void> {
+  const res = await restore();
+  if (res === 'ok') applyPremium(true);
+  toast(tl(res === 'ok' ? 'prem.restored' : res === 'none' ? 'prem.none' : res === 'unavailable' ? 'prem.unavailable' : 'prem.failed'));
+}
+
+/** Real weather only (live readings), recorded for the album while a tree is growing. */
+function noteWeatherDiary(snapshot: WeatherSnapshot): void {
+  if (snapshot.origin !== 'live' || snapshot.provider === 'sim' || manual() || !state.started || state.over) return;
+  const hkoIcon = snapshot.hko?.current?.icon ?? undefined;
+  noteDiary(premium, { date: today(), place: snapshot.place, tempC: snapshot.current.tempC, code: snapshot.current.code, hkoIcon, events: state.dayEvents[today()]?.events ?? [], treeName: state.treeName });
+  savePremium(premium);
+}
+
 function syncGrove(): void {
   if (isle === 0 || !second) home = state;
   else second = state;
@@ -584,6 +662,8 @@ function persist(): void {
   saveGame(isle === 1 && second ? second : home);
   saveGrove({ isle, home, second });
   saveMeta(meta);
+  const s = state.lastSettlement;
+  if (s && premium.diary.some((d) => d.date === s.date && d.health === undefined) && settleDiary(premium, s)) savePremium(premium);
   scheduleReminders(false);
 }
 
@@ -939,6 +1019,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     const events = liveEvents();
     const had = state.dayEvents[today()]?.events ?? [];
     recordEvents(state, today(), events, officialActive(snapshot));
+    noteWeatherDiary(snapshot);
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
     if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: usesSmg(snapshot) ? tl('main.005') : usesCwa(snapshot) ? tl('main.006') : officialActive(snapshot) ? tl('main.007') : tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));
@@ -1479,7 +1560,20 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
     case 'settings':
-      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null));
+      premiumOpen = 'none';
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, premiumRow(premiumMode(), premium.active)));
+      return;
+    case 'premium':
+      showPremium('paywall');
+      return;
+    case 'premium-buy':
+      void buyPremium();
+      return;
+    case 'premium-restore':
+      void restorePremium();
+      return;
+    case 'weather-album':
+      showPremium('album');
       return;
     case 'disclaimer':
       openModal(disclaimerModal());
@@ -1593,7 +1687,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-cal], [data-cal-nav]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-cal], [data-cal-nav], [data-skin]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -1611,6 +1705,13 @@ document.addEventListener('click', (event) => {
     const name = nameEl instanceof HTMLInputElement ? nameEl.value : tl('sim.001');
     pick = { species: target.dataset.species as SpeciesId };
     updateModal(startModal(name, meta, false, pick));
+    return;
+  }
+  if (target.dataset.skin !== undefined) {
+    if (equipSkin(premium, target.dataset.skin || null)) {
+      savePremium(premium);
+      showPremium('paywall', true);
+    }
     return;
   }
   if (target.dataset.albumMode) {

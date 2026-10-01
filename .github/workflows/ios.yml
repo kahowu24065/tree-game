@@ -59,7 +59,7 @@ jobs:
           APP=build/App.xcarchive/Products/Applications/App.app
           ls "$APP" | head -50
           codesign -d --entitlements - "$APP" 2>&1 | tee /tmp/ent.txt
-          grep -q aps-environment /tmp/ent.txt && echo "push entitlement embedded
+          grep -q aps-environment /tmp/ent.txt && echo "push entitlement embedded"
       - name: Upload simulator app
         run: cd ios/App/build/sim/Build/Products/Debug-iphonesimulator && zip -qry "$GITHUB_WORKSPACE/App-simulator.zip" App.app
       - uses: actions/upload-artifact@v4
@@ -124,7 +124,13 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist
           fi
       - name: Web build + Capacitor sync
+        env:
+          # Optional: without them the build has no subscription (RevenueCat) and shows Google's test ads.
+          VITE_RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
+          VITE_ADMOB_IOS_BANNER: ${{ secrets.ADMOB_IOS_BANNER_ID }}
         run: |
+          [ -n "$VITE_RC_IOS_KEY" ] || echo "::warning::RC_IOS_KEY not set - subscription disabled in this build"
+          [ -n "$VITE_ADMOB_IOS_BANNER" ] || echo "::warning::ADMOB_IOS_BANNER_ID not set - Google test ads"
           npm ci && npm run build:app
           pod --version || sudo gem install cocoapods
           npx cap sync ios
@@ -132,8 +138,11 @@ jobs:
         working-directory: ios/App
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          ADMOB_APP: ${{ secrets.ADMOB_IOS_APP_ID }}
         run: |
           set -o pipefail
+          ADMOB_ARG=""
+          [ -n "$ADMOB_APP" ] && ADMOB_ARG="ADMOB_IOS_APP_ID=$ADMOB_APP"
           VERSION=$(sed -n "s/.*APP_VERSION = '\(.*\)'.*/\1/p" ../../src/version.ts)
           BUILD=$(( ${{ github.run_number }} + 100 ))
           echo "version $VERSION build $BUILD"
@@ -142,7 +151,7 @@ jobs:
           # App Store profile happen at export via the API key (cloud-managed certificate).
           xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
             -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
-            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" $ADMOB_ARG \
             $ADHOC archive | tail -n 40
           codesign -d --entitlements - build/App.xcarchive/Products/Applications/App.app 2>&1 | grep -q aps-environment
       - name: Export + upload to TestFlight (cloud signing)

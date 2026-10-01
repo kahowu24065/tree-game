@@ -1453,12 +1453,12 @@ export function locationModal(current: string): string {
 }
 
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
-export function settingsModal(treeName: string, notify: boolean | null = null): string {
+export function settingsModal(treeName: string, notify: boolean | null = null, premiumRowHtml = ''): string {
   const soundOn = soundEnabled();
   const loc = getLocale();
   // Each language is named in itself, so the picker reads the same whatever the current language is.
   const langRow = `<div class="setting-row"><span>${esc(tl('ui.language'))}</span><select class="lang-select" data-lang-select aria-label="${esc(tl('ui.language'))} / Language">${LOCALES.map((l) => `<option value="${l}"${l === loc ? ' selected' : ''}>${esc(LOCALE_NAMES[l])}</option>`).join('')}</select></div>`;
-  return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + (notify === null
+  return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + premiumRowHtml + (notify === null
         ? ''
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION) });
 }
