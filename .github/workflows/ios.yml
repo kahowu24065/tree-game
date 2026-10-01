@@ -41,7 +41,8 @@ jobs:
       - name: Capacitor sync (pod install)
         run: |
           pod --version || sudo gem install cocoapods
-          npx cap sync ios
+          # pod downloads sometimes hit a CDN 5xx: retry once.
+          npx cap sync ios || { sleep 30; npx cap sync ios; }
       - name: Build for simulator (unsigned)
         working-directory: ios/App
         run: |
@@ -133,7 +134,8 @@ jobs:
           [ -n "$VITE_ADMOB_IOS_BANNER" ] || echo "::warning::ADMOB_IOS_BANNER_ID not set - Google test ads"
           npm ci && npm run build:app
           pod --version || sudo gem install cocoapods
-          npx cap sync ios
+          # pod downloads sometimes hit a CDN 5xx: retry once.
+          npx cap sync ios || { sleep 30; npx cap sync ios; }
       - name: Archive (signed at export)
         working-directory: ios/App
         env:
