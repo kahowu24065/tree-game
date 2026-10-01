@@ -128,7 +128,9 @@ import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
-import { t as tl } from './i18n';
+import { LOCALES, getLocale, saveLocale, t as tl, tName, type Locale } from './i18n';
+
+const isLocaleId = (x: string): x is Locale => (LOCALES as readonly string[]).includes(x);
 
 const PLACE_KEY = 'yiri-yisyu-place';
 const QUALITY_KEY = 'yiri-yisyu-quality';
@@ -333,7 +335,7 @@ function placeLabel(): { place: string; note: string } {
   const m = PLACES.find((p) => p.id === placeChoice);
   if (m) return { place: m.name, note: '' };
   if (weather.provider === 'sim' && !weather.fetchedAt) return { place: tl('ui.346'), note: '' };
-  return { place: weather.place || tl('main.009'), note: weather.source === 'fallback' ? tl('main.010') : '' };
+  return { place: tName(weather.place) || tl('main.009'), note: weather.source === 'fallback' ? tl('main.010') : '' };
 }
 
 /** How hard the tree sways (0 calm … 1 typhoon), from the weather in force now; the dev panel can force it. */
@@ -442,7 +444,7 @@ function view(input: SceneInput): View {
       hkoDays: hk ? Object.fromEntries(weather.hko!.forecast.map((d) => [d.date, d.text])) : {},
       conditionText: manual() ? undefined : weather.conditionText,
       nowIcon: !manual() && hk ? weather.hko!.current?.icon || undefined : undefined,
-      station: weather.station,
+      station: tName(weather.station),
       reading: !hk || Boolean(weather.hko?.current),
       humidity: manual() || (hk && !weather.hko?.current) ? undefined : weather.current.humidity,
       rainInHours: weather.rainInHours ?? null,
@@ -1538,6 +1540,16 @@ function trackLeftColumn(): void {
   sync();
 }
 trackLeftColumn();
+
+// v1.4.19 language picker (設定): save, tell the push server, then reload so every table is rebuilt in the new language.
+document.addEventListener('change', (event) => {
+  const sel = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>('select[data-lang-select]');
+  if (!sel || !isLocaleId(sel.value) || sel.value === getLocale()) return;
+  saveLocale(sel.value);
+  persist();
+  // After the reload the next push-state report carries the new locale to the server.
+  location.reload();
+});
 
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;

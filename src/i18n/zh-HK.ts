@@ -679,7 +679,7 @@ const table: Record<string, string> = {
  "sim.095": "，蟲害 −{pestDamage}",
  "sim.096": "{p0} 天氣：{p1}，天氣分 {p2}{p3}{p4}；健康 {p5}，{label} ×{mult}。",
  "sim.097": "{p0}{deltaG} 厘米",
- "sim.098": "今日：健康 {p0}、水分 {p1}、養分 {p2}、鞏固度 {p3}。",
+ "sim.098": "健康 {p0}、水分 {p1}、養分 {p2}、鞏固度 {p3}。",
  "sim.099": "（v14 補發）",
  "sim.100": "{treeName}樹齡{label}！高 {p2}，係紀錄高度嘅 {p3}%，攞到{p4}章。{p5}",
  "sim.101": "樹齡{label}",
@@ -731,7 +731,7 @@ const table: Record<string, string> = {
  "sim.147": "葉底生咗蟲。每晚會扣 {dmg} 健康度，要用除蟲處理。",
  "sim.148": "你離開咗 {gap} 日。健康 {p1} → {p2}，高度 {p3}{p4} 厘米。",
  "sim.149": "健康 {p0} → {p1}。",
- "sim.150": "昨日總結：{p0}{p1}，高度 {p2}{deltaG} 厘米。",
+ "sim.150": "{p0}{p1}，高度 {p2}{deltaG} 厘米。",
  "sim.151": "瀕死！將水分調到 {p0}–{p1}、養分 {p2} 以上就即刻救得返。",
  "sim.152": "危險！抗風力 {p0} 低過{label}門檻 {threshold}，今晚再倒塌棵樹就會死！即刻加固。",
  "sim.153": "抗風力 {p0} 低過{label}門檻 {threshold}，今晚會倒塌（高度 −20%）。快啲加固到 {threshold} 或以上。",
@@ -1421,6 +1421,16 @@ const table: Record<string, string> = {
  "storage.001": "新規則：棵樹冇完結日，會一直陪住你。生長會慢慢接近紀錄高度，樹齡里程碑會發徽章。",
  "storage.002": "v14 新規則",
  "storage.003": "紀錄高度更新：{name}由 {p1} 改為 {p2}（真實最高紀錄 {maxM} 米，取最接近嘅 10 米）。高度照舊，冇上限。",
- "storage.004": "紀錄高度更新"
+ "storage.004": "紀錄高度更新",
+ "sim.summaryPrefix": "昨日總結：",
+ "sim.todayPrefix": "今日：",
+ "ui.echoWarm": "「保暖」",
+ "labels.hotWarning": "酷熱天氣警告",
+ "labels.typhoon1": "初級颱風",
+ "labels.typhoon8": "高級颱風",
+ "labels.rainstorm": "暴雨",
+ "labels.blackrain": "黑雨",
+ "labels.001": "捱過 {count} {unit}{name}",
+ "ui.language": "語言"
 };
 export default table;

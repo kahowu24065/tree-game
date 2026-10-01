@@ -128,10 +128,10 @@ export function t(key: string, params?: Params): string {
 }
 
 /** A runtime name from an official feed (station, district) shown in the player's language when the table knows it. */
-export function tName(name: string): string {
+export function tName<T extends string | null | undefined>(name: T): T {
   if (!name) return name;
   const key = `name.${name}`;
-  return TABLES[current][key] ?? name;
+  return (TABLES[current][key] ?? name) as T;
 }
 
 export function tables(): Readonly<Record<Locale, Record<string, string>>> {

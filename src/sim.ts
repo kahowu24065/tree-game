@@ -1045,7 +1045,7 @@ export function dailySummaryText(s: Pick<Settlement, 'day'>): string {
   const d = s.day;
   if (!d) return '';
   const f = (v: number) => (Math.abs(v) < 0.05 ? '±0' : sgn(r1(v)));
-  return tl('sim.098', { p0: f(d.dH), p1: f(d.dW), p2: f(d.dN), p3: f(d.dR) });
+  return tl('sim.todayPrefix') + tl('sim.098', { p0: f(d.dH), p1: f(d.dW), p2: f(d.dN), p3: f(d.dR) });
 }
 
 function rWindOf(state: GameState, flow: DayFlow): number {
@@ -1528,7 +1528,7 @@ export function catchUp(
 
 function nightNote(s: Settlement | undefined): string {
   if (!s) return '';
-  return tl('sim.150', { p0: s.day ? dailySummaryText(s).replace(/^今日：/, '') : tl('sim.149', { p0: Math.round(s.hBefore), p1: Math.round(s.hAfter) }), p1: eventLabel(s.event), p2: s.deltaG >= 0 ? '+' : '', deltaG: s.deltaG });
+  return tl('sim.summaryPrefix') + tl('sim.150', { p0: s.day ? dailySummaryText(s).slice(tl('sim.todayPrefix').length) : tl('sim.149', { p0: Math.round(s.hBefore), p1: Math.round(s.hAfter) }), p1: eventLabel(s.event), p2: s.deltaG >= 0 ? '+' : '', deltaG: s.deltaG });
 }
 
 /** Developer: settle today now and move to tomorrow. */

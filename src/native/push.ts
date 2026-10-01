@@ -1,7 +1,7 @@
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
 import { isNative } from './platform';
-import { t as tl } from '../i18n';
+import { getLocale, t as tl } from '../i18n';
 
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
 export const PUSH_SERVER = 'https://158-101-140-210.sslip.io';
@@ -29,6 +29,8 @@ export interface PushState {
   tree: 'ok' | 'dying' | 'dead';
   /** 抗風力 R (rounded), so the server can mention 倒塌風險 for wind warnings. */
   resist: number;
+  /** v1.4.19: game language (zh-TW / zh-HK / zh-CN / en) for the push texts. Filled in here. */
+  locale?: string;
 }
 
 let latest: PushState | null = null;
@@ -48,7 +50,7 @@ function flushState(): void {
 /** Native only: report state changes (debounced 3 s, only when something changed). */
 export function reportPushState(state: PushState): void {
   if (!isNative()) return;
-  latest = { ...state, region: { lat: Math.round(state.region.lat * 2) / 2, lon: Math.round(state.region.lon * 2) / 2 } };
+  latest = { ...state, locale: getLocale(), region: { lat: Math.round(state.region.lat * 2) / 2, lon: Math.round(state.region.lon * 2) / 2 } };
   if (timer) clearTimeout(timer);
   timer = setTimeout(flushState, 3000);
 }
@@ -73,7 +75,7 @@ async function listen(): Promise<void> {
       /* ignore */
     }
     localStorage.setItem(TOKEN_KEY, value);
-    await post('/register', { token: value, platform: 'android', appVersion });
+    await post('/register', { token: value, platform: 'android', appVersion, locale: getLocale() });
     lastSent = '';
     flushState();
   });

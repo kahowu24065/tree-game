@@ -19,7 +19,7 @@ import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, Mil
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
-import { t as tl } from './i18n';
+import { LOCALES, LOCALE_NAMES, getLocale, t as tl } from './i18n';
 
 const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
 
@@ -362,8 +362,9 @@ export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
     });
   }
   if (state.morningNote) {
-    const summary = state.morningNote.startsWith('昨日總結：');
-    out.push({ key: 'note', cls: '', title: summary ? tl('ui.086') : tl('ui.087'), body: esc(summary ? state.morningNote.slice(5) : state.morningNote), btns: tl('ui.088') });
+    const prefix = tl('sim.summaryPrefix');
+    const summary = state.morningNote.startsWith(prefix);
+    out.push({ key: 'note', cls: '', title: summary ? tl('ui.086') : tl('ui.087'), body: esc(summary ? state.morningNote.slice(prefix.length) : state.morningNote), btns: tl('ui.088') });
   }
   return out;
 }
@@ -921,10 +922,11 @@ function careAdvice(view: View): string {
   const text = advice(state, view.preview, view.countdown);
   const opts = emergencyOptions(view.todayEvents);
   const echoed =
-    (opts.heatWater && text.includes('酷熱澆水')) ||
+    (opts.heatWater && text.includes(emergencyName('heatWater'))) ||
     (opts.rainDrain && text.includes(emergencyName('rainDrain'))) ||
-    (opts.warmCover && text.includes('「保暖」')) ||
-    (text.startsWith('今晚水分預計') && text.includes('適中'));
+    (opts.warmCover && text.includes(tl('ui.echoWarm'))) ||
+    // 「今晚水分預計 …，適中 +5。…」 (the all-good line) is already shown by the 今晚預計 card.
+    text.startsWith(tl('sim.167').split('{')[0]!);
   if (echoed) return '';
   return `<p class="advice">${esc(text)}</p>`;
 }
@@ -1361,7 +1363,7 @@ export function startModal(current: string, meta: MetaState, rename: boolean, pi
   const sel: Pick = pick ?? { species: SPECIES[0]!.id };
   const legacy = meta.pendingLegacy && meta.landmark ? tl('ui.326', { p0: esc(meta.landmark.name) }) : '';
   const cards = SPECIES.map(
-    (sp) => tl('ui.327', { p0: sp.id === sel.species ? 'on' : '', id: sp.id, p2: sp.id === sel.species, p4: stageSampleCm(3, sp.targetM * 100), p5: esc(sp.name), p6: esc(sp.scientific.split('（')[0]!), targetM: sp.targetM }),
+    (sp) => tl('ui.327', { p0: sp.id === sel.species ? 'on' : '', id: sp.id, p2: sp.id === sel.species, p4: stageSampleCm(3, sp.targetM * 100), p5: esc(sp.name), p6: esc(sp.scientific.split(/[（(]/)[0]!.trim()), targetM: sp.targetM }),
   ).join('');
   const chosen = speciesDef(sel.species);
   const R = chosen.targetM * 100;
@@ -1435,9 +1437,12 @@ export function locationModal(current: string): string {
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
 export function settingsModal(treeName: string, notify: boolean | null = null): string {
   const soundOn = soundEnabled();
-  return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: notify === null
+  const loc = getLocale();
+  // Each language is named in itself, so the picker reads the same whatever the current language is.
+  const langRow = `<div class="setting-row"><span>${esc(tl('ui.language'))}</span><select class="lang-select" data-lang-select aria-label="${esc(tl('ui.language'))} / Language">${LOCALES.map((l) => `<option value="${l}"${l === loc ? ' selected' : ''}>${esc(LOCALE_NAMES[l])}</option>`).join('')}</select></div>`;
+  return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + (notify === null
         ? ''
-        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' }), p6: esc(APP_VERSION) });
+        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION) });
 }
 
 export function disclaimerModal(): string {
