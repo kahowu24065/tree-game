@@ -701,15 +701,15 @@ export function warnIcon(w: HkoWarning): string {
 }
 
 /**
- * Status-card name. Chinese templates read "{name} · {species}{stage}" (unchanged).
- * The English template is "{p1}{species} · {stage}", so p1 carries its own separator and is
- * dropped when the tree still has a default name (e.g. the Chinese default from an old save).
+ * Status-card name. Chinese templates read "{name} · {species}{stage}"; the English template is
+ * "{p1}{species} · {stage}", so p1 carries its own separator there. A default name (any locale's
+ * sim.001, e.g. from an old save) is shown in the current language.
  */
 function statusName(name: string): string {
-  if (isChinese()) return esc(name);
   const n = name.trim();
   const defaults = Object.values(tables()).map((tb) => tb['sim.001']);
-  return !n || defaults.includes(n) ? '' : `${esc(n)} · `;
+  const shown = esc(!n || defaults.includes(n) ? tl('sim.001') : n);
+  return isChinese() ? shown : `${shown} · `;
 }
 
 function statBar(key: string, label: string, value: number, band: readonly [number, number], tone: string, flag = '', warnAt?: number): string {
