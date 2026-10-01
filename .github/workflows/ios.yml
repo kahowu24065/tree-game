@@ -1,0 +1,163 @@
+# iOS build (no Mac needed locally).
+# - simulator: always runs; unsigned simulator build + an unsigned device archive (proves the project compiles).
+# - testflight: only when the App Store Connect secrets are set; archives, cloud-signs (API key, no certificates
+#   or profiles stored here) and uploads to TestFlight.
+name: iOS
+
+on:
+  push:
+    branches: [ios]
+    paths-ignore: ['**.md', 'push-server/**']
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: 'Upload to TestFlight (needs secrets)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE: /Applications/Xcode_26.6.app
+  # Archive signed ad hoc (embeds App.entitlements, needs no certificate); real signing happens at export.
+  ADHOC: CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- AD_HOC_CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO PROVISIONING_PROFILE_SPECIFIER=
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE" && xcodebuild -version
+      - name: Web build
+        run: npm ci && npm run build:app
+      - name: Capacitor sync (pod install)
+        run: |
+          pod --version || sudo gem install cocoapods
+          npx cap sync ios
+      - name: Build for simulator (unsigned)
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Device archive (unsigned, Release)
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            $ADHOC archive | tail -n 40
+          APP=build/App.xcarchive/Products/Applications/App.app
+          ls "$APP" | head -50
+          codesign -d --entitlements - "$APP" 2>&1 | tee /tmp/ent.txt
+          grep -q aps-environment /tmp/ent.txt && echo "push entitlement embedded
+      - name: Upload simulator app
+        run: cd ios/App/build/sim/Build/Products/Debug-iphonesimulator && zip -qry "$GITHUB_WORKSPACE/App-simulator.zip" App.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: App-simulator
+          path: App-simulator.zip
+          retention-days: 7
+
+  secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - id: check
+        env:
+          A: ${{ secrets.ASC_KEY_ID }}
+          B: ${{ secrets.ASC_ISSUER_ID }}
+          C: ${{ secrets.ASC_KEY_P8 }}
+          D: ${{ secrets.APPLE_TEAM_ID }}
+          E: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          missing=""
+          [ -n "$A" ] || missing="$missing ASC_KEY_ID"
+          [ -n "$B" ] || missing="$missing ASC_ISSUER_ID"
+          [ -n "$C" ] || missing="$missing ASC_KEY_P8"
+          [ -n "$D" ] || missing="$missing APPLE_TEAM_ID"
+          [ -n "$E" ] || echo "::warning::GOOGLE_SERVICE_INFO_PLIST not set - TestFlight build would have push disabled"
+          if [ -n "$missing" ]; then
+            echo "::notice::TestFlight skipped, missing secrets:$missing"; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  testflight:
+    needs: [simulator, secrets]
+    if: needs.secrets.outputs.ok == 'true' && (github.event_name == 'push' || inputs.testflight)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE" && xcodebuild -version
+      - name: Secrets → files
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          GSI: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          KEY="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          # Accept base64 (preferred) or the raw .p8 text.
+          if printf '%s' "$ASC_KEY_P8" | grep -q 'BEGIN PRIVATE KEY'; then printf '%s\n' "$ASC_KEY_P8" > "$KEY"; else printf '%s' "$ASC_KEY_P8" | base64 --decode > "$KEY"; fi
+          grep -q 'BEGIN PRIVATE KEY' "$KEY" || { echo "::error::ASC_KEY_P8 is not a valid .p8 (base64 of the AuthKey file)"; exit 1; }
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+          if [ -n "$GSI" ]; then
+            printf '%s' "$GSI" | base64 --decode > ios/App/App/GoogleService-Info.plist
+            plutil -lint ios/App/App/GoogleService-Info.plist
+            /usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist
+          fi
+      - name: Web build + Capacitor sync
+        run: |
+          npm ci && npm run build:app
+          pod --version || sudo gem install cocoapods
+          npx cap sync ios
+      - name: Archive (signed at export)
+        working-directory: ios/App
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          VERSION=$(sed -n "s/.*APP_VERSION = '\(.*\)'.*/\1/p" ../../src/version.ts)
+          BUILD=$(( ${{ github.run_number }} + 100 ))
+          echo "version $VERSION build $BUILD"
+          # Ad-hoc ("-") archive: automatic signing at archive time would want a development profile (needs a
+          # registered device). The ad-hoc signature keeps the push entitlement; distribution signing + the
+          # App Store profile happen at export via the API key (cloud-managed certificate).
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+            $ADHOC archive | tail -n 40
+          codesign -d --entitlements - build/App.xcarchive/Products/Applications/App.app 2>&1 | grep -q aps-environment
+      - name: Export + upload to TestFlight (cloud signing)
+        working-directory: ios/App
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          sed "s/__TEAM_ID__/$TEAM/" ../ci/ExportOptions.plist > build/ExportOptions.plist
+          xcodebuild -exportArchive -archivePath build/App.xcarchive -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -n 60
+      - name: Clean up key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc" ios/App/App/GoogleService-Info.plist
