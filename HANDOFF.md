@@ -245,3 +245,10 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.23 發佈（2026-10-01）
 - 水分機制改動（見版本歷史）；推送伺服器冇改，冇重新部署（水分不足通知只係 app 本地通知，網頁版冇本地通知）。
+
+### iOS + 會員（`ios` 分支，未發佈）
+- iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
+- 會員（`src/premium.ts`、`src/premiumUi.ts`、`src/native/billing.ts`）：RevenueCat，entitlement `premium`、產品 `sekai_tree_monthly`（HK$8／月）。福利：冇廣告、每月限定樹葉皮膚（只可以喺嗰個月收集，`uSkin` shader，只改外觀）、真實天氣紀念冊（只記 live 真實天氣，人人都記，會員先睇到）。照顧、警告、玩法全部免費。網頁版只顯示「App 版先有」。
+- 廣告：Android 照用 TreeBannerPlugin；iOS 用 `@capacitor-community/admob`（BOTTOM_CENTER、safe area）。兩邊先做 UMP 同意，iOS 再問 ATT，之後先請求廣告；會員冇廣告（`html.no-ad`）。
+- Build-time 設定（唔入 repo）：`VITE_RC_IOS_KEY`、`VITE_RC_ANDROID_KEY`、`VITE_ADMOB_IOS_BANNER`（冇就用 Google 測試單元）；Xcode `ADMOB_IOS_APP_ID`（預設 Google 測試 app id）。Android 本地 build 用 `.env.local`。
+- 網站要部署 `privacy.html`／`terms.html`（喺 `public/`）先有效；App Store Connect 填呢兩條 URL。
