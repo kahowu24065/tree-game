@@ -248,7 +248,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
-- 會員（`src/premium.ts`、`src/premiumUi.ts`、`src/native/billing.ts`）：RevenueCat，entitlement `premium`、產品 `sekai_tree_monthly`（HK$8／月）。福利：冇廣告、每月限定樹葉皮膚（只可以喺嗰個月收集，`uSkin` shader，只改外觀）、真實天氣紀念冊（只記 live 真實天氣，人人都記，會員先睇到）。照顧、警告、玩法全部免費。網頁版只顯示「App 版先有」。
+- 會員（`src/premium.ts`、`src/premiumUi.ts`、`src/native/billing.ts`）：RevenueCat，entitlement `premium`、產品 `sekai_tree_monthly`（HK$8／月）。**唯一福利：冇廣告。** 照顧、警告、玩法全部免費。網頁版只顯示「App 版先有」。
+- 每月限定樹葉皮膚、真實天氣紀念冊：code 仍在，但 `PREMIUM_EXTRAS = false`（`src/premium.ts`）——UI／付費牆唔顯示、唔記錄、唔套用。將來開返要改 flag，再加返付費牆文字（`prem.perkSkins`／`prem.perkAlbum` 已有四語）、terms.html／privacy.html 同 App Store 描述。
+- App Store 訂閱描述建議：顯示名稱「世界之樹會員」／「World Tree Premium」；描述「移除所有廣告，支持世界之樹繼續成長。」／「Removes all ads and supports the World Tree.」
 - 廣告：Android 照用 TreeBannerPlugin；iOS 用 `@capacitor-community/admob`（BOTTOM_CENTER、safe area）。兩邊先做 UMP 同意，iOS 再問 ATT，之後先請求廣告；會員冇廣告（`html.no-ad`）。
 - Build-time 設定（唔入 repo）：`VITE_RC_IOS_KEY`、`VITE_RC_ANDROID_KEY`、`VITE_ADMOB_IOS_BANNER`（冇就用 Google 測試單元）；Xcode `ADMOB_IOS_APP_ID`（預設 Google 測試 app id）。Android 本地 build 用 `.env.local`。
 - 網站要部署 `privacy.html`／`terms.html`（喺 `public/`）先有效；App Store Connect 填呢兩條 URL。

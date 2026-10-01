@@ -820,7 +820,7 @@ const table: Record<string, string> = {
  "prem.eyebrow": "会员",
  "prem.failed": "购买未完成，请再试一次。",
  "prem.free": "照顾树木、天气预警和所有玩法永远免费。",
- "prem.lead": "每月 {price}，支持我们继续种树。",
+ "prem.lead": "每月 {price}，移除所有广告，同时支持我们继续种树。",
  "prem.loading": "正在连接商店…",
  "prem.manage": "管理订阅",
  "prem.none": "找不到可恢复的订阅",

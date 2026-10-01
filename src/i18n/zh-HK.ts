@@ -1477,7 +1477,7 @@ const table: Record<string, string> = {
  "prem.rowWeb": "App 版先有",
  "prem.eyebrow": "會員",
  "prem.title": "世界之樹會員",
- "prem.lead": "每月 {price}，支持我哋繼續種樹。",
+ "prem.lead": "每月 {price}，移除所有廣告，同時支持我哋繼續種樹。",
  "prem.perkAds": "冇廣告",
  "prem.perkSkins": "每月限定樹葉皮膚（今個月：{name}，過咗呢個月就收集唔到）",
  "prem.perkAlbum": "真實天氣紀念冊：每日真實天氣、氣溫同你棵樹嘅健康同高度",

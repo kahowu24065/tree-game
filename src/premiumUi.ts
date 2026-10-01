@@ -2,7 +2,7 @@
 import { eventLabel } from './labels';
 import { getLocale, t as tl } from './i18n';
 import { weatherArt } from './icons';
-import { SKINS, diaryByMonth, skinName, skinOfMonth, type PremiumStore } from './premium';
+import { PREMIUM_EXTRAS, SKINS, diaryByMonth, skinName, skinOfMonth, type PremiumStore } from './premium';
 import { esc, formatHeight } from './util';
 import type { BillingInfo } from './native/billing';
 
@@ -68,19 +68,21 @@ function dateText(iso: string | null): string {
 }
 
 /** Paywall (not a member) or member page. */
-export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean }): string {
+export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean; extras?: boolean }): string {
   const { mode, store, billing } = o;
+  const extras = o.extras ?? PREMIUM_EXTRAS;
   const price = billing.price ?? PRICE_FALLBACK;
-  const perks = `<ul class="prem-perks"><li>${esc(tl('prem.perkAds'))}</li><li>${esc(tl('prem.perkSkins', { name: skinName(skinOfMonth(o.today).id) }))}</li><li>${esc(tl('prem.perkAlbum'))}</li></ul><p class="prem-small">${esc(tl('prem.free'))}</p>`;
+  const extraPerks = extras ? `<li>${esc(tl('prem.perkSkins', { name: skinName(skinOfMonth(o.today).id) }))}</li><li>${esc(tl('prem.perkAlbum'))}</li>` : '';
+  const perks = `<ul class="prem-perks"><li>${esc(tl('prem.perkAds'))}</li>${extraPerks}</ul><p class="prem-small">${esc(tl('prem.free'))}</p>`;
   const head = `<p class="eyebrow">${esc(tl('prem.eyebrow'))}</p><h2>${esc(tl('prem.title'))}</h2>`;
-  const album = `<div class="setting-row"><span>${esc(tl('prem.albumTitle'))}</span><button type="button" class="ghost" data-action="weather-album">${esc(tl('prem.albumOpen'))}</button></div>`;
+  const album = !extras ? '' : `<div class="setting-row"><span>${esc(tl('prem.albumTitle'))}</span><button type="button" class="ghost" data-action="weather-album">${esc(tl('prem.albumOpen'))}</button></div>`;
   const back = `<button type="button" class="primary" data-action="settings">${esc(tl('prem.back'))}</button>`;
   if (mode === 'web') return `${head}${perks}<p class="prem-note-box">${esc(tl('prem.webOnly'))}</p>${back}`;
   const manage = `<p class="prem-legal">${link(billing.manageUrl, tl('prem.manage'))}<button type="button" data-action="premium-restore">${esc(tl('prem.restore'))}</button></p>`;
   if (store.active) {
     const when = dateText(billing.expires);
     const status = when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
-    return `${head}<p class="prem-status">${esc(tl('prem.active'))}${status ? `<br><small>${esc(status)}</small>` : ''}</p>${skinsSection(store, o.today)}${album}${manage}${legal(mode)}${back}`;
+    return `${head}<p class="prem-status">${esc(tl('prem.active'))}${status ? `<br><small>${esc(status)}</small>` : ''}</p>${perks}${extras ? skinsSection(store, o.today) : ''}${album}${manage}${legal(mode)}${back}`;
   }
   const disclosure = tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid');
   const canBuy = billing.state === 'ready' && billing.price !== null;

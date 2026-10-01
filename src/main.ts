@@ -121,7 +121,7 @@ import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { setAdsPremium, syncBanner } from './native/banner';
 import { billingInfo, billingSupported, initBilling, onBilling, purchase, restore } from './native/billing';
-import { activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
+import { PREMIUM_EXTRAS, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
 import { premiumModal, premiumRow, weatherAlbumModal, type PremiumMode } from './premiumUi';
 import { isNative, platformName } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
@@ -1573,7 +1573,7 @@ function doAction(action: string, target: HTMLElement): void {
       void restorePremium();
       return;
     case 'weather-album':
-      showPremium('album');
+      if (PREMIUM_EXTRAS) showPremium('album');
       return;
     case 'disclaimer':
       openModal(disclaimerModal());
@@ -1708,7 +1708,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.dataset.skin !== undefined) {
-    if (equipSkin(premium, target.dataset.skin || null)) {
+    if (PREMIUM_EXTRAS && equipSkin(premium, target.dataset.skin || null)) {
       savePremium(premium);
       showPremium('paywall', true);
     }

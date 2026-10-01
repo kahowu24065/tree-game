@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LOCALES, t, useLocale } from '../src/i18n';
-import { activeSkin, claimMonthlySkin, diaryByMonth, emptyPremium, equipSkin, noteDiary, parsePremium, settleDiary, SKINS, skinOfMonth } from '../src/premium';
+import { PREMIUM_EXTRAS, activeSkin, claimMonthlySkin, diaryByMonth, emptyPremium, equipSkin, noteDiary, parsePremium, settleDiary, SKINS, skinOfMonth } from '../src/premium';
 import { adsWanted } from '../src/native/banner';
 import { billingKey, billingSupported, defaultManageUrl, type BillingInfo } from '../src/native/billing';
 import { APPLE_EULA_URL, premiumModal, premiumRow, PRIVACY_URL, TERMS_URL, weatherAlbumModal } from '../src/premiumUi';
@@ -18,15 +18,16 @@ describe('premium skins', () => {
   });
   it('members collect the current month once; only owned skins equip; lapsed members show the natural colour', () => {
     const p = emptyPremium();
-    expect(claimMonthlySkin(p, '2026-10-05')).toBeNull();
+    expect(claimMonthlySkin(p, '2026-10-05', true)).toBeNull();
     p.active = true;
-    expect(claimMonthlySkin(p, '2026-10-05')?.id).toBe('maple');
-    expect(claimMonthlySkin(p, '2026-10-20')).toBeNull();
+    expect(claimMonthlySkin(p, '2026-10-05', true)?.id).toBe('maple');
+    expect(claimMonthlySkin(p, '2026-10-20', true)).toBeNull();
     expect(equipSkin(p, 'ginkgo')).toBe(false);
     expect(equipSkin(p, 'maple')).toBe(true);
-    expect(activeSkin(p)?.id).toBe('maple');
-    p.active = false;
+    expect(activeSkin(p, true)?.id).toBe('maple');
     expect(activeSkin(p)).toBeNull();
+    p.active = false;
+    expect(activeSkin(p, true)).toBeNull();
     expect(p.skins).toEqual(['maple']);
     expect(equipSkin(p, null)).toBe(true);
   });
@@ -42,9 +43,9 @@ describe('premium skins', () => {
 describe('real-weather album', () => {
   it('keeps the day high / low and events, then the settlement adds health and height', () => {
     const p = emptyPremium();
-    noteDiary(p, { date: '2026-10-01', place: 'Sha Tin', tempC: 27.4, code: 2, events: [], treeName: 'A' });
-    noteDiary(p, { date: '2026-10-01', place: 'Sha Tin', tempC: 31.6, code: 61, events: ['hot'], treeName: 'A' });
-    noteDiary(p, { date: '2026-10-02', place: 'Sha Tin', tempC: 24, code: 1, hkoIcon: 51, events: [], treeName: 'A' });
+    noteDiary(p, { date: '2026-10-01', place: 'Sha Tin', tempC: 27.4, code: 2, events: [], treeName: 'A' }, true);
+    noteDiary(p, { date: '2026-10-01', place: 'Sha Tin', tempC: 31.6, code: 61, events: ['hot'], treeName: 'A' }, true);
+    noteDiary(p, { date: '2026-10-02', place: 'Sha Tin', tempC: 24, code: 1, hkoIcon: 51, events: [], treeName: 'A' }, true);
     const d = p.diary[0]!;
     expect([d.tMin, d.tMax, d.code, d.events]).toEqual([27, 32, 61, ['hot']]);
     expect(settleDiary(p, { date: '2026-10-01', events: ['hot', 'rainstorm'], hAfter: 81.6, heightAfter: 120 })).toBe(true);
@@ -91,10 +92,27 @@ describe('paywall', () => {
     expect(premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ state: 'loading', price: null }), today: '2026-10-01' })).toContain('aria-disabled="true"');
     const p = emptyPremium();
     p.active = true;
-    claimMonthlySkin(p, '2026-10-01');
-    const html = premiumModal({ mode: 'ios', store: p, billing: billing({ active: true, expires: '2026-11-01T00:00:00Z', willRenew: true }), today: '2026-10-01' });
+    claimMonthlySkin(p, '2026-10-01', true);
+    const html = premiumModal({ mode: 'ios', store: p, billing: billing({ active: true, expires: '2026-11-01T00:00:00Z', willRenew: true }), today: '2026-10-01', extras: true });
     expect(html).not.toContain('premium-buy');
     expect(html).toContain('data-skin="maple"');
     expect(html).toContain('data-action="weather-album"');
+  });
+  it.each(LOCALES)('%s: extras flag off → only "no ads": no skins, no album, nothing recorded', (loc) => {
+    useLocale(loc);
+    expect(PREMIUM_EXTRAS).toBe(false);
+    const p = emptyPremium();
+    p.active = true;
+    expect(claimMonthlySkin(p, '2026-10-01')).toBeNull();
+    noteDiary(p, { date: '2026-10-01', place: 'X', tempC: 20, code: 1, events: [], treeName: 'A' });
+    expect(p.diary).toHaveLength(0);
+    for (const html of [
+      premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing(), today: '2026-10-01' }),
+      premiumModal({ mode: 'ios', store: p, billing: billing({ active: true }), today: '2026-10-01' }),
+      premiumModal({ mode: 'web', store: emptyPremium(), billing: billing({ state: 'unavailable' }), today: '2026-10-01' }),
+    ]) {
+      expect(html).toContain(t('prem.perkAds'));
+      for (const bad of ['data-skin', 'weather-album', t('prem.skinsTitle'), t('prem.albumTitle'), t('prem.perkAlbum'), t('skin.maple')]) expect(html).not.toContain(bad);
+    }
   });
 });

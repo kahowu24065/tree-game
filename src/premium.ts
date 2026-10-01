@@ -11,6 +11,11 @@ export const PREMIUM_KEY = 'sekai-tree-premium';
 /** RevenueCat entitlement / store product (App Store Connect + Play Console). */
 export const ENTITLEMENT = 'premium';
 export const PRODUCT_ID = 'sekai_tree_monthly';
+/**
+ * Extra perks (monthly leaf skins + real-weather album) are built but switched OFF: the only perk is "no ads".
+ * While false nothing about them is shown, recorded or applied. Flip to true (and restore the paywall text) later.
+ */
+export const PREMIUM_EXTRAS = false;
 const DIARY_MAX = 800;
 
 export interface DiaryEntry {
@@ -113,8 +118,8 @@ export function savePremium(p: PremiumStore, storage: Pick<Storage, 'setItem'> =
 }
 
 /** A subscriber collects this month's skin (once). Returns the new skin, or null. */
-export function claimMonthlySkin(p: PremiumStore, date: string): Skin | null {
-  if (!p.active) return null;
+export function claimMonthlySkin(p: PremiumStore, date: string, extras = PREMIUM_EXTRAS): Skin | null {
+  if (!extras || !p.active) return null;
   const s = skinOfMonth(date);
   if (p.skins.includes(s.id)) return null;
   p.skins.push(s.id);
@@ -122,8 +127,8 @@ export function claimMonthlySkin(p: PremiumStore, date: string): Skin | null {
 }
 
 /** The skin the tree shows: the equipped one while subscribed (skins stay in the collection after a lapse). */
-export function activeSkin(p: PremiumStore): Skin | null {
-  if (!p.active || !p.equipped || !p.skins.includes(p.equipped)) return null;
+export function activeSkin(p: PremiumStore, extras = PREMIUM_EXTRAS): Skin | null {
+  if (!extras || !p.active || !p.equipped || !p.skins.includes(p.equipped)) return null;
   return skinById(p.equipped);
 }
 
@@ -134,7 +139,8 @@ export function equipSkin(p: PremiumStore, id: string | null): boolean {
 }
 
 /** Real weather seen on `date` (live readings only — never simulated weather). Kept for everyone, viewed by members. */
-export function noteDiary(p: PremiumStore, r: { date: string; place: string; tempC: number; code: number; hkoIcon?: number; events: WeatherEventId[]; treeName: string }): void {
+export function noteDiary(p: PremiumStore, r: { date: string; place: string; tempC: number; code: number; hkoIcon?: number; events: WeatherEventId[]; treeName: string }, extras = PREMIUM_EXTRAS): void {
+  if (!extras) return;
   const t = Math.round(r.tempC);
   if (!Number.isFinite(t)) return;
   let e = p.diary.find((x) => x.date === r.date);
