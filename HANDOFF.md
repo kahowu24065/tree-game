@@ -233,5 +233,5 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 改英文字串：改 `/workspace/i18n-work/en.json` 再跑 `python3 emit_all.py`（會重寫 en／zh-TW／zh-CN.ts；zh-HK.ts 係原文，直接改）。
 
 ### 1.4.20 發佈（2026-10-01）
-- 英文版面修正（見版本歷史）；推送伺服器冇改，冇重新部署。
+- 英文版面修正（見版本歷史）；release commit 791f94d，gh-pages c93a718；推送伺服器冇改，冇重新部署。
 - 已知：360px 闊嘅手機天氣卡地點名「Hong Kong」會有省略號（同中文長地名一樣，原本設計）。
