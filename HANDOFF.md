@@ -194,9 +194,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ## 7. 已知問題／待辦
 
-- **網站（gh-pages）自 Android 1.1 之後冇更新**：玩法面板、山泥傾瀉、天氣概況頁等都未上網站。用戶要求先 deploy。
 - **開發者手動天氣時，天氣概況頁仍然顯示真實天文台警告**（遊戲天氣係手動，警告列表係真）。
 - **玩法 → 推送通知 入面嘅時間係寫死**（約 2.5 分鐘、20 分鐘、2 小時、約 40 分鐘），server 改設定要同步改 `src/guide.ts`。
+- **多語言未覆蓋**：天文台／SMG／CWA 自由文字公告、預報同部分原始警告名仍係中文；反向地理編碼地區名照返回；舊存檔紀錄同 morningNote 保留原語言；開發者面板未翻譯；未知天文台警告類別用原始名。zh-TW／zh-CN 係機器轉換加人手修，en 版面可能有按鈕爆位（已修「Treat」）。
 - **`package.json` version 仲係 1.0.0**；真正版本睇 `android/app/build.gradle`。
 - **Oracle 免費 VM 可能因閒置被回收**（Always Free 低用量會被 reclaim）；考慮升 PAYG（仍然用免費額度）或者定期檢查 `/health`。
 - 一啲舊 `scripts/*-shots.mjs` 用舊 selector（例如 `data-open="forecast"`），只作參考；新版用 `scripts/v141-check.mjs`（需要先 build＋preview，設 `BASE_URL`，Chrome 路徑用 `CHROME` 環境變數）。
@@ -222,3 +222,10 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 健康唔再 drift。`planNight` 用 drift 完一日之後嘅 W/N：`wTier(wAfter).score + nFactor(nAfter) − 蟲害 + 天氣 + 應急獎勵`，同 ≤1.4.16 一晚結算完全一樣；`settleDay` 先 `completeFlowDay` 補足 24 小時 drift 再計。
 - `storage.ts`：舊 flow 有 hw/hn/hp/over（1.4.17）就將當日已加減嘅健康還原，刪走嗰啲欄位（同 hRate）。
 - 通知 healthLow（107）：`previewNight(...).hAfter <= 0` 或者根部浸死，就喺半夜前 3 小時提。
+
+### 1.4.19 發佈（2026-10-01）
+- `next`（c4a2f00）fast-forward 入 `main`，release commit 75f5935（version.ts 1.4.19、versionCode 26）。
+- gh-pages：c015a1f「Deploy 1.4.19 (75f5935)」，保留 `.nojekyll`。
+- VM 推送伺服器已部署（`PROXY=none`，冇掂 nginx／Macau bus）；部署前備份 `/opt/tree-push/app.bak-20261001-0759`、`/var/lib/tree-push.bak-20261001-0759`（VM 時間 UTC）。
+- i18n 工具（box 上）：`/workspace/i18n-work`（`emit_all.py` 由 en/tw/cn.json 生成 `src/i18n/*.ts`；**唔好再跑 `build_tw.py`**，會冇咗 `html.*` key）。
+- 語言揀選：設定 → 語言，存 localStorage `sekai-tree-locale` 後重新載入（資料表喺 import 時建立，冇得即時切換）。
