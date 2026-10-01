@@ -1,0 +1,2 @@
+/* Shown in the iOS permission prompt. */
+"NSLocationWhenInUseUsageDescription" = "Your approximate location is used to show local weather and warnings for your tree.";

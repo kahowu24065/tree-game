@@ -120,7 +120,7 @@ import { cwaArea, fetchCwa, inTaiwan } from './cwa';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
-import { isNative } from './native/platform';
+import { isNative, platformName } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
 import { decodeSave, encodeSave } from './saveCode';
 import { guideModal, type GuideTab } from './guide';
@@ -138,6 +138,8 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 
 // Android app: load the save from native Preferences into localStorage before anything reads it (web: no-op).
 await hydrateNative();
+// iOS app: no banner ad (AdMob plugin is Android-only) → drop the empty 50px slot.
+if (platformName() === 'ios') document.documentElement.classList.add('no-ad');
 
 let timezone = 'Asia/Hong_Kong';
 setLogClock(() => {

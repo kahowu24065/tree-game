@@ -1,6 +1,6 @@
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
-import { isNative } from './platform';
+import { isNative, platformName } from './platform';
 import { getLocale, t as tl } from '../i18n';
 
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
@@ -75,7 +75,7 @@ async function listen(): Promise<void> {
       /* ignore */
     }
     localStorage.setItem(TOKEN_KEY, value);
-    await post('/register', { token: value, platform: 'android', appVersion, locale: getLocale() });
+    await post('/register', { token: value, platform: platformName(), appVersion, locale: getLocale() });
     lastSent = '';
     flushState();
   });
@@ -100,7 +100,8 @@ export async function syncPush(enabled: boolean): Promise<void> {
     let perm = await PushNotifications.checkPermissions();
     if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
-    await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
+    // Channels are Android-only (the call rejects on iOS and would skip register()).
+    if (platformName() === 'android') await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
     await listen();
     await PushNotifications.register();
   } catch {
