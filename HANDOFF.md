@@ -85,7 +85,8 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.18 | 健康唔再日頭 drift：水分／養分／抗風力照舊慢慢變，健康半夜用一日完結嗰刻嘅 W/N/蟲害照舊每晚公式一次過結算（例：日頭 110 → 100，用 100 計 +5）；瀕死由半夜結算開始；1.4.17 存檔載入時還原當日已 drift 嘅健康；「健康好低」通知改為預計今晚結算會跌到 0 時、半夜前 3 小時提；versionCode 25（8aa2432 係中途版本，已被取代） |
 | 1.4.19 | 動物懸停改為喺附近 3 米內跳點（停 2.5–6.5 秒、緩動飛行 ≤1.2 m/s）；長駐動物：連續 5／5／10 晚健康 ≥85 先多一種，<75 走一種，每種（最多 3 種）蟲害遲 1 晚、每晚少扣 3，冇咗 +2 養分；雀鳥健康 ≥90 先生蛋；**多語言**：`src/i18n/`（zh-HK 原文、zh-TW、zh-CN、en，`t()`／`tName()`），預設跟裝置語言，設定 → 語言可以揀（儲存後重新載入）；推送伺服器按裝置 `locale`（/register、/state）用四種語言發通知，官方警告英文名；測試 `test/i18n.test.ts`（四語 key／參數／HTML tag 一致、src 冇硬寫中文）；versionCode 26 |
 | 1.4.20 | 英文版面修正（中文版面不變，CSS 全部喺 `html[lang='en']` 下）：樹木狀態副標題英文只顯示「樹種 · 階段」（預設樹名例如舊存檔嘅「世界之樹」唔顯示，可換行；之前英文樹種同階段黐埋）；狀態列英文只顯示 H/W/N/R 字母；酷熱澆水小掣改兩行；底部掣縮短：Feed／Fed、Full、At young tree、Done、Cold alert、Urgent，長字加省略號；versionCode 27 |
-| 1.4.21 | 英文樹木狀態副標題重新顯示樹名：「World Tree · 樹種 · 階段」（可換行）；預設樹名（任何語言嘅 sim.001，例如舊存檔「世界之樹」）用目前語言顯示，自訂名照原樣；中文版面不變；versionCode 28 |
+| 1.4.21 | 英文樹木狀態副標題重新顯示樹名：「World Tree · 樹種 · 階段」（可換行）；預設樹名（任何語言嘅 sim.001，例如舊存檔「世界之樹」）用目前語言顯示，自訂名照原樣；中文版面不變；versionCode 28（只上咗網站，冇出 APK；併入 1.4.22） |
+| 1.4.22 | 包埋 1.4.21 樹名修正。**澳門／臺灣警告名四語**：`warn.*` key（CWA 豪雨／大豪雨／颱風／強風／低溫／高溫資訊／濃霧／大雷雨即時訊息＋燈號顏色；SMG 黃／橙色高溫／低溫提示、澳門黃色暴雨），`cwaWarningName()`（src/cwa.ts）同 push server `cwaName` 英文一致；澳門推送用 SMG 名（`moLabels`，記住最後嘅冷暖提示標題）。**氣象局官方語言版**：天文台 warnsum／fnd 用 lang=tc（zh-HK、zh-TW）／sc（zh-CN）／en，rhrread 仍用 tc（站名／地區用中文配對），有警告句先再攞一次玩家語言版；SMG 英文用 e_*.xml（只攞文字：預報、概況、警告句），信號／風力／雨量仍由 c_*.xml 計；zh-CN 嘅 SMG／CWA 文字用 OpenCC（opencc-js t2cn，按需載入約 107 KB）轉簡體；push server `/smg/` 代理加 e_* 檔；versionCode 29 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -198,7 +199,7 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 - **開發者手動天氣時，天氣概況頁仍然顯示真實天文台警告**（遊戲天氣係手動，警告列表係真）。
 - **玩法 → 推送通知 入面嘅時間係寫死**（約 2.5 分鐘、20 分鐘、2 小時、約 40 分鐘），server 改設定要同步改 `src/guide.ts`。
-- **多語言未覆蓋**：天文台／SMG／CWA 自由文字公告、預報同部分原始警告名仍係中文；反向地理編碼地區名照返回；舊存檔紀錄同 morningNote 保留原語言；開發者面板未翻譯；未知天文台警告類別用原始名。zh-TW／zh-CN 係機器轉換加人手修，en 版面可能有按鈕爆位（已修「Treat」）。
+- **多語言未覆蓋**：臺灣 CWA 自由文字仍係中文（zh-CN 轉簡體）；天文台即時讀數站名／地區名用 tc 再經 tName；反向地理編碼地區名照返回；舊存檔紀錄同 morningNote 保留原語言；開發者面板未翻譯；未知天文台警告類別用原始名；未認得嘅 SMG／CWA 警告名照原文。zh-TW／zh-CN 係機器轉換加人手修，en 版面可能有按鈕爆位。
 - **`package.json` version 仲係 1.0.0**；真正版本睇 `android/app/build.gradle`。
 - **Oracle 免費 VM 可能因閒置被回收**（Always Free 低用量會被 reclaim）；考慮升 PAYG（仍然用免費額度）或者定期檢查 `/health`。
 - 一啲舊 `scripts/*-shots.mjs` 用舊 selector（例如 `data-open="forecast"`），只作參考；新版用 `scripts/v141-check.mjs`（需要先 build＋preview，設 `BASE_URL`，Chrome 路徑用 `CHROME` 環境變數）。
@@ -236,3 +237,6 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 ### 1.4.20 發佈（2026-10-01）
 - 英文版面修正（見版本歷史）；release commit 791f94d，gh-pages c93a718；推送伺服器冇改，冇重新部署。
 - 已知：360px 闊嘅手機天氣卡地點名「Hong Kong」會有省略號（同中文長地名一樣，原本設計）。
+
+### 1.4.22 發佈（2026-10-01）
+- 見版本歷史；push server 有改（澳門推送名、SMG e_* 代理），已備份後部署。
