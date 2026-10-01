@@ -893,7 +893,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
     messages.push(`${why}，生咗蟲！記得除蟲。`);
   }
 
-  // Resident animals: consecutive nights at H ≥ 90 — 5 for the 1st species, 5 more for the 2nd, then 10 more each.
+  // Resident animals: consecutive nights at H ≥ 85 — 5 for the 1st species, 5 more for the 2nd, then 10 more each.
   if (state.health >= RESIDENT_MIN_H) {
     state.highStreak += 1;
     if (state.highStreak >= residentStreakNeeded(state.residents.length)) {
@@ -911,7 +911,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
       }
     }
   } else {
-    // Any night below 90 breaks the run of good nights; below 85 one resident species also leaves.
+    // Any night below 85 breaks the run of good nights; below 75 one resident species also leaves.
     state.highStreak = 0;
     if (state.health < RESIDENT_LEAVE_H && state.residents.length) {
       const gone = state.residents.pop()!;

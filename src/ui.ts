@@ -1222,7 +1222,7 @@ function animalAlbum(view: View): string {
   }).join('');
   const res = view.state.residents.length;
   return `<p class="status">圖鑑 ${unlocked} / ${ANIMALS.length} · 長駐 ${res}</p>
-    <p class="advice">每晚 12 點結算時，健康度連續 ${RESIDENT_STREAKS[0]} 晚 ${RESIDENT_MIN_H} 以上，一種見過嘅動物會成群長駐（最少一對）；再連續 ${RESIDENT_STREAKS[1]} 晚有第 2 種，之後每種要再連續 ${RESIDENT_STREAK_LATER} 晚。每種長駐動物會幫手食蟲：蟲害每晚少扣 ${RESIDENT_PEST_CUT}、遲 1 晚先生蟲（最多計 ${RESIDENT_PEST_MAX_SPECIES} 種）。有一晚健康跌穿 ${RESIDENT_LEAVE_H}，就會有一種搬走，連續晚數重新計。</p>
+    <p class="advice">每晚 12 點結算時，健康度連續 ${RESIDENT_STREAKS[0]} 晚 ${RESIDENT_MIN_H} 以上，一種見過嘅動物會成群長駐（最少一對）；再連續 ${RESIDENT_STREAKS[1]} 晚有第 2 種，之後每種要再連續 ${RESIDENT_STREAK_LATER} 晚。每種長駐動物會幫手食蟲：蟲害每晚少扣 ${RESIDENT_PEST_CUT}、遲 1 晚先生蟲（最多計 ${RESIDENT_PEST_MAX_SPECIES} 種）。有一晚健康低過 ${RESIDENT_MIN_H}，連續晚數重新計；低過 ${RESIDENT_LEAVE_H} 仲會有一種搬走。</p>
     ${groups}`;
 }
 
@@ -1366,7 +1366,7 @@ function achievementTab(view: View): string {
     <h3 class="sub">島嶼</h3>
     <ol class="miles">${isles}</ol>
     <h3 class="sub">雀巢</h3>
-    <ol class="miles"><li class="${hatched ? 'done' : ''}"><strong>雀鳥生蛋</strong><span>已孵化 ${hatched} 粒</span><p>健康度95以上先會生蛋。每次生蛋6小時後孵化。</p><p>下次裝飾：第 ${nextNestBuildCount(hatched)} 粒${nextBuild ? `（${esc(nestBuildPhrase(nextBuild))}）` : ''} · 下次加高：第 ${nextNestHeightCount(hatched)} 粒</p><p>下次成就：${esc(nestAwardTitle(nextEgg))} · ${hatched} / ${nextEgg}</p>${gotBuilds}${gotEggs}</li></ol>
+    <ol class="miles"><li class="${hatched ? 'done' : ''}"><strong>雀鳥生蛋</strong><span>已孵化 ${hatched} 粒</span><p>健康度90以上先會生蛋。每次生蛋6小時後孵化。</p><p>下次裝飾：第 ${nextNestBuildCount(hatched)} 粒${nextBuild ? `（${esc(nestBuildPhrase(nextBuild))}）` : ''} · 下次加高：第 ${nextNestHeightCount(hatched)} 粒</p><p>下次成就：${esc(nestAwardTitle(nextEgg))} · ${hatched} / ${nextEgg}</p>${gotBuilds}${gotEggs}</li></ol>
     ${eggCollection}
     <h3 class="sub">天氣</h3>
     <ol class="miles">${groups}</ol>

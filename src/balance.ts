@@ -315,8 +315,8 @@ export const COLLAPSE_MAX = 2;
 export const DYING_HOURS = 24;
 /** Bringing W and N back into their optimal bands while 瀕死 saves the tree at this H. */
 export const RESCUE_HEALTH = 10;
-/** 長駐 (checked at the midnight settlement): consecutive nights at H ≥ 90 before the next species settles in. */
-export const RESIDENT_MIN_H = 90;
+/** 長駐 (checked at the midnight settlement): consecutive nights at H ≥ 85 before the next species settles in (a night below resets the streak). */
+export const RESIDENT_MIN_H = 85;
 /** 1st and 2nd species: 5 nights each; every species after that: 10 more. The streak restarts after each arrival. */
 export const RESIDENT_STREAKS = [5, 5] as const;
 export const RESIDENT_STREAK_LATER = 10;
@@ -324,7 +324,7 @@ export function residentStreakNeeded(residents: number): number {
   return RESIDENT_STREAKS[residents] ?? RESIDENT_STREAK_LATER;
 }
 /** A night below this sends one resident species away and restarts the streak. */
-export const RESIDENT_LEAVE_H = 85;
+export const RESIDENT_LEAVE_H = 75;
 
 export const START = { health: 70, moisture: 60, nutrients: 50, resist: 60, heightCm: 18 } as const;
 /** A tree that died becomes a 養分地標: the next tree starts with this much extra 養分. */

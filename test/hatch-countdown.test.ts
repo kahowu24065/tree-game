@@ -7,7 +7,7 @@ import { hatchClockText, setUiClock, syncHatchCard } from '../src/ui';
 function eggState(now: number) {
   const state = createGame('2026-09-01');
   state.started = true;
-  state.health = 96; // eggs need 健康 ≥ 95
+  state.health = 96; // eggs need 健康 ≥ 90
   state.animals = ['sparrow', 'bulbul', 'magpierobin'];
   state.nest = freshNest();
   tickNest(state, now, '2026-09-01');

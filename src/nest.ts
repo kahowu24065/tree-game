@@ -4,7 +4,7 @@ import type { GameState, NestState } from './types';
 
 export const NEST_HATCH_MS = 6 * 3600_000;
 /** A struggling tree does not get a clutch. */
-export const NEST_MIN_HEALTH = 95;
+export const NEST_MIN_HEALTH = 90;
 const AWARD_STEPS = [1, 5, 15, 20, 25, 30] as const;
 
 export function freshNest(): NestState {

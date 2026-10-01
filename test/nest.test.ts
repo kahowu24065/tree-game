@@ -8,16 +8,16 @@ import { FENCE_INSET_UNITS, shoreRadius } from '../src/scale';
 function tree() {
   const state = createGame('2026-09-01');
   state.started = true;
-  state.health = 96; // eggs need 健康 ≥ 95
+  state.health = 96; // eggs need 健康 ≥ 90
   state.animals = ['sparrow', 'bulbul', 'magpierobin'];
   state.nest = freshNest();
   return state;
 }
 
-/** Exactly at the egg threshold (健康 95). */
-function tree95() {
+/** Exactly at the egg threshold (健康 90). */
+function tree90() {
   const s = tree();
-  s.health = 95;
+  s.health = 90;
   return s;
 }
 
@@ -41,10 +41,10 @@ describe('bird eggs', () => {
 
   it('a struggling tree or a tree with no birds does not lay', () => {
     const state = tree();
-    state.health = 94.9;
+    state.health = 89.9;
     expect(tickNest(state, 1, '2026-09-01').laid).toBe(false);
-    state.health = 95;
-    expect(tickNest(tree95(), 1, '2026-09-01').laid).toBe(true);
+    state.health = 90;
+    expect(tickNest(tree90(), 1, '2026-09-01').laid).toBe(true);
     state.animals = ['squirrel'];
     expect(tickNest(state, 1, '2026-09-01').laid).toBe(false);
   });
