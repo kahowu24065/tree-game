@@ -81,6 +81,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.14 | 臺灣用中央氣象署（天氣、預報、警特報都跟氣象署；經 push server `/cwa`，key 只喺 VM）；臺灣警特報推送 |
 | 1.4.15 | 臺灣大雷雨即時訊息 → 狂風雷暴（app＋推送）；夜晚天氣文字唔再講「陽光」；保暖說明補返「防止根部凍傷」 |
 | 1.4.16 | 孵蛋倒數顯示秒（HH:MM:SS），畫面見到時每秒更新；蛋孵咗／卡收埋／app 去背景就停計時器 |
+| 1.4.17 | 水分／養分／健康／抗風力全日按真實時間慢慢變（每 15 分鐘一段，閂 app 時間返嚟補返，一日總數同舊晚結算一樣）；天氣傷害、應急獎勵、倒塌、生長照舊晚上計；健康慢慢跌到 0 即刻瀕死；每晚出「每日總結」（ΔH／ΔW／ΔN／Δ鞏固度）；新增「健康好低」本地通知（id 107）；versionCode 24 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -207,3 +208,10 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - **慳 quota**：測試保持基本（現有測試＋少量針對性測試），截圖越少越好（通常最後一張／一張 contact sheet）。
 - Git：正常 commit＋push `main`；**唔好 force push**；冇叫就唔好 deploy gh-pages；唔好 commit 任何金鑰、密碼、service account。
 - 報告要簡短：改咗咩、檔案路徑、有咩問題。
+
+
+## 1.4.17 漸變模型（src/sim.ts）
+- `GameState.flow`（DayFlow）記今日已經行咗幾耐（elapsed）、開始值同累計變化。`advanceFlow()` 由 main.ts 每秒（同 resume / catch-up 後）叫，每 15 分鐘（FLOW_STEP_MS）一段：W −10/日（一級徽章 ×0.9，落雨日 0）、N −10/日 + 長駐、R −2/日（青年樹後）、H += (wTier(W)+nFactor(N)−蟲害) × 段長/日。
+- 晚上 `settleDay()` 先補足當日剩低嘅時間到 24 小時，再計天氣／應急獎勵／風（用今日開始時嘅 R）／生長／倒塌，`Settlement.day` = 全日淨變化，morningNote「昨日總結：…」顯示做「每日總結」卡。
+- 舊存檔冇 flow：由今日零時補返；新種嘅樹由種嗰刻開始。`previewNight` 只模擬今日剩餘時間。
+- `healthZeroInMs()` 估健康幾時跌到 0（唔計天氣），通知 healthLow（107）提早 3 小時。

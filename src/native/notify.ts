@@ -4,7 +4,7 @@ import { isNative } from './platform';
 export const NOTIFY_KEY = 'sekai-tree-notify';
 const HOUR = 3600_000;
 /** Fixed ids so each reschedule replaces the previous set. */
-export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105, nest: 106 } as const;
+export const NOTIFY_IDS = { careToday: 101, careTomorrow: 102, dying12: 103, dying2: 104, weather: 105, nest: 106, healthLow: 107 } as const;
 
 export interface NotifyInput {
   now: number;
@@ -14,6 +14,8 @@ export interface NotifyInput {
   over: boolean;
   wateredToday: boolean;
   fertilizedToday: boolean;
+  /** v1.4.17: real timestamp when 健康 is expected to drift to 0 at the current rates (null = not within 3 days / dying). */
+  healthZeroAt?: number | null;
   /** Real timestamp when 瀕死 runs out (null = not dying). */
   dyingEndsAt: number | null;
   /** Labels of active warnings whose emergency action is still undone (e.g. 酷熱警告 → 酷熱澆水). */
@@ -42,14 +44,19 @@ export function planNotifications(i: NotifyInput): PlannedNotice[] {
   const careAt = settle - 1.5 * HOUR;
   if ((!i.wateredToday || !i.fertilizedToday) && soon(careAt)) {
     const what = [!i.wateredToday && '澆水', !i.fertilizedToday && '施肥'].filter(Boolean).join('／');
-    out.push({ id: NOTIFY_IDS.careToday, at: careAt, title: TITLE, body: `今晚結算前記得${what}！` });
+    out.push({ id: NOTIFY_IDS.careToday, at: careAt, title: TITLE, body: `今日之內記得${what}，水分同養分全日都會慢慢減！` });
   }
   // Tomorrow's care is certainly undone if the app is not opened again before then.
-  out.push({ id: NOTIFY_IDS.careTomorrow, at: careAt + 24 * HOUR, title: TITLE, body: '今晚結算前記得澆水／施肥！' });
+  out.push({ id: NOTIFY_IDS.careTomorrow, at: careAt + 24 * HOUR, title: TITLE, body: '今日之內記得澆水／施肥！' });
   if (i.dyingEndsAt !== null) {
     const hint = '將水分調返 50–100、養分 60 以上就救得返。';
     if (soon(i.dyingEndsAt - 12 * HOUR)) out.push({ id: NOTIFY_IDS.dying12, at: i.dyingEndsAt - 12 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹瀕死，仲有大約 12 小時！${hint}` });
     if (soon(i.dyingEndsAt - 2 * HOUR)) out.push({ id: NOTIFY_IDS.dying2, at: i.dyingEndsAt - 2 * HOUR, title: `${TITLE}：瀕死`, body: `棵樹只剩大約 2 小時！${hint}` });
+  }
+  if (i.dyingEndsAt === null && i.healthZeroAt != null) {
+    // 健康 now drifts during the day: warn ~3 hours before it would reach 0 and start 瀕死.
+    const at = Math.max(i.now + 5 * 60_000, i.healthZeroAt - 3 * HOUR);
+    if (soon(at) && i.healthZeroAt > i.now) out.push({ id: NOTIFY_IDS.healthLow, at, title: `${TITLE}：健康好低`, body: '健康度就快跌到 0，入去將水分調返 50–100、養分 60 以上！' });
   }
   if (i.hatchAt !== null && soon(i.hatchAt)) {
     out.push({ id: NOTIFY_IDS.nest, at: i.hatchAt, title: TITLE, body: '鵲鴝嘅蛋孵化咗，開返嚟睇下。' });

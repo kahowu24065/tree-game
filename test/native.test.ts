@@ -91,6 +91,13 @@ describe('reminder planning', () => {
     expect(ids({ dyingEndsAt: 5 * H })).toContain(NOTIFY_IDS.dying2);
     expect(ids({ dyingEndsAt: 5 * H })).not.toContain(NOTIFY_IDS.dying12);
   });
+  it('v1.4.17 健康好低 reminder ~3 h before 健康 drifts to 0, not while 瀕死', () => {
+    const n = planNotifications({ ...base, healthZeroAt: 10 * H }).find((x) => x.id === NOTIFY_IDS.healthLow);
+    expect(n?.at).toBe(7 * H);
+    expect(planNotifications({ ...base, healthZeroAt: 1 * H }).find((x) => x.id === NOTIFY_IDS.healthLow)?.at).toBe(5 * 60_000);
+    expect(ids({ healthZeroAt: 10 * H, dyingEndsAt: 20 * H })).not.toContain(NOTIFY_IDS.healthLow);
+    expect(ids({ healthZeroAt: null })).not.toContain(NOTIFY_IDS.healthLow);
+  });
   it('weather reminder only when backgrounded, 1 h later, before settlement', () => {
     expect(ids({ pendingEmergencies: ['酷熱澆水'] })).not.toContain(NOTIFY_IDS.weather);
     const w = planNotifications({ ...base, pendingEmergencies: ['酷熱澆水', '加固'], background: true }).find((n) => n.id === NOTIFY_IDS.weather);

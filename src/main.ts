@@ -20,7 +20,9 @@ import {
   advanceVirtualDay,
   applyWarningWater,
   brokenTop,
+  advanceFlow,
   catchUp,
+  healthZeroInMs,
   DYING_MS,
   emergencyOptions,
   fallenLogDay,
@@ -687,6 +689,11 @@ function scheduleReminders(background: boolean): void {
       wateredToday: careToday && state.care.water > 0,
       fertilizedToday: careToday && state.care.fertilize > 0,
       dyingEndsAt: state.dying ? state.dying.at + DYING_MS - offset : null,
+      healthZeroAt: (() => {
+        if (!state.started || state.over || state.dying) return null;
+        const ms = healthZeroInMs(state, events, meta);
+        return ms == null ? null : Date.now() + ms;
+      })(),
       pendingEmergencies: pending,
       background,
       hatchAt: (() => {
@@ -816,6 +823,10 @@ function showReport(report: CatchupReport): void {
 function runCatchup(): void {
   reconcileClock();
   const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
+  if (state.started && !state.over && state.lastSeenDate === today()) {
+    const now = virtualNow();
+    advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
+  }
   if (opening) deferredReport = report;
   else showReport(report);
   syncWarningWater();
@@ -2005,11 +2016,43 @@ function syncAnimalHud(time: number): void {
 }
 
 let nestTickAt = 0;
+let flowKey = '';
+let flowSavedAt = 0;
+
+/**
+ * v1.4.17: 水分／養分／健康 drift with real time instead of one nightly settlement. Called every second, after the
+ * catch-up on open/resume; closed-app time is caught up in 15-minute steps inside advanceFlow.
+ */
+function syncFlow(force = false): void {
+  if (!state.started || state.over) return;
+  if (state.lastSeenDate !== today()) {
+    runCatchup(); // midnight passed while open: settle last night first (it also starts today's flow)
+    return;
+  }
+  const now = virtualNow();
+  advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
+  if (state.dying && !state.dying.at) state.dying.at = now;
+  const key = [state.health, state.moisture, state.nutrients, state.resist].map((x) => Math.round(x)).join(',') + (state.dying ? 'd' : '');
+  const changed = key !== flowKey;
+  flowKey = key;
+  if (changed || force || Date.now() - flowSavedAt > 30_000) {
+    flowSavedAt = Date.now();
+    if (importing) return;
+    syncGrove();
+    saveGame(isle === 1 && second ? second : home);
+    saveGrove({ isle, home, second });
+    if (changed) {
+      scheduleReminders(false);
+      render();
+    }
+  }
+}
 
 function frame(time: number): void {
   const input = sceneInput();
   if (time - nestTickAt > 1000) {
     nestTickAt = time;
+    syncFlow();
     syncNest();
     // Keeps the card in step with the nest; the card's own 1 s timer does the ticking (v1.4.16).
     syncHatchCard(state);
@@ -2030,6 +2073,7 @@ function frame(time: number): void {
 document.addEventListener('visibilitychange', () => {
   setPageAudible(!document.hidden);
   if (document.hidden) {
+    syncFlow(true);
     scheduleReminders(true);
     return;
   }

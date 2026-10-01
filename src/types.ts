@@ -103,6 +103,22 @@ export interface Settlement {
   emergencyCount?: number;
   /** v13 倒塌 this night (count after it). */
   collapse?: { event: WeatherEventId; threshold: number; count: number; heightBefore: number; heightAfter: number; fatal: boolean; revived: boolean } | null;
+  /** v1.4.17 每日總結: the whole day's net change (start of the day → after the night), care and weather included. */
+  day?: { dH: number; dW: number; dN: number; dR: number };
+}
+
+export interface DayFlow {
+  date: string;
+  at: number;
+  elapsed: number;
+  start: { h: number; w: number; n: number; r: number };
+  w: number;
+  n: number;
+  r: number;
+  hw: number;
+  hn: number;
+  hp: number;
+  over: number;
 }
 
 export interface DayRecord {
@@ -168,6 +184,13 @@ export interface GameState {
   /** 紀錄高度 R (cm) this save uses — the species' record height rounded to 10 m. */
   targetCm?: number;
   lastSettlement: Settlement | null;
+  /**
+   * v1.4.17 gradual day: 水分、養分、抗風力 and the W/N/蟲害 part of 健康 drift with real time instead of all at night.
+   * `date` is the day being drifted, `at` the last moment applied, `elapsed` the ms of that day already applied
+   * (settlement tops it up to a full day). `start` = values when the day began (for the nightly 每日總結).
+   * Sums: w/n/r = drift applied today; hw/hn/hp = 健康 from 水分／養分／蟲害; over = positive 健康 drift lost to the 100 cap.
+   */
+  flow?: DayFlow;
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
   legacyBonus: number;
   /** v13: 風災／加固／倒塌 switched on — set the first time the tree reaches 青年樹, never cleared. */

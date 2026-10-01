@@ -106,10 +106,10 @@ function waterText(id: WeatherEventId, short = false): string {
   if (id === 'hot') return short ? 'W 即時 −20' : '警告一出水分即時 −20';
   if (id === 'rainstorm') return short ? 'W 即時 +20' : '警告一出水分即時 +20（過 100 最多 +10），當晚冇流失';
   if (id === 'blackrain') return regionalize(short ? 'W 即時 +20（同暴雨共用）' : '水分即時 +20（同暴雨一日只計一次，過 100 最多 +10），當晚冇流失');
-  if (id === 'cold') return short ? 'W 晚上 −10' : '水分唔受影響，照常每晚 −10';
+  if (id === 'cold') return short ? 'W 每日 −10' : '水分唔受影響，照常每日慢慢 −10';
   if (id === 'drizzle') return short ? 'W 即時 +10' : '一落雨水分即時 +10（過 100 最多 +5），當晚冇流失';
-  if (id === 'clear') return short ? 'W 晚上 −10' : '晚上水分自然流失 −10';
-  return short ? 'W 晚上 −10' : '水分照常每晚 −10';
+  if (id === 'clear') return short ? 'W 每日 −10' : '水分全日慢慢自然流失，每日 −10';
+  return short ? 'W 每日 −10' : '水分照常每日慢慢 −10';
 }
 
 /** v13 health effect of an event, in words (熱／雨: 應急行動 cancels it; 風: × (1 − R/100), 青年樹 onwards). */
@@ -174,10 +174,10 @@ export function collapseWarning(p: NightPlan, collapses: number): { text: string
 export function previewLines(p: NightPlan): { text: string; value: string; tone: string; sub?: string }[] {
   const tone = (v: number) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
   const waterSub =
-    p.water.kind === 'loss' ? `而家 ${fmt(p.wBefore)}，今晚流失 ${signed(p.water.delta)}` : p.water.kind === 'drizzle' ? `而家 ${fmt(p.wBefore)}，毛毛雨 ${signed(p.water.delta)}，冇流失` : `而家 ${fmt(p.wBefore)}，落雨日冇流失`;
+    p.water.kind === 'loss' ? `而家 ${fmt(p.wBefore)}，到今晚再流失 ${signed(p.water.delta)}` : p.water.kind === 'drizzle' ? `而家 ${fmt(p.wBefore)}，毛毛雨 ${signed(p.water.delta)}，冇流失` : `而家 ${fmt(p.wBefore)}，落雨日冇流失`;
   const lines: { text: string; value: string; tone: string; sub?: string }[] = [
     { text: `水分 ${fmt(p.wAfter)}｜${p.waterDeath ? '根部浸死' : p.wLabel}`, value: p.waterDeath ? '瀕死' : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: waterSub },
-    { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: `每晚用 10${p.residentN ? `，長駐動物 +${p.residentN}` : ''}` },
+    { text: `養分 ${fmt(p.nAfter)}｜${nLabel(p.nScore)}`, value: signed(p.nScore), tone: tone(p.nScore), sub: `每日用 10（全日慢慢扣）${p.residentN ? `，長駐動物 +${p.residentN}` : ''}` },
   ];
   if (p.heat) lines.push(p.heat.handled ? { text: `熱｜${eventLabel('hot')}：已應對`, value: '0', tone: 'flat', sub: '做咗酷熱澆水' } : { text: `熱｜${eventLabel('hot')}`, value: signed(p.heat.score), tone: 'down', sub: '做「酷熱澆水」就唔扣' });
   if (p.cold) lines.push(p.cold.handled ? { text: '寒｜寒冷：已應對', value: '0', tone: 'flat', sub: '做咗保暖' } : { text: '寒｜寒冷', value: signed(p.cold.score), tone: 'down', sub: '做「保暖」就唔扣' });
@@ -372,7 +372,8 @@ export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
     });
   }
   if (state.morningNote) {
-    out.push({ key: 'note', cls: '', title: '今朝消息', body: esc(state.morningNote), btns: `<button type="button" data-action="dismiss-note">知道喇</button>` });
+    const summary = state.morningNote.startsWith('昨日總結：');
+    out.push({ key: 'note', cls: '', title: summary ? '每日總結' : '今朝消息', body: esc(summary ? state.morningNote.slice(5) : state.morningNote), btns: `<button type="button" data-action="dismiss-note">知道喇</button>` });
   }
   return out;
 }
@@ -447,7 +448,7 @@ export function lessonPages(id: LessonId): { title: string; body: string }[] {
       },
       {
         title: '水分點樣變',
-        body: `每晚泥土會自然流失 ${pts(-W_NIGHT_LOSS)}水分；落雨嗰晚唔流失。毛毛雨水分 ${pts(drizzle.dW)}，暴雨或者黑雨一出就 ${pts(rain.dW)}。水分過咗 ${W_SATURATED} 就開始積水，要撳疏水排走。`,
+        body: `泥土全日慢慢流失水分，每日合共 ${pts(-W_NIGHT_LOSS)}；落雨日唔流失。毛毛雨水分 ${pts(drizzle.dW)}，暴雨或者黑雨一出就 ${pts(rain.dW)}。水分過咗 ${W_SATURATED} 就開始積水，要撳疏水排走。`,
       },
       {
         title: '水分同健康',
@@ -468,7 +469,7 @@ export function lessonPages(id: LessonId): { title: string; body: string }[] {
       },
       {
         title: '養分同健康',
-        body: `養分 ${lo}–${hi}，當晚健康 ${pts(N_FACTOR.good)}。${N_MALNOURISHED}–${lo - 1} 唔加唔減。低過 ${N_MALNOURISHED} 係營養不良，健康 ${pts(N_FACTOR.bad)}。棵樹每晚自己用 ${N_DAILY_USE}點養分。`,
+        body: `養分 ${lo}–${hi}，當晚健康 ${pts(N_FACTOR.good)}。${N_MALNOURISHED}–${lo - 1} 唔加唔減。低過 ${N_MALNOURISHED} 係營養不良，健康 ${pts(N_FACTOR.bad)}。棵樹每日自己慢慢用 ${N_DAILY_USE}點養分。健康會跟住而家嘅水分同養分全日慢慢升跌。`,
       },
     ];
   }
@@ -1072,7 +1073,7 @@ function nightCard(p: NightPlan, collapses = 0): string {
     .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}</span><b>${esc(l.value)}</b><small>${esc(l.sub ?? '')}</small></li>`)
     .join('');
   return `<article class="card night-card">
-      <p class="eyebrow">今晚預計</p>
+      <p class="eyebrow">今晚預計（水分、養分、健康全日慢慢變，數字係由而家到今晚）</p>
       ${collapseHtml(p, collapses)}
       <ul class="breakdown">${rows}</ul>
       <h2 class="${t} night-total-h">健康 ${fmt(p.hBefore)} → ${fmt(p.hAfter)}（${p.waterDeath ? '瀕死' : signed(p.dH)}）</h2>
