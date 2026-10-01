@@ -53,8 +53,8 @@ export function warnsumFromSmg({ typhoon = '', rain = '', temp = '' } = {}) {
     const title = inner(item, 'title');
     const desc = inner(item, 'description');
     if (!title || /取消|沒有|並無/.test(`${title}${desc}`)) continue;
-    if (/高溫|酷熱/.test(title)) data.WHOT = { code: 'WHOT', actionCode: 'ISSUE' };
-    else if (/低溫|寒冷|降溫/.test(title)) data.WCOLD = { code: 'WCOLD', actionCode: 'ISSUE' };
+    if (/高溫|酷熱/.test(title)) data.WHOT = { code: 'WHOT', actionCode: 'ISSUE', name: title };
+    else if (/低溫|寒冷|降溫/.test(title)) data.WCOLD = { code: 'WCOLD', actionCode: 'ISSUE', name: title };
   }
   return data;
 }

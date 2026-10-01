@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hkoWarningEvents } from '../src/events';
 import { warningDisplay } from '../src/hko';
+import { useLocale } from '../src/i18n';
 import { parseSmg, smgMessages, smgWarnings, withSmgDays, type SmgXml } from '../src/smg';
 
 const brief = `<?xml version="1.0" encoding="UTF-8" ?>
@@ -86,5 +87,26 @@ describe('SMG', () => {
       '現正發出八號東南烈風或暴風信號。',
       '黑色暴雨警告信號現正生效。',
     ]);
+  });
+
+  it('names Macao alerts in every language (bulletin text stays original)', () => {
+    const rainY = rainBlack.replace('BLACK', 'YELLOW').replace('黑色', '黃色');
+    const temp = `<rss><channel><item><title>橙色低溫提示</title><description><![CDATA[天氣寒冷。]]></description></item></channel></rss>`;
+    const names = (l: 'zh-HK' | 'zh-TW' | 'zh-CN' | 'en', over: Partial<SmgXml>) => {
+      useLocale(l);
+      try {
+        return smgWarnings(xml(over)).map(warningDisplay);
+      } finally {
+        useLocale('zh-HK');
+      }
+    };
+    expect(names('en', {})).toEqual(['Yellow Hot Weather Alert']);
+    expect(names('zh-CN', {})).toEqual(['黄色高温提示']);
+    expect(names('zh-TW', {})).toEqual(['黃色高溫提示']);
+    expect(names('en', { temp, rain: rainY })).toEqual(['Yellow Rain', 'Orange Cold Weather Alert']);
+    expect(names('zh-CN', { temp })).toEqual(['橙色低温提示']);
+    useLocale('en');
+    expect(smgMessages(xml())).toEqual(['預料本澳天氣酷熱。']);
+    useLocale('zh-HK');
   });
 });

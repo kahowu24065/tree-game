@@ -1,7 +1,7 @@
 // HKO warnsum → per-category level (pure; unit-tested). Mapping follows tree-game src/hko.ts / src/events.ts:
 // CANCEL = not in force; TC1/TC3 low tier, TC8+ typhoon; WL (山泥傾瀉警告) = its own category, handled by 加固.
 
-import { hkLabel, hkShort, str } from './i18n.js';
+import { HK_LABELS, str } from './i18n.js';
 
 export const CATEGORIES = ['heat', 'rain', 'typhoon', 'cold', 'landslip'];
 /** Categories the game handles with 加固 (wind / reinforcement). */
@@ -33,27 +33,27 @@ export function diffLevels(prev, next) {
 }
 
 /** Issue push text in the game's wording (action call to action), in the device's language. */
-export function messageFor({ category, level }, loc = 'zh-HK') {
+export function messageFor({ category, level }, loc = 'zh-HK', names = HK_LABELS) {
   const body = category === 'typhoon' ? str(level >= 3 ? 'act_typhoonHigh' : 'act_typhoonLow', loc) : str(`act_${category}`, loc);
-  return { title: str('issue', loc, { label: hkLabel(category, level, loc) }), body, category, level };
+  return { title: str('issue', loc, { label: names.label(category, level, loc) }), body, category, level };
 }
 
 /** Downgrade / cancel info text, e.g. 紅雨轉黃雨, 八號風球轉三號風球, 酷熱天氣警告已取消. */
-export function dropMessageFor({ category, from, to }, loc = 'zh-HK') {
+export function dropMessageFor({ category, from, to }, loc = 'zh-HK', names = HK_LABELS) {
   if (to > 0) {
-    const b = hkShort(category, to, loc);
-    const title = str('drop', loc, { a: hkShort(category, from, loc), b });
+    const b = names.short(category, to, loc);
+    const title = str('drop', loc, { a: names.short(category, from, loc), b });
     const body = str(category === 'typhoon' ? 'dropTyphoon' : 'dropOther', loc, { b });
     return { title, body, category, level: to };
   }
-  const title = category === 'typhoon' ? str('cancelTyphoon', loc) : category === 'rain' ? str('cancelRain', loc) : str('cancel', loc, { a: hkShort(category, from, loc) });
+  const title = category === 'typhoon' ? str('cancelTyphoon', loc) : category === 'rain' ? str('cancelRain', loc) : str('cancel', loc, { a: names.short(category, from, loc) });
   return { title, body: str('cancelBody', loc), category, level: 0 };
 }
 
 /** HK follow-up text when the action is still undone ~2 h after the warning. */
-export function reminderFor({ category, level }, loc = 'zh-HK') {
-  const m = messageFor({ category, level }, loc);
-  return { ...m, title: str('still', loc, { label: hkLabel(category, level, loc) }), body: str('reminder', loc, { body: m.body }) };
+export function reminderFor({ category, level }, loc = 'zh-HK', names = HK_LABELS) {
+  const m = messageFor({ category, level }, loc, names);
+  return { ...m, title: str('still', loc, { label: names.label(category, level, loc) }), body: str('reminder', loc, { body: m.body }) };
 }
 
 /** Real-life safety text for 風球／山泥傾瀉 before the tree reaches 青年樹 (no 加固 call to action). */

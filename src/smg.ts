@@ -123,6 +123,14 @@ function pushWarning(out: HkoWarning[], w: HkoWarning | null): void {
   if (w) out.push(w);
 }
 
+/** SMG 高溫／低溫提示 (Yellow / Orange) in the current language; other titles keep SMG's own name. */
+function tempNamed(w: HkoWarning | null, kind: 'hot' | 'cold', title: string): HkoWarning | null {
+  const level = /橙/.test(title) ? 2 : /黃/.test(title) ? 1 : 0;
+  if (!w || !level) return w;
+  const name = tl(`warn.smg.${kind}${level}`);
+  return { ...w, name, short: name };
+}
+
 /** Warnings in force: typhoon, rainstorm, thunderstorm, strong monsoon, and hot/cold alerts. */
 export function smgWarnings(xml: SmgXml): HkoWarning[] {
   const out: HkoWarning[] = [];
@@ -132,7 +140,11 @@ export function smgWarnings(xml: SmgXml): HkoWarning[] {
     pushWarning(out, mapWarning('WTCSGNL', { code, name: inner(typhoon, 'Description'), issueTime: issued(typhoon) }));
   }
   const rain = blocks(xml.rain ?? '', 'Rainstorm').find(active);
-  if (rain) pushWarning(out, mapWarning('WRAIN', { code: rainCode(rain), issueTime: issued(rain) }));
+  if (rain) {
+    const w = mapWarning('WRAIN', { code: rainCode(rain), issueTime: issued(rain) });
+    // Macao's lowest rainstorm signal is 黃色 (Yellow); HKO's English calls its own one Amber.
+    pushWarning(out, w && w.code === 'WRAINA' ? { ...w, name: tl('warn.smg.rainA'), short: tl('warn.smg.rainAShort') } : w);
+  }
   const thunder = blocks(xml.thunder ?? '', 'Thunderstorm').find(active);
   if (thunder) pushWarning(out, mapWarning('WTS', { code: 'WTS', name: tl('smg.001'), issueTime: issued(thunder) }));
   const monsoon = blocks(xml.monsoon ?? '', 'Monsoon').find(active);
@@ -141,8 +153,8 @@ export function smgWarnings(xml: SmgXml): HkoWarning[] {
     const title = inner(item, 'title');
     const desc = inner(item, 'description');
     if (!title || /取消|沒有|並無/.test(`${title}${desc}`)) continue;
-    if (/高溫|酷熱/.test(title)) pushWarning(out, mapWarning('WHOT', { code: 'WHOT', name: title }));
-    else if (/低溫|寒冷|降溫/.test(title)) pushWarning(out, mapWarning('WCOLD', { code: 'WCOLD', name: title }));
+    if (/高溫|酷熱/.test(title)) pushWarning(out, tempNamed(mapWarning('WHOT', { code: 'WHOT', name: title }), 'hot', title));
+    else if (/低溫|寒冷|降溫/.test(title)) pushWarning(out, tempNamed(mapWarning('WCOLD', { code: 'WCOLD', name: title }), 'cold', title));
   }
   return out;
 }

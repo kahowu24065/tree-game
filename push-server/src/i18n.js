@@ -122,3 +122,43 @@ export function cwaName(name, loc) {
   const en = CWA_EN[base] ?? 'Weather warning';
   return m ? `${en} (${COLOR_EN[m[2]]})` : en;
 }
+
+/** Macao (SMG) names. Typhoon signals use the same wording as the app (HKO-style); rain uses Macao's 黃色 / Yellow. */
+const MO_RAIN = {
+  'zh-HK': { full: ['', '黃色暴雨警告信號', '紅色暴雨警告信號', '黑色暴雨警告信號'], short: ['', '黃雨', '紅雨', '黑雨'] },
+  'zh-TW': { full: ['', '黃色暴雨警告信號', '紅色暴雨警告信號', '黑色暴雨警告信號'], short: ['', '黃雨', '紅雨', '黑雨'] },
+  'zh-CN': { full: ['', '黄色暴雨警告信号', '红色暴雨警告信号', '黑色暴雨警告信号'], short: ['', '黄雨', '红雨', '黑雨'] },
+  en: { full: ['', 'Yellow Rainstorm Warning Signal', 'Red Rainstorm Warning Signal', 'Black Rainstorm Warning Signal'], short: ['', 'Yellow Rain', 'Red Rain', 'Black Rain'] },
+};
+/** SMG 高溫／低溫提示: [generic, 黃色, 橙色] per kind. */
+const MO_TEMP = {
+  'zh-HK': { heat: ['高溫提示', '黃色高溫提示', '橙色高溫提示'], cold: ['低溫提示', '黃色低溫提示', '橙色低溫提示'] },
+  'zh-TW': { heat: ['高溫提示', '黃色高溫提示', '橙色高溫提示'], cold: ['低溫提示', '黃色低溫提示', '橙色低溫提示'] },
+  'zh-CN': { heat: ['高温提示', '黄色高温提示', '橙色高温提示'], cold: ['低温提示', '黄色低温提示', '橙色低温提示'] },
+  en: { heat: ['Hot Weather Alert', 'Yellow Hot Weather Alert', 'Orange Hot Weather Alert'], cold: ['Cold Weather Alert', 'Yellow Cold Weather Alert', 'Orange Cold Weather Alert'] },
+};
+
+/** An SMG temperature-alert title (e.g. 黃色高溫提示) in the device's language. Unknown titles: as sent (zh-HK / zh-TW). */
+export function smgTempName(kind, title, loc) {
+  const l = normLocale(loc);
+  const t = String(title ?? '');
+  const level = /橙/.test(t) ? 2 : /黃/.test(t) ? 1 : 0;
+  if (!level && t && (l === 'zh-HK' || l === 'zh-TW')) return t;
+  return MO_TEMP[l][kind][level];
+}
+
+/** Label functions for Macao pushes; `names` = latest SMG temperature titles { heat, cold }. */
+export function moLabels(names = {}) {
+  const label = (cat, level, loc) => {
+    if (cat === 'rain') return MO_RAIN[normLocale(loc)].full[level] ?? '';
+    if (cat === 'heat' || cat === 'cold') return smgTempName(cat, names[cat], loc);
+    return hkLabel(cat, level, loc);
+  };
+  const short = (cat, level, loc) => {
+    if (cat === 'rain') return MO_RAIN[normLocale(loc)].short[level] ?? '';
+    if (cat === 'heat' || cat === 'cold') return smgTempName(cat, names[cat], loc);
+    return hkShort(cat, level, loc);
+  };
+  return { label, short };
+}
+export const HK_LABELS = { label: hkLabel, short: hkShort };

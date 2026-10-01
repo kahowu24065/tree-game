@@ -11,7 +11,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { normLocale, recordLocale, str } from './i18n.js';
+import { moLabels, normLocale, recordLocale, str } from './i18n.js';
 import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
 import { cellKey, currentEventsIntl, forecastUrl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
 import { stepScope } from './alerts.js';
@@ -121,6 +121,8 @@ async function pollHko() {
   }
 }
 
+const smgNames = {};
+
 async function pollSmg() {
   try {
     const load = async (host, file) => {
@@ -133,14 +135,19 @@ async function pollSmg() {
       load('xml', 'c_rainstorm.xml'),
       load('rss', 'c_temperatureAlert_rss.xml'),
     ]);
-    const levels = levelsFromWarnsum(warnsumFromSmg({ typhoon, rain, temp }));
+    const warnsum = warnsumFromSmg({ typhoon, rain, temp });
+    const levels = levelsFromWarnsum(warnsum);
+    // Keep the last SMG temperature titles so a later cancel still names the right alert.
+    if (warnsum.WHOT?.name) smgNames.heat = warnsum.WHOT.name;
+    if (warnsum.WCOLD?.name) smgNames.cold = warnsum.WCOLD.name;
+    const mo = moLabels(smgNames);
     const { state, fresh, reminders, drops } = stepScope(alerts.mo, levels, Date.now());
     alerts.mo = state;
     writeJson(ALERTS_FILE, alerts);
-    const mo = store.records().filter(isMoDevice);
-    for (const w of fresh) await push(mo, 'issue', (l) => messageFor(w, l), true, forSmg);
-    for (const w of drops) await push(mo, 'drop', (l) => dropMessageFor(w, l), true, forSmg);
-    for (const w of reminders) await push(mo, 'reminder', (l) => reminderFor(w, l), true, forSmg);
+    const devices = store.records().filter(isMoDevice);
+    for (const w of fresh) await push(devices, 'issue', (l) => messageFor(w, l, mo), true, forSmg);
+    for (const w of drops) await push(devices, 'drop', (l) => dropMessageFor(w, l, mo), true, forSmg);
+    for (const w of reminders) await push(devices, 'reminder', (l) => reminderFor(w, l, mo), true, forSmg);
     lastSmgPoll = new Date().toISOString();
   } catch (e) {
     console.error('[smg]', String(e?.message ?? e));

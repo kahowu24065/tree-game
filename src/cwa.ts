@@ -48,12 +48,38 @@ export function inTaiwan(lat: number, lon: number): boolean {
 
 const GROUP: Record<CwaWarningType, string> = { typhoon: 'TWTY', rain: 'TWRAIN', wind: 'TWWIND', thunder: 'TWTS', heat: 'TWHOT', cold: 'TWCOLD', fog: 'TWFOG' };
 
-/** One CWA warning → the shared warning shape. The name is CWA's own (e.g. 豪雨特報, 陸上強風特報（橙色燈號）). */
+/** CWA's own warning names (as the push server sends them) → locale keys. Unknown names stay as sent. */
+const CWA_NAME_KEY: Record<string, string> = {
+  '大雨特報': 'warn.cwa.rain1',
+  '豪雨特報': 'warn.cwa.rain2',
+  '大豪雨特報': 'warn.cwa.rain3',
+  '超大豪雨特報': 'warn.cwa.rain4',
+  '海上颱風警報': 'warn.cwa.tySea',
+  '海上陸上颱風警報': 'warn.cwa.tyLand',
+  '陸上強風特報': 'warn.cwa.wind',
+  '低溫特報': 'warn.cwa.cold',
+  '高溫資訊': 'warn.cwa.heat',
+  '濃霧特報': 'warn.cwa.fog',
+  '大雷雨即時訊息': 'warn.cwa.thunder',
+};
+const CWA_COLOR_KEY: Record<string, string> = { '黃色': 'warn.color.yellow', '橙色': 'warn.color.orange', '紅色': 'warn.color.red' };
+
+/** A CWA warning name (e.g. 豪雨特報, 陸上強風特報（橙色燈號）) in the current language. */
+export function cwaWarningName(raw: string): string {
+  const m = /^(.*?)（(黃色|橙色|紅色)燈號）$/.exec(raw ?? '');
+  const key = CWA_NAME_KEY[m ? m[1]! : raw];
+  if (!key) return raw;
+  const name = tl(key);
+  return m ? tl('warn.cwa.lit', { name, color: tl(CWA_COLOR_KEY[m[2]!]!) }) : name;
+}
+
+/** One CWA warning → the shared warning shape. The name is CWA's own, shown in the current language. */
 export function mapCwaWarning(w: CwaRawWarning): HkoWarning | null {
   const group = GROUP[w.type];
   if (!group || !(w.level >= 1)) return null;
   const level = Math.round(w.level);
-  const base = { group, code: `${group}${level}`, name: w.name, short: w.name, issued: w.issued ?? '', standby: false };
+  const shown = cwaWarningName(w.name);
+  const base = { group, code: `${group}${level}`, name: shown, short: shown, issued: w.issued ?? '', standby: false };
   let kind: StormKind | null = null;
   let tone: HkoWarning['tone'] = 'yellow';
   if (w.type === 'typhoon') {

@@ -1442,6 +1442,27 @@ const table: Record<string, string> = {
  "html.close": "關閉",
  "html.weather": "天氣概況",
  "html.ad": "廣告",
- "html.zoomHint": "雙指縮放／滾輪放大・撳動物跟拍"
+ "html.zoomHint": "雙指縮放／滾輪放大・撳動物跟拍",
+ "warn.cwa.rain1": "大雨特報",
+ "warn.cwa.rain2": "豪雨特報",
+ "warn.cwa.rain3": "大豪雨特報",
+ "warn.cwa.rain4": "超大豪雨特報",
+ "warn.cwa.tySea": "海上颱風警報",
+ "warn.cwa.tyLand": "海上陸上颱風警報",
+ "warn.cwa.wind": "陸上強風特報",
+ "warn.cwa.cold": "低溫特報",
+ "warn.cwa.heat": "高溫資訊",
+ "warn.cwa.fog": "濃霧特報",
+ "warn.cwa.thunder": "大雷雨即時訊息",
+ "warn.cwa.lit": "{name}（{color}燈號）",
+ "warn.color.yellow": "黃色",
+ "warn.color.orange": "橙色",
+ "warn.color.red": "紅色",
+ "warn.smg.hot1": "黃色高溫提示",
+ "warn.smg.hot2": "橙色高溫提示",
+ "warn.smg.cold1": "黃色低溫提示",
+ "warn.smg.cold2": "橙色低溫提示",
+ "warn.smg.rainA": "黃色暴雨警告信號",
+ "warn.smg.rainAShort": "黃雨"
 };
 export default table;
