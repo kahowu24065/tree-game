@@ -37,7 +37,7 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s "$XCODE" && xcodebuild -version
       - name: Web build
-        run: npm ci && npm run build:app
+        run: npm ci --ignore-scripts && npm run build:app
       - name: Capacitor sync (pod install)
         run: |
           pod --version || sudo gem install cocoapods
@@ -132,7 +132,7 @@ jobs:
         run: |
           [ -n "$VITE_RC_IOS_KEY" ] || echo "::warning::RC_IOS_KEY not set - subscription disabled in this build"
           [ -n "$VITE_ADMOB_IOS_BANNER" ] || echo "::warning::ADMOB_IOS_BANNER_ID not set - Google test ads"
-          npm ci && npm run build:app
+          npm ci --ignore-scripts && npm run build:app
           pod --version || sudo gem install cocoapods
           # pod downloads sometimes hit a CDN 5xx: retry once.
           npx cap sync ios || { sleep 30; npx cap sync ios; }
