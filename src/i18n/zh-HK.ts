@@ -1431,6 +1431,17 @@ const table: Record<string, string> = {
  "labels.rainstorm": "暴雨",
  "labels.blackrain": "黑雨",
  "labels.001": "捱過 {count} {unit}{name}",
- "ui.language": "語言"
+ "ui.language": "語言",
+ "html.desc": "一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。",
+ "html.scene": "今日的樹同天空",
+ "html.status": "樹木狀態",
+ "html.rail": "高度進度同里程",
+ "html.settings": "設定",
+ "html.dock": "主要動作",
+ "html.drawer": "樹木狀態：照顧、圖鑑、里程碑、成就",
+ "html.close": "關閉",
+ "html.weather": "天氣概況",
+ "html.ad": "廣告",
+ "html.zoomHint": "雙指縮放／滾輪放大・撳動物跟拍"
 };
 export default table;

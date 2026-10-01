@@ -1541,6 +1541,37 @@ function trackLeftColumn(): void {
 }
 trackLeftColumn();
 
+/** v1.4.19: the static shell in index.html is written in zh-HK; relabel it for the player's language. */
+function localizeStatic(): void {
+  document.title = tl('sim.001');
+  document.querySelector('meta[name="description"]')?.setAttribute('content', tl('html.desc'));
+  const label: [string, string][] = [
+    ['#scene', 'html.scene'],
+    ['#status-card', 'html.status'],
+    ['#rail', 'html.rail'],
+    ['#view-reset', 'main.064'],
+    ['#sheet', 'ui.185'],
+    ['#gear', 'html.settings'],
+    ['#dock', 'html.dock'],
+    ['#drawer', 'html.drawer'],
+    ['#drawer-close', 'html.close'],
+    ['#wx-page', 'html.weather'],
+    ['#wx-close', 'html.close'],
+    ['#ad-banner', 'html.ad'],
+  ];
+  for (const [sel, key] of label) document.querySelector(sel)?.setAttribute('aria-label', tl(key));
+  const text: [string, string][] = [
+    ['#zoom-hint', 'html.zoomHint'],
+    ['#sheet-title', 'ui.185'],
+    ['#ad-banner .ad-slot', 'html.ad'],
+  ];
+  for (const [sel, key] of text) {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = tl(key);
+  }
+}
+localizeStatic();
+
 // v1.4.19 language picker (設定): save, tell the push server, then reload so every table is rebuilt in the new language.
 document.addEventListener('change', (event) => {
   const sel = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>('select[data-lang-select]');

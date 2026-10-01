@@ -3,7 +3,7 @@
  * Sends `Access-Control-Allow-Origin: *`, so the browser can call it directly.
  */
 import type { StormKind } from './types';
-import { t as tl } from './i18n';
+import { getLocale, t as tl } from './i18n';
 
 const BASE = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php';
 
@@ -78,7 +78,9 @@ const TC_SHORT: Record<string, string> = {
 /** What the warning card shows. The signal stays specific; the game grade is chosen separately. */
 export function warningDisplay(w: HkoWarning): string {
   if (w.group === 'WTCSGNL' || w.group === 'WRAIN') return w.short;
-  if ((w.group === 'WHOT' || w.group === 'WCOLD') && w.name && w.name !== w.code) return w.name;
+  // The feed's own (Traditional Chinese) name only where it reads natively; elsewhere the translated short name.
+  const nativeName = getLocale() === 'zh-HK' || getLocale() === 'zh-TW';
+  if ((w.group === 'WHOT' || w.group === 'WCOLD') && w.name && w.name !== w.code && nativeName) return w.name;
   return w.short || w.name;
 }
 
