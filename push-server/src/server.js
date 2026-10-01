@@ -11,6 +11,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normLocale, recordLocale, str } from './i18n.js';
 import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
 import { cellKey, currentEventsIntl, forecastUrl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
 import { stepScope } from './alerts.js';
@@ -71,16 +72,23 @@ const isHkDevice = (r) => !isMoDevice(r) && !isTwDevice(r) && (!r.state || r.sta
 const SMG_ALLOW = new Set(['xml/c_actual_brief.xml', 'xml/c_actualweather.xml', 'xml/c_7daysforecast.xml', 'xml/c_forecast.xml', 'xml/c_typhoon.xml', 'xml/c_rainstorm.xml', 'xml/c_thunderstorm.xml', 'xml/c_monsoon.xml', 'rss/c_temperatureAlert_rss.xml']);
 const SMG_HOST = { xml: 'https://xml.smg.gov.mo', rss: 'https://rss.smg.gov.mo' };
 
-function forSmg(msg) {
-  return { ...msg, title: msg.title.replaceAll('天文台', '地球物理氣象局'), body: msg.body.replaceAll('天文台', '地球物理氣象局') };
+function forSmg(msg, loc) {
+  const from = str('hko', loc);
+  const to = str('smg', loc);
+  return { ...msg, title: msg.title.replaceAll(from, to), body: msg.body.replaceAll(from, to) };
 }
 
-/** Send `base` (issue / reminder / drop) to the devices that should get it, grouped by their personalised text. */
-async function push(records, kind, base, hk, localize = (m) => m) {
+/**
+ * Send one warning (issue / reminder / drop) to the devices that should get it. `build(locale)` makes the text in each
+ * device's language; devices are grouped by their personalised text.
+ */
+async function push(records, kind, build, hk, localize = (m) => m) {
   const groups = new Map();
+  const base = build('zh-HK');
   for (const r of records) {
     if (!shouldNotify(r.state, base.category, Date.now(), kind)) continue;
-    const msg = localize(deviceMessage(base, r.state, kind, hk));
+    const loc = recordLocale(r);
+    const msg = localize(deviceMessage(build(loc), r.state, kind, hk, loc), loc);
     const key = `${msg.title}\n${msg.body}`;
     if (!groups.has(key)) groups.set(key, { msg, tokens: [] });
     groups.get(key).tokens.push(r.token);
@@ -102,9 +110,9 @@ async function pollHko() {
     alerts.hk = state;
     writeJson(ALERTS_FILE, alerts); // saved before sending: a crash mid-send never re-notifies after restart
     const hk = store.records().filter(isHkDevice);
-    for (const w of fresh) await push(hk, 'issue', messageFor(w), true);
-    for (const w of drops) await push(hk, 'drop', dropMessageFor(w), true);
-    for (const w of reminders) await push(hk, 'reminder', reminderFor(w), true);
+    for (const w of fresh) await push(hk, 'issue', (l) => messageFor(w, l), true);
+    for (const w of drops) await push(hk, 'drop', (l) => dropMessageFor(w, l), true);
+    for (const w of reminders) await push(hk, 'reminder', (l) => reminderFor(w, l), true);
     lastPoll = new Date().toISOString();
     lastError = null;
   } catch (e) {
@@ -130,9 +138,9 @@ async function pollSmg() {
     alerts.mo = state;
     writeJson(ALERTS_FILE, alerts);
     const mo = store.records().filter(isMoDevice);
-    for (const w of fresh) await push(mo, 'issue', messageFor(w), true, forSmg);
-    for (const w of drops) await push(mo, 'drop', dropMessageFor(w), true, forSmg);
-    for (const w of reminders) await push(mo, 'reminder', reminderFor(w), true, forSmg);
+    for (const w of fresh) await push(mo, 'issue', (l) => messageFor(w, l), true, forSmg);
+    for (const w of drops) await push(mo, 'drop', (l) => dropMessageFor(w, l), true, forSmg);
+    for (const w of reminders) await push(mo, 'reminder', (l) => reminderFor(w, l), true, forSmg);
     lastSmgPoll = new Date().toISOString();
   } catch (e) {
     console.error('[smg]', String(e?.message ?? e));
@@ -162,9 +170,9 @@ async function pollCells() {
       const { state, fresh, reminders, drops } = stepScope(alerts.cells[key] ?? null, levels, Date.now(), { confirmDrops: 2 });
       alerts.cells[key] = state;
       writeJson(ALERTS_FILE, alerts);
-      for (const x of fresh) await push(records, 'issue', intlMessageFor(x), false);
-      for (const x of drops) await push(records, 'drop', intlDropMessageFor(x), false);
-      for (const x of reminders) await push(records, 'reminder', intlMessageFor(x, true), false);
+      for (const x of fresh) await push(records, 'issue', (l) => intlMessageFor(x, false, l), false);
+      for (const x of drops) await push(records, 'drop', (l) => intlDropMessageFor(x, l), false);
+      for (const x of reminders) await push(records, 'reminder', (l) => intlMessageFor(x, true, l), false);
     } catch (e) {
       console.error('[cell]', key, String(e?.message ?? e));
     }
@@ -210,9 +218,9 @@ async function pollTw() {
       const { state, fresh, reminders, drops } = stepScope(prev, levels, Date.now(), { confirmDrops: 2 });
       alerts.tw[key] = { ...state, names: { ...(prev?.names ?? {}), ...names } };
       writeJson(ALERTS_FILE, alerts);
-      for (const x of fresh) await push(records, 'issue', twMessageFor(x, names), false);
-      for (const x of drops) await push(records, 'drop', twDropMessageFor(x, prev?.names, names), false);
-      for (const x of reminders) await push(records, 'reminder', twMessageFor(x, alerts.tw[key].names, true), false);
+      for (const x of fresh) await push(records, 'issue', (l) => twMessageFor(x, names, false, l), false);
+      for (const x of drops) await push(records, 'drop', (l) => twDropMessageFor(x, prev?.names, names, l), false);
+      for (const x of reminders) await push(records, 'reminder', (l) => twMessageFor(x, alerts.tw[key].names, true, l), false);
     }
     lastTwPoll = new Date().toISOString();
   } catch (e) {
@@ -352,7 +360,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     const platform = ['android', 'ios', 'web'].includes(body.platform) ? body.platform : 'unknown';
-    store.add(body.token, platform, String(body.appVersion ?? '').slice(0, 32));
+    store.add(body.token, platform, String(body.appVersion ?? '').slice(0, 32), normLocale(body.locale));
     return send(res, 200, { ok: true });
   }
   send(res, 404, { ok: false });

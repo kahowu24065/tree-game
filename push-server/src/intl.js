@@ -1,3 +1,4 @@
+import { intlLabel, str } from './i18n.js';
 // Non-HK weather: the game's own rules (ported 1:1 from tree-game src/events.ts + src/balance.ts; a tree-game test
 // checks this port against the TypeScript originals) applied to Open-Meteo, per 0.5° grid cell.
 
@@ -133,30 +134,18 @@ export function cellKey(lat, lon) {
   return `${r(lat)},${r(lon)}`;
 }
 
-const INTL_LABEL = {
-  heat: () => '酷熱',
-  cold: () => '寒冷',
-  rain: (l) => (l >= 2 ? '豪雨' : '大雨'),
-  typhoon: (l) => ['', '烈風', '狂風雷暴', '暴風'][l],
-};
-
-/** Push text for a non-HK cell (the game's regional names: 烈風／暴風／大雨／豪雨, 大雨疏水). */
-export function intlMessageFor({ category, level }, reminder = false) {
-  const label = INTL_LABEL[category](level);
-  const body = {
-    heat: '快啲幫棵樹做額外澆水（酷熱澆水）！',
-    rain: '快啲幫棵樹做大雨疏水！',
-    typhoon: '快啲幫棵樹加固，打木樁、綁防風繩！',
-    cold: '快啲幫棵樹做保暖，鋪好樹皮乾葉！',
-  }[category];
+/** Push text for a non-HK cell (the game's regional names: 烈風／暴風／大雨／豪雨, 大雨疏水), in the device's language. */
+export function intlMessageFor({ category, level }, reminder = false, loc = 'zh-HK') {
+  const label = intlLabel(category, level, loc);
+  const body = str(category === 'rain' ? 'act_rainIntl' : category === 'typhoon' ? 'act_typhoonHigh' : `act_${category}`, loc);
   return reminder
-    ? { title: `${label}仲未完`, body: `棵樹仲未做應急行動：${body}`, category, level }
-    : { title: `你嗰度有${label}天氣！`, body, category, level };
+    ? { title: str('intlStill', loc, { label }), body: str('reminder', loc, { body }), category, level }
+    : { title: str('intlIssue', loc, { label }), body, category, level };
 }
 
 /** Non-HK downgrade / end info (e.g. 豪雨轉大雨, 你嗰度烈風天氣已完結). */
-export function intlDropMessageFor({ category, from, to }) {
-  const a = INTL_LABEL[category](from);
-  if (to > 0) return { title: `${a}轉${INTL_LABEL[category](to)}`, body: '天氣有啲好轉，但仍要留意。', category, level: to };
-  return { title: `你嗰度${a}天氣已完結`, body: '天氣好轉咗，棵樹可以鬆一口氣。', category, level: 0 };
+export function intlDropMessageFor({ category, from, to }, loc = 'zh-HK') {
+  const a = intlLabel(category, from, loc);
+  if (to > 0) return { title: str('drop', loc, { a, b: intlLabel(category, to, loc) }), body: str('intlDropBody', loc), category, level: to };
+  return { title: str('intlEnd', loc, { a }), body: str('intlEndBody', loc), category, level: 0 };
 }

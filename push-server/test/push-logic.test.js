@@ -125,7 +125,7 @@ test('parseState validates and rounds the region to 0.5°', () => {
   assert.equal(parseState({ day: 'x' }), null);
   assert.equal(parseState({ day: '2026-09-27', tz: 'Not/AZone' }), null);
   const s = parseState({ day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: 'yes' }, region: { lat: 35.68, lon: 139.77 }, isHK: false, rUnlocked: true, alive: true }, 5);
-  assert.deepEqual(s, { day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: false, reinforce: false, warm: false }, region: { lat: 35.5, lon: 140 }, isHK: false, isMO: false, isTW: false, twCounty: null, twTown: null, rUnlocked: true, alive: true, tree: 'ok', resist: null, at: 5 });
+  assert.deepEqual(s, { day: '2026-09-27', tz: 'Asia/Tokyo', done: { heat: true, drain: false, reinforce: false, warm: false }, region: { lat: 35.5, lon: 140 }, isHK: false, isMO: false, isTW: false, twCounty: null, twTown: null, rUnlocked: true, alive: true, tree: 'ok', locale: null, resist: null, at: 5 });
   assert.equal(parseState({ day: '2026-09-27', tree: 'dying', resist: 33.6 }).resist, 34);
   assert.equal(parseState({ day: '2026-09-27', isHK: false }).isHK, true, 'no region → treated as HK');
   const mo = parseState({ day: '2026-09-27', region: { lat: 22, lon: 113.5 }, isHK: true, isMO: true });

@@ -1,3 +1,4 @@
+import { cwaName, str } from './i18n.js';
 // 交通部中央氣象署 (CWA) open data → one normalised Taiwan weather bundle for the app, plus the warning levels the push
 // relay uses. The API key lives only on the server (env CWA_API_KEY); the app calls GET /cwa?lat=&lon= instead.
 //
@@ -452,23 +453,18 @@ export function twLevels(warnings) {
   return { levels, names };
 }
 
-const TW_BODY = {
-  heat: '快啲幫棵樹做額外澆水（酷熱澆水）！',
-  rain: '快啲幫棵樹做大雨疏水！',
-  typhoon: '快啲幫棵樹加固，打木樁、綁防風繩！',
-  cold: '快啲幫棵樹做保暖，鋪好樹皮乾葉！',
-};
+const twBody = (category, loc) => str(category === 'rain' ? 'act_rainIntl' : category === 'typhoon' ? 'act_typhoonHigh' : `act_${category}`, loc);
 
-/** Taiwan push text with 中央氣象署's own warning names (non-HK rules: deviceMessage(…, hk=false)). */
-export function twMessageFor({ category, level }, names, reminder = false) {
-  const name = names?.[category] ?? '天氣警特報';
+/** Taiwan push text with 中央氣象署's own warning names (non-HK rules: deviceMessage(…, hk=false)), per language. */
+export function twMessageFor({ category, level }, names, reminder = false, loc = 'zh-HK') {
+  const name = cwaName(names?.[category], loc) ?? str('twGeneric', loc);
   return reminder
-    ? { title: `${name}仍然生效`, body: `棵樹仲未做應急行動：${TW_BODY[category]}`, category, level }
-    : { title: `中央氣象署：${name}`, body: TW_BODY[category], category, level };
+    ? { title: str('twStill', loc, { name }), body: str('reminder', loc, { body: twBody(category, loc) }), category, level }
+    : { title: str('twIssue', loc, { name }), body: twBody(category, loc), category, level };
 }
 
-export function twDropMessageFor({ category, from, to }, before, after) {
-  const a = before?.[category] ?? '天氣警特報';
-  if (to > 0) return { title: `${a}轉${after?.[category] ?? '較低等級'}`, body: '中央氣象署已調低等級，仍要留意天氣。', category, level: to };
-  return { title: `${a}已解除`, body: '中央氣象署已經解除，棵樹可以鬆一口氣。', category, level: 0 };
+export function twDropMessageFor({ category, from, to }, before, after, loc = 'zh-HK') {
+  const a = cwaName(before?.[category], loc) ?? str('twGeneric', loc);
+  if (to > 0) return { title: str('drop', loc, { a, b: cwaName(after?.[category], loc) ?? str('twLower', loc) }), body: str('twDropBody', loc), category, level: to };
+  return { title: str('twEnd', loc, { a }), body: str('twEndBody', loc), category, level: 0 };
 }

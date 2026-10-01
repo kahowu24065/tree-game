@@ -1,4 +1,5 @@
 import { TW_COUNTIES } from './cwa.js';
+import { LOCALES } from './i18n.js';
 // Device token store: a small JSON file (deduped by token), written atomically.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,9 +21,9 @@ export class TokenStore {
   get size() { return this.map.size; }
   tokens() { return [...this.map.keys()]; }
   records() { return [...this.map.values()]; }
-  add(token, platform, appVersion) {
+  add(token, platform, appVersion, locale) {
     const old = this.map.get(token);
-    this.map.set(token, { ...old, token, platform, appVersion, updatedAt: new Date().toISOString() });
+    this.map.set(token, { ...old, token, platform, appVersion, ...(locale ? { locale } : {}), updatedAt: new Date().toISOString() });
     this.save();
   }
   /** Per-device game state for action-aware pushes (kept with the token; older records simply have none). */
@@ -75,6 +76,8 @@ export function parseState(body, now = Date.now()) {
     rUnlocked: body.rUnlocked === true,
     alive: body.alive !== false,
     tree: ['ok', 'dying', 'dead'].includes(body.tree) ? body.tree : body.alive === false ? 'dead' : 'ok',
+    // Device language for push text (1.4.19); older apps send none → zh-HK.
+    locale: LOCALES.includes(body.locale) ? body.locale : null,
     resist: Number.isFinite(Number(body.resist)) ? Math.max(0, Math.min(100, Math.round(Number(body.resist)))) : null,
     at: now,
   };
