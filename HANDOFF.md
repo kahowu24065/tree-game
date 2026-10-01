@@ -84,6 +84,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.17 | 水分／養分／健康／抗風力全日按真實時間慢慢變（每 15 分鐘一段，閂 app 時間返嚟補返，一日總數同舊晚結算一樣）；天氣傷害、應急獎勵、倒塌、生長照舊晚上計；健康慢慢跌到 0 即刻瀕死；每晚出「每日總結」（ΔH／ΔW／ΔN／Δ鞏固度）；新增「健康好低」本地通知（id 107）；versionCode 24 |
 | 1.4.18 | 健康唔再日頭 drift：水分／養分／抗風力照舊慢慢變，健康半夜用一日完結嗰刻嘅 W/N/蟲害照舊每晚公式一次過結算（例：日頭 110 → 100，用 100 計 +5）；瀕死由半夜結算開始；1.4.17 存檔載入時還原當日已 drift 嘅健康；「健康好低」通知改為預計今晚結算會跌到 0 時、半夜前 3 小時提；versionCode 25（8aa2432 係中途版本，已被取代） |
 | 1.4.19 | 動物懸停改為喺附近 3 米內跳點（停 2.5–6.5 秒、緩動飛行 ≤1.2 m/s）；長駐動物：連續 5／5／10 晚健康 ≥85 先多一種，<75 走一種，每種（最多 3 種）蟲害遲 1 晚、每晚少扣 3，冇咗 +2 養分；雀鳥健康 ≥90 先生蛋；**多語言**：`src/i18n/`（zh-HK 原文、zh-TW、zh-CN、en，`t()`／`tName()`），預設跟裝置語言，設定 → 語言可以揀（儲存後重新載入）；推送伺服器按裝置 `locale`（/register、/state）用四種語言發通知，官方警告英文名；測試 `test/i18n.test.ts`（四語 key／參數／HTML tag 一致、src 冇硬寫中文）；versionCode 26 |
+| 1.4.20 | 英文版面修正（中文版面不變，CSS 全部喺 `html[lang='en']` 下）：樹木狀態副標題英文只顯示「樹種 · 階段」（預設樹名例如舊存檔嘅「世界之樹」唔顯示，可換行；之前英文樹種同階段黐埋）；狀態列英文只顯示 H/W/N/R 字母；酷熱澆水小掣改兩行；底部掣縮短：Feed／Fed、Full、At young tree、Done、Cold alert、Urgent，長字加省略號；versionCode 27 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -229,3 +230,8 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - VM 推送伺服器已部署（`PROXY=none`，冇掂 nginx／Macau bus）；部署前備份 `/opt/tree-push/app.bak-20261001-0759`、`/var/lib/tree-push.bak-20261001-0759`（VM 時間 UTC）。
 - i18n 工具（box 上）：`/workspace/i18n-work`（`emit_all.py` 由 en/tw/cn.json 生成 `src/i18n/*.ts`；**唔好再跑 `build_tw.py`**，會冇咗 `html.*` key）。
 - 語言揀選：設定 → 語言，存 localStorage `sekai-tree-locale` 後重新載入（資料表喺 import 時建立，冇得即時切換）。
+- 改英文字串：改 `/workspace/i18n-work/en.json` 再跑 `python3 emit_all.py`（會重寫 en／zh-TW／zh-CN.ts；zh-HK.ts 係原文，直接改）。
+
+### 1.4.20 發佈（2026-10-01）
+- 英文版面修正（見版本歷史）；推送伺服器冇改，冇重新部署。
+- 已知：360px 闊嘅手機天氣卡地點名「Hong Kong」會有省略號（同中文長地名一樣，原本設計）。
