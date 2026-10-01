@@ -317,10 +317,10 @@ function enterDying(state: GameState, date: string, nowMs: number, why: string, 
   return true;
 }
 
-/* ---------- v1.4.17 gradual day: 水分、養分、抗風力 and the W/N/蟲害 part of 健康 drift with real time ---------- */
+/* ---------- v1.4.17 gradual day: 水分、養分、抗風力 and 健康 drift with real time (v1.4.18: 健康 at a rate fixed at midnight) ---------- */
 
 export const DAY_MS = 24 * 3600 * 1000;
-/** Drift is applied in steps of at most 15 minutes, so the 水分／養分 tiers are re-read as the values move. */
+/** Drift is applied in steps of at most 15 minutes (closed-app time is caught up step by step). */
 export const FLOW_STEP_MS = 15 * 60 * 1000;
 
 /** Per-day rates (the old nightly amounts): 水分 −10 (−9 一級徽章, 0 on a rain day), 養分 −10 + 長駐動物, 抗風力 −2 after 青年樹. */
@@ -359,14 +359,32 @@ interface DriftSum {
 const q6 = (x: number) => Math.round(x * 1e6) / 1e6;
 const zeroSum = (): DriftSum => ({ w: 0, n: 0, r: 0, hw: 0, hn: 0, hp: 0, over: 0 });
 
+export interface HealthRate {
+  w: number;
+  n: number;
+  p: number;
+}
+
 /**
- * One step (share `f` of a day). 健康 moves by (水分分數 + 養分分數 − 蟲害) × f, read from the values at the start
- * of the step; while 瀕死 it only moves up. Returns 'zero' when 健康 reaches 0, 'up' when a 瀕死 tree climbs above 0.
+ * v1.4.18: the day's 健康 score, fixed at midnight with the nightly formula from that moment's snapshot — 水分分 and
+ * 養分分 of `start`, and −蟲害. Spread evenly over the next 24 hours; a tier crossing during the day does not change it.
  */
-function driftStep(v: DriftVals, rates: FlowRates, f: number, sum: DriftSum, dying: boolean): 'zero' | 'up' | null {
-  const hw = wTier(v.w).score * f;
-  const hn = nFactor(v.n) * f;
-  const hp = rates.pest ? -PEST_DAMAGE * f : 0;
+export function dayHealthRate(start: { w: number; n: number }, rates: FlowRates): HealthRate {
+  return {
+    w: wTier(start.w).score,
+    n: nFactor(start.n),
+    p: rates.pest ? -PEST_DAMAGE : 0,
+  };
+}
+
+/**
+ * One step (share `f` of a day). 健康 moves by the day's fixed score × f; while 瀕死 it only moves up.
+ * Returns 'zero' when 健康 reaches 0, 'up' when a 瀕死 tree climbs above 0.
+ */
+function driftStep(v: DriftVals, rates: FlowRates, hs: HealthRate, f: number, sum: DriftSum, dying: boolean): 'zero' | 'up' | null {
+  const hw = hs.w * f;
+  const hn = hs.n * f;
+  const hp = hs.p * f;
   const w0 = v.w;
   const n0 = v.n;
   const r0 = v.r;
@@ -390,14 +408,14 @@ function driftStep(v: DriftVals, rates: FlowRates, f: number, sum: DriftSum, dyi
 }
 
 /** Pure: run `ms` of drift on a copy (今晚預計 and the health notification). */
-function simulateDrift(v: DriftVals, rates: FlowRates, ms: number, dying: boolean): { sum: DriftSum; zeroAfterMs: number | null } {
+function simulateDrift(v: DriftVals, rates: FlowRates, hs: HealthRate, ms: number, dying: boolean): { sum: DriftSum; zeroAfterMs: number | null } {
   const sum = zeroSum();
   let done = 0;
   let zeroAfterMs: number | null = null;
   let stillDying = dying;
   while (done < ms - 1e-6) {
     const dt = Math.min(FLOW_STEP_MS, ms - done);
-    const hit = driftStep(v, rates, dt / DAY_MS, sum, stillDying);
+    const hit = driftStep(v, rates, hs, dt / DAY_MS, sum, stillDying);
     done += dt;
     if (hit === 'zero' && zeroAfterMs === null) {
       zeroAfterMs = done;
@@ -433,7 +451,9 @@ function applyDrift(state: GameState, date: string, events: readonly WeatherEven
     const dt = Math.min(FLOW_STEP_MS, ms - done);
     const v: DriftVals = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
     const sum = zeroSum();
-    const hit = driftStep(v, flowRates(state, events, perks), dt / DAY_MS, sum, Boolean(state.dying));
+    const rates = flowRates(state, events, perks);
+    f.hRate ??= dayHealthRate(f.start, rates);
+    const hit = driftStep(v, rates, f.hRate, dt / DAY_MS, sum, Boolean(state.dying));
     state.health = v.h;
     state.moisture = v.w;
     state.nutrients = v.n;
@@ -503,7 +523,15 @@ function completeFlowDay(state: GameState, date: string, events: readonly Weathe
 export function healthZeroInMs(state: GameState, events: readonly WeatherEventId[], meta: MetaState | null): number | null {
   if (!state.started || state.over || state.dying) return null;
   const v: DriftVals = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
-  return simulateDrift(v, flowRates(state, events, perksFrom(meta)), 3 * DAY_MS, false).zeroAfterMs;
+  const rates = flowRates(state, events, perksFrom(meta));
+  // v1.4.18: only today's fixed rate is known (tomorrow's is set at midnight), so look ahead to tonight only.
+  const restMs = state.flow ? Math.max(0, DAY_MS - state.flow.elapsed) : DAY_MS;
+  return simulateDrift(v, rates, healthRateOf(state.flow ?? null, state, rates), restMs, false).zeroAfterMs;
+}
+
+/** The day's fixed 健康 rate: already fixed on the flow, or what the day's first drift will fix it to. */
+function healthRateOf(flow: DayFlow | null, state: GameState, rates: FlowRates): HealthRate {
+  return flow?.hRate ?? dayHealthRate(flow?.start ?? { w: state.moisture, n: state.nutrients }, rates);
 }
 
 /**
@@ -698,7 +726,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const restMs = flow ? Math.max(0, DAY_MS - flow.elapsed) : DAY_MS;
   const rates = flowRates(state, events, perks);
   const v = { h: state.health, w: state.moisture, n: state.nutrients, r: state.resist };
-  const sim = simulateDrift(v, rates, restMs, Boolean(state.dying)).sum;
+  const sim = simulateDrift(v, rates, healthRateOf(flow, state, rates), restMs, Boolean(state.dying)).sum;
   v.h = q6(v.h);
   v.w = q6(v.w);
   v.n = q6(v.n);
@@ -1411,6 +1439,8 @@ export function checkRescue(state: GameState): string | null {
   if (!inBand(state.moisture, W_OPTIMAL) || state.nutrients < N_OPTIMAL[0]) return null;
   state.dying = null;
   state.health = RESCUE_HEALTH;
+  // v1.4.18: a rescued tree holds its 健康 for the rest of the day instead of drifting straight back to 0.
+  if (state.flow?.hRate && state.flow.hRate.w + state.flow.hRate.n + state.flow.hRate.p < 0) state.flow.hRate = { w: 0, n: 0, p: 0 };
   addLog(state, state.care.date, `水分同養分都返到最佳範圍，棵樹救返喇（健康度 ${RESCUE_HEALTH}）。`, { kind: 'grow', title: '救返', reward: { text: `健康 ${RESCUE_HEALTH}`, tone: 'green' } });
   return '棵樹救返喇！';
 }
@@ -1647,11 +1677,11 @@ export function advice(state: GameState, plan: NightPlan, countdown: { event: We
     const hit = rainAdd(state.moisture, WEATHER_EVENTS[countdown.event].dW, RAIN_OVER_CAP.heavy);
     if (hit > W_SATURATED) return `${eventLabel(countdown.event)}警告一出水分會即刻去到約 ${Math.round(hit)}（超過 ${W_SATURATED} 會爛根），可以先疏水。`;
   }
-  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel} ${sgn(plan.wScore)}。疏水返到 ${W_SATURATED} 以下。`;
-  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱 ${sgn(plan.wScore)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
+  if (plan.wAfter > W_SATURATED) return `今晚水分預計 ${Math.round(plan.wAfter)}：${plan.wLabel}，聽日健康每日 ${sgn(wTier(plan.wAfter).score)}。疏水返到 ${W_SATURATED} 以下。`;
+  if (plan.wAfter < W_OPTIMAL[0]) return `今晚水分預計跌到 ${Math.round(plan.wAfter)}：乾旱，聽日健康每日 ${sgn(wTier(plan.wAfter).score)}。記得澆水（最多澆到 ${W_SATURATED}）。`;
   if (plan.nAfter < N_OPTIMAL[0]) return `養分今晚會跌到 ${Math.round(plan.nAfter)}，低過 ${N_OPTIMAL[0]}，可以施肥。`;
   if (state.windUnlocked && state.resist < 40) return `有空可以加固：抗風力低過 40，${eventLabel('typhoon8')}一嚟就會倒塌。`;
-  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，今晚會健康咁長高。`;
+  return `今晚水分預計 ${Math.round(plan.wAfter)}，適中 +5。水分同養分都啱啱好，聽日健康會慢慢升。`;
 }
 
 export function dayNumber(state: GameState, today: string): number {

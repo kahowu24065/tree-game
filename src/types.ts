@@ -119,6 +119,12 @@ export interface DayFlow {
   hn: number;
   hp: number;
   over: number;
+  /**
+   * v1.4.18: the day's 健康 scores (per day), fixed at midnight from that moment's snapshot: 水分分 + 養分分 of the
+   * start values, and −蟲害. Spread evenly over the 24 hours, so a
+   * tier crossing mid-day does not change it. Missing = not fixed yet (set on the day's first drift).
+   */
+  hRate?: { w: number; n: number; p: number };
 }
 
 export interface DayRecord {
@@ -185,7 +191,7 @@ export interface GameState {
   targetCm?: number;
   lastSettlement: Settlement | null;
   /**
-   * v1.4.17 gradual day: 水分、養分、抗風力 and the W/N/蟲害 part of 健康 drift with real time instead of all at night.
+   * v1.4.17 gradual day: 水分、養分、抗風力 and the W/N/蟲害 part of 健康 drift with real time instead of all at night (v1.4.18: 健康 at the day's fixed `hRate`).
    * `date` is the day being drifted, `at` the last moment applied, `elapsed` the ms of that day already applied
    * (settlement tops it up to a full day). `start` = values when the day began (for the nightly 每日總結).
    * Sums: w/n/r = drift applied today; hw/hn/hp = 健康 from 水分／養分／蟲害; over = positive 健康 drift lost to the 100 cap.

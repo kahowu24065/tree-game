@@ -469,7 +469,7 @@ export function lessonPages(id: LessonId): { title: string; body: string }[] {
       },
       {
         title: '養分同健康',
-        body: `養分 ${lo}–${hi}，當晚健康 ${pts(N_FACTOR.good)}。${N_MALNOURISHED}–${lo - 1} 唔加唔減。低過 ${N_MALNOURISHED} 係營養不良，健康 ${pts(N_FACTOR.bad)}。棵樹每日自己慢慢用 ${N_DAILY_USE}點養分。健康會跟住而家嘅水分同養分全日慢慢升跌。`,
+        body: `養分 ${lo}–${hi}，當晚健康 ${pts(N_FACTOR.good)}。${N_MALNOURISHED}–${lo - 1} 唔加唔減。低過 ${N_MALNOURISHED} 係營養不良，健康 ${pts(N_FACTOR.bad)}。棵樹每日自己慢慢用 ${N_DAILY_USE}點養分。健康嘅升跌速率每日半夜按嗰刻水分同養分定好，全日平均慢慢變。`,
       },
     ];
   }
@@ -1073,7 +1073,7 @@ function nightCard(p: NightPlan, collapses = 0): string {
     .map((l) => `<li class="${l.tone}"><span>${esc(l.text)}</span><b>${esc(l.value)}</b><small>${esc(l.sub ?? '')}</small></li>`)
     .join('');
   return `<article class="card night-card">
-      <p class="eyebrow">今晚預計（水分、養分、健康全日慢慢變，數字係由而家到今晚）</p>
+      <p class="eyebrow">今晚預計（水分、養分、健康全日慢慢變；健康速率半夜定好，數字係由而家到今晚）</p>
       ${collapseHtml(p, collapses)}
       <ul class="breakdown">${rows}</ul>
       <h2 class="${t} night-total-h">健康 ${fmt(p.hBefore)} → ${fmt(p.hAfter)}（${p.waterDeath ? '瀕死' : signed(p.dH)}）</h2>
