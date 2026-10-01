@@ -239,4 +239,4 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 已知：360px 闊嘅手機天氣卡地點名「Hong Kong」會有省略號（同中文長地名一樣，原本設計）。
 
 ### 1.4.22 發佈（2026-10-01）
-- 見版本歷史；push server 有改（澳門推送名、SMG e_* 代理），已備份後部署。
+- 見版本歷史；release 5a4be18，gh-pages 2535261；push server 有改（澳門推送名、SMG e_* 代理），部署前備份 `/opt/tree-push/app.bak-20261001-0840`、`/var/lib/tree-push.bak-20261001-0840`（VM UTC）。
