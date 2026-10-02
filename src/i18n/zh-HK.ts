@@ -560,7 +560,7 @@ const table: Record<string, string> = {
  "guide.188": "天氣概況頁嘅警告同預報都來自同一個來源：香港係天文台，澳門係地球物理氣象局，臺灣係中央氣象署。",
  "guide.189": "天氣事件總表",
  "guide.190": "推送（Android app）",
- "guide.191": "設定 → 提醒通知 開咗就會收，app 關咗都收到。香港跟天文台警告、澳門跟地球物理氣象局（都係大約每 2.5 分鐘檢查）；臺灣跟中央氣象署警特報（每 5 分鐘檢查，通知用氣象署嘅名稱，規則同香港以外一樣）；其餘地方按 Open-Meteo 同遊戲一樣嘅門檻（每 20 分鐘檢查）。",
+ "guide.191": "設定 → 提醒通知 開咗就會收，app 關咗都收到。香港跟天文台警告、澳門跟地球物理氣象局（都係大約每 2.5 分鐘檢查）；臺灣跟中央氣象署警特報（每 5 分鐘檢查）；美國、加拿大、日本同歐洲跟官方正式發出嘅警報（每 10 分鐘檢查，通知寫官方名稱）；冇官方警報來源嘅地方只按實測數字（Open-Meteo 已過時段同即時讀數，同遊戲一樣嘅門檻，每 10 分鐘檢查），唔會按預報推。",
  "guide.192": "幾時會推",
  "guide.193": "情況",
  "guide.194": "會唔會推",
@@ -576,7 +576,7 @@ const table: Record<string, string> = {
  "guide.204": "警告生效大約 2 小時後，如果今日仲未做對應行動，會再提你一次（每個警告最多一次）。做咗、棵樹已經枯死，或者未到青年樹嘅風災，就唔會提。",
  "guide.205": "防止亂跳",
  "guide.206": "伺服器重新啟動後第一次檢查只記低現況，唔推（避免重複）。",
- "guide.207": "香港以外嘅降級／取消要連續兩次檢查（大約 40 分鐘）都係較低先推，免得預報上上落落。",
+ "guide.207": "香港以外嘅降級／取消要連續兩次檢查都係較低先推，免得資料上上落落。",
  "guide.208": "本機提醒（唔使網絡）",
  "guide.209": "今晚結算前 1.5 小時仲未澆水／施肥。",
  "guide.210": "瀕死剩大約 12 小時同 2 小時。",
@@ -1493,13 +1493,15 @@ const table: Record<string, string> = {
  "guide.feedIntro": "美國（國家氣象局）、加拿大（加拿大環境部）、日本（氣象廳）同歐洲大部分國家（MeteoAlarm）：只計官方正式發出、而家生效嘅警報。事件、傷害同成就全部只跟呢啲警報（捱過或者做咗應對先計），唔會用 Open-Meteo 數字或者預報。",
  "guide.feedUS": "美國：Flash Flood Warning → {black}；Flood Warning → {rain}；Hurricane／Typhoon／High Wind／Extreme Wind Warning → {t8}；Tropical Storm Warning、Wind Advisory → {t1}；Severe Thunderstorm／Tornado Warning → {thunder}；Extreme Heat Warning → {hot}；Extreme Cold／Wind Chill／Freeze Warning → {cold}。",
  "guide.feedCA": "加拿大：Rainfall warning → {rain}（紅色 → {black}）；Wind warning → {t8}（黃色 → {t1}）；Hurricane warning → {t8}；Tropical storm warning → {t1}；Severe thunderstorm／Tornado warning → {thunder}；Heat warning → {hot}；Extreme cold warning → {cold}。",
- "guide.feedJP": "日本：大雨特別警報、大雨危險警報 → {black}；大雨警報 → {rain}；暴風（雪）警報同特別警報 → {t8}；強風、風雪注意報 → {t1}；雷注意報 → {thunder}；低溫注意報 → {cold}。氣象廳嘅警報資料冇高溫（中暑警戒資訊唔喺入面），所以日本冇{hot}。",
+ "guide.feedJP": "日本：大雨特別警報、大雨危險警報 → {black}；大雨警報 → {rain}；暴風（雪）警報同特別警報 → {t8}；強風、風雪注意報 → {t1}；雷注意報 → {thunder}；低溫注意報 → {cold}；環境省嘅中暑警戒警報（熱中症警戒アラート，暑熱指數 WBGT ≥ 33）同中暑特別警戒警報（熱中症特別警戒アラート，WBGT ≥ 35）→ {hot}（按府縣地區，當日生效；每年大約 4 月尾至 10 月尾先有）。",
  "guide.feedEU": "歐洲：MeteoAlarm 橙色或紅色先計。雨／水浸：橙 → {rain}、紅 → {black}；風：橙 → {t1}、紅 → {t8}；雷暴、高溫、低溫：橙或以上 → {thunder}／{hot}／{cold}。黃色只顯示。冇對應地區資料嘅國家（例如瑞士）會用實測數字。",
  "guide.obsIntro": "其他冇官方警報來源嘅地方（例如中國內地）：用 Open-Meteo 嘅實測數字，即係今日已經過咗嘅每個鐘同即時讀數（即時雨量 ×{x} 當每小時雨量）。預報唔計。",
  "guide.obsRain": "一個鐘雨量 ≥ {mm} 毫米",
  "guide.obsBlack": "一個鐘 ≥ {mm} 毫米，或者 3 個鐘合共 ≥ {mm3} 毫米",
  "guide.obsThunder": "實測有雷暴（天氣代碼 ≥ {code}）",
  "guide.obsWind": "平均風連續 {hours} 個鐘 ≥ {wind} 公里/時，或者陣風 ≥ {gust} 公里/時",
- "guide.feedCard": "香港、澳門、臺灣以外：天氣卡列出官方警報（遊戲類別、官方原名、時間同資料來源）；冇官方來源嘅地方會講明用緊實測數字。"
+ "guide.feedCard": "香港、澳門、臺灣以外：天氣卡列出官方警報（遊戲類別、官方原名、時間同資料來源）；冇官方來源嘅地方會講明用緊實測數字。",
+ "alerts.jpHeat": "中暑警戒警報",
+ "alerts.jpHeatSpecial": "中暑特別警戒警報"
 };
 export default table;

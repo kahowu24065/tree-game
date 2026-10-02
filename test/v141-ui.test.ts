@@ -92,7 +92,7 @@ describe('v1.4.1 玩法 panel', () => {
     expect(wx).toContain(`陣風 ≥ ${WX_OBS.typhoon1.gust}`);
     expect(wx).toContain(`一個鐘 ≥ ${WX_OBS.blackrain.mmHour} 毫米`);
     const push = guideModal('push');
-    for (const s of ['降級', '取消', '注意安全', '2 小時', '40 分鐘']) expect(push).toContain(s);
+    for (const s of ['降級', '取消', '注意安全', '2 小時', '10 分鐘', '實測']) expect(push).toContain(s);
   });
   it('outside HK uses the regional names and drops 山泥傾瀉 from the play tab', () => {
     setLabelRegion('intl');

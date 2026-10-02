@@ -1,6 +1,7 @@
 // The push server (push-server/src/intl.js) ports the game's non-HK weather rules; keep them identical.
 import { describe, expect, it } from 'vitest';
-import { currentEvents, eventFromNumbers, isColdDay, isHotDay } from '../src/events';
+import { currentEvents, eventFromNumbers, isColdDay, isHotDay, observedEvents } from '../src/events';
+import { WX_OBS } from '../src/balance';
 // @ts-expect-error plain JS module without types
 import * as intl from '../push-server/src/intl.js';
 
@@ -38,6 +39,16 @@ describe('push-server rule port matches the game', () => {
       const today = { date: '2026-09-27', code: [1, 61, 65, 95][Math.floor(r() * 4)], tempMax: current.tempC + r() * 6, tempMin: current.tempC - r() * 10, precipMm: r() * 90, precipProb: 50, windKmh: r() * 70, gustKmh: r() * 130, sunrise: '', sunset: '', intl: true, normMax: normals?.max ?? null, normMin: normals?.min ?? null };
       const game = currentEvents({ hk: false, current, today }).filter((e) => e !== 'drizzle').sort();
       expect(intl.currentEventsIntl(current, today, normals).sort()).toEqual(game);
+    }
+  });
+
+  it('1.4.27 observed-number rules (no official feed) agree', () => {
+    expect(intl.WX_OBS).toEqual(WX_OBS);
+    const r = rng(11);
+    for (let k = 0; k < 3000; k++) {
+      const hours = Array.from({ length: 1 + Math.floor(r() * 5) }, (_, i) => ({ time: `2026-10-02T0${i}:00`, precipMm: r() < 0.5 ? r() * 5 : r() * 90, code: [0, 3, 61, 63, 80, 95][Math.floor(r() * 6)], gustKmh: r() * 130, windKmh: r() * 75 }));
+      const current = r() < 0.3 ? undefined : { tempC: 20, humidity: 70, precipMm: r() * 25, code: [0, 3, 63, 95][Math.floor(r() * 4)], windKmh: r() * 75, gustKmh: r() * 130, isDay: true, time: '2026-10-02T09:15' };
+      expect(intl.observedEvents(hours, current).sort()).toEqual(observedEvents(hours, current).sort());
     }
   });
 });

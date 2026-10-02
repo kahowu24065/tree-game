@@ -99,6 +99,34 @@ const S = {
   },
 };
 
+/** 1.4.27 official alert feeds outside HK / Macau / Taiwan (NWS, ECCC, JMA + 環境省, MeteoAlarm). */
+const FEED = {
+  'zh-HK': {
+    src_nws: '美國國家氣象局', src_eccc: '加拿大環境部', src_jma: '日本氣象廳', src_moe: '日本環境省', src_meteoalarm: 'MeteoAlarm',
+    jpHeat: '中暑警戒警報', jpHeatSpecial: '中暑特別警戒警報',
+    feedIssue: '{src}：{name}', feedBody: '遊戲當{label}。{act}', feedStill: '{name}仍然生效', feedDropBody: '官方已調低等級，仍要留意天氣。', feedEnd: '{a}已解除', feedEndBody: '{src}嘅警報已經完結，棵樹可以鬆一口氣。',
+  },
+  'zh-TW': {
+    src_nws: '美國國家氣象局', src_eccc: '加拿大環境部', src_jma: '日本氣象廳', src_moe: '日本環境省', src_meteoalarm: 'MeteoAlarm',
+    jpHeat: '中暑警戒警報', jpHeatSpecial: '中暑特別警戒警報',
+    feedIssue: '{src}：{name}', feedBody: '遊戲視為{label}。{act}', feedStill: '{name}仍然生效', feedDropBody: '官方已調低等級，仍要留意天氣。', feedEnd: '{a}已解除', feedEndBody: '{src}的警報已結束，這棵樹可以鬆一口氣。',
+  },
+  'zh-CN': {
+    src_nws: '美国国家气象局', src_eccc: '加拿大环境部', src_jma: '日本气象厅', src_moe: '日本环境省', src_meteoalarm: 'MeteoAlarm',
+    jpHeat: '中暑警戒警报', jpHeatSpecial: '中暑特别警戒警报',
+    feedIssue: '{src}：{name}', feedBody: '游戏视为{label}。{act}', feedStill: '{name}仍然生效', feedDropBody: '官方已调低等级，仍要留意天气。', feedEnd: '{a}已解除', feedEndBody: '{src}的预警已结束，这棵树可以松一口气。',
+  },
+  en: {
+    src_nws: 'US National Weather Service', src_eccc: 'Environment Canada', src_jma: 'Japan Meteorological Agency', src_moe: 'Japan Ministry of the Environment', src_meteoalarm: 'MeteoAlarm',
+    jpHeat: 'Heatstroke Alert', jpHeatSpecial: 'Special Heatstroke Alert',
+    feedIssue: '{src}: {name}', feedBody: 'Counts as {label} in the game. {act}', feedStill: '{name} still in force', feedDropBody: 'The official level has been lowered. Keep watching the weather.', feedEnd: '{a} ended', feedEndBody: 'The {src} alert has ended. Your tree can breathe a sigh of relief.',
+  },
+};
+export function feedStr(key, loc, p) {
+  const l = normLocale(loc);
+  return fmt(FEED[l][key] ?? FEED['zh-HK'][key] ?? key, p);
+}
+
 export function str(key, loc, p) {
   const l = normLocale(loc);
   return fmt(S[l][key] ?? S['zh-HK'][key] ?? key, p);

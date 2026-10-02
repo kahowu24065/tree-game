@@ -1,7 +1,9 @@
 // 世界之樹 push relay.
 //  • HK devices: polls HKO warnsum; a warning issued / upgraded → push.
 //  • Macau devices (isMO): polls SMG on the same interval as HKO.
-//  • Other devices: per 0.5° cell, Open-Meteo + the game's own rules (src/intl.js) every ~20 min → push new events.
+//  • Other devices (1.4.27): per ~0.1° area every ~10 min. Where an official feed covers it (NWS / ECCC / JMA + 環境省
+//    熱中症 alerts / MeteoAlarm, src/official.js) → push the alerts actually issued (start / upgrade / end, 2 readings to
+//    confirm a drop). No feed → observed numbers only (Open-Meteo past hours + live reading, the game's WX_OBS rules).
 //  • v1.4: downgrades / cancellations push as info; dead / 瀕死 trees still get warnings (with a state line);
 //    wind warnings before 青年樹 become real-life safety notices; the action push / 2 h reminder is skipped once
 //    today's matching 應急行動 is done. HKO 山泥傾瀉警告 (WL) is its own category, handled by 加固.
@@ -15,19 +17,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { moLabels, normLocale, recordLocale, str } from './i18n.js';
 import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
-import { cellKey, currentEventsIntl, forecastUrl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from './intl.js';
+import { cellKey, intlDropMessageFor, intlMessageFor, levelsFromEvents, observedEventsIntl, observedUrl, parseObserved } from './intl.js';
 import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
-import { createOfficialClient } from './official.js';
+import { createOfficialClient, feedDropMessageFor, feedLevels, feedMessageFor } from './official.js';
 import { WARNING_SETS, createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA = process.env.DATA_DIR || path.resolve('data');
 const POLL_MS = Number(process.env.POLL_MS || 150_000);
-const CELL_POLL_MS = Number(process.env.CELL_POLL_MS || 20 * 60_000);
+const CELL_POLL_MS = Number(process.env.CELL_POLL_MS || 10 * 60_000);
 const CELL_ACTIVE_MS = 14 * 24 * 3600_000;
 const MAX_CELLS = Number(process.env.MAX_CELLS || 60);
 const TW_POLL_MS = Number(process.env.TW_POLL_MS || 5 * 60_000);
@@ -160,37 +162,76 @@ async function pollSmg() {
   }
 }
 
+/** Device → alert area (~0.1°; older apps only send the 0.5° region). */
+function areaKey(s) {
+  const p = s.area ?? s.region;
+  return `${(Math.round(p.lat * 10) / 10).toFixed(1)},${(Math.round(p.lon * 10) / 10).toFixed(1)}`;
+}
+
 async function pollCells() {
   const now = Date.now();
-  const byCell = new Map();
+  const byArea = new Map();
   for (const r of store.records()) {
     const s = r.state;
     if (!s || s.isHK || s.isMO || s.isTW || !s.region || now - (s.at ?? 0) > CELL_ACTIVE_MS) continue;
-    const key = cellKey(s.region.lat, s.region.lon);
-    if (!byCell.has(key)) byCell.set(key, []);
-    byCell.get(key).push(r);
+    const key = areaKey(s);
+    if (!byArea.has(key)) byArea.set(key, []);
+    byArea.get(key).push(r);
   }
-  for (const key of Object.keys(alerts.cells)) if (!byCell.has(key)) delete alerts.cells[key];
+  const seen = new Set();
+  const observedCells = new Map(); // one Open-Meteo call per 0.5° cell per cycle
   let n = 0;
-  for (const [key, records] of byCell) {
-    if (n++ >= MAX_CELLS) break; // rate limit: bounded fetches per cycle
+  for (const [key, records] of byArea) {
+    if (n++ >= MAX_CELLS) break; // rate limit: bounded lookups per cycle (feeds are cached per area / country / office)
+    const [lat, lon] = key.split(',').map(Number);
     try {
-      const [lat, lon] = key.split(',').map(Number);
-      const res = await fetch(forecastUrl(lat, lon), { signal: AbortSignal.timeout(15_000) });
+      const found = await official.lookup(lat, lon);
+      if (found) {
+        const sk = `f:${key}`;
+        seen.add(sk);
+        const prev = alerts.cells[sk] ?? null;
+        const { levels, names } = feedLevels(found, Date.now());
+        const { state, fresh, reminders, drops } = stepScope(prev, levels, Date.now(), { confirmDrops: 2 });
+        alerts.cells[sk] = { ...state, names: { ...(prev?.names ?? {}), ...names } };
+        writeJson(ALERTS_FILE, alerts);
+        for (const x of fresh) await push(records, 'issue', (l) => feedMessageFor(x, names, false, l), false);
+        for (const x of drops) await push(records, 'drop', (l) => feedDropMessageFor(x, prev?.names, names, l), false);
+        for (const x of reminders) await push(records, 'reminder', (l) => feedMessageFor(x, alerts.cells[sk].names, true, l), false);
+        continue;
+      }
+      const cell = cellKey(lat, lon);
+      const sk = `o:${cell}`;
+      seen.add(sk);
+      if (observedCells.has(cell)) {
+        observedCells.get(cell).push(...records);
+        continue;
+      }
+      observedCells.set(cell, [...records]);
+    } catch (e) {
+      // Feed unreachable: keep the area's state (no pushes, no false "ended").
+      seen.add(`f:${key}`);
+      console.error('[area]', key, String(e?.message ?? e));
+    }
+  }
+  for (const [cell, records] of observedCells) {
+    const sk = `o:${cell}`;
+    try {
+      const [lat, lon] = cell.split(',').map(Number);
+      const res = await fetch(observedUrl(lat, lon), { signal: AbortSignal.timeout(15_000) });
       if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
-      const w = parseOpenMeteo(await res.json());
-      const levels = levelsFromEvents(currentEventsIntl(w.current, w.today, w.normals));
-      const { state, fresh, reminders, drops } = stepScope(alerts.cells[key] ?? null, levels, Date.now(), { confirmDrops: 2 });
-      alerts.cells[key] = state;
+      const levels = levelsFromEvents(observedEventsIntl(parseObserved(await res.json())));
+      const { state, fresh, reminders, drops } = stepScope(alerts.cells[sk] ?? null, levels, Date.now(), { confirmDrops: 2 });
+      alerts.cells[sk] = state;
       writeJson(ALERTS_FILE, alerts);
       for (const x of fresh) await push(records, 'issue', (l) => intlMessageFor(x, false, l), false);
       for (const x of drops) await push(records, 'drop', (l) => intlDropMessageFor(x, l), false);
       for (const x of reminders) await push(records, 'reminder', (l) => intlMessageFor(x, true, l), false);
     } catch (e) {
-      console.error('[cell]', key, String(e?.message ?? e));
+      console.error('[cell]', cell, String(e?.message ?? e));
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
+  for (const key of Object.keys(alerts.cells)) if (!seen.has(key)) delete alerts.cells[key];
   writeJson(ALERTS_FILE, alerts);
   lastCellPoll = new Date().toISOString();
 }

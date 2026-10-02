@@ -16,6 +16,8 @@ export interface PushState {
   tz: string;
   done: { heat: boolean; drain: boolean; reinforce: boolean; warm: boolean };
   region: { lat: number; lon: number };
+  /** 1.4.27 ~0.1° (set from region in reportPushState). */
+  area?: { lat: number; lon: number };
   isHK: boolean;
   /** Inside Macau: the server polls SMG on the same cadence as HKO, not the slower cell poll. */
   isMO?: boolean;
@@ -50,7 +52,8 @@ function flushState(): void {
 /** Native only: report state changes (debounced 3 s, only when something changed). */
 export function reportPushState(state: PushState): void {
   if (!isNative()) return;
-  latest = { ...state, locale: getLocale(), region: { lat: Math.round(state.region.lat * 2) / 2, lon: Math.round(state.region.lon * 2) / 2 } };
+  // 0.5° region (HK / Macau / Taiwan routing, observed-number cells) + 1.4.27 ~0.1° area for official-alert pushes.
+  latest = { ...state, locale: getLocale(), region: { lat: Math.round(state.region.lat * 2) / 2, lon: Math.round(state.region.lon * 2) / 2 }, area: { lat: Math.round(state.region.lat * 10) / 10, lon: Math.round(state.region.lon * 10) / 10 } };
   if (timer) clearTimeout(timer);
   timer = setTimeout(flushState, 3000);
 }
