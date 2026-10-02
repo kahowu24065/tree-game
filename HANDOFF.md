@@ -17,7 +17,7 @@
 | --- | --- |
 | 前端 | Vite 8 + TypeScript 6（strict，`noUnusedLocals`），three.js，冇框架（字串模板＋`innerHTML`） |
 | 測試 | Vitest（`test/**/*.test.ts`，node 環境）；版面／截圖用 Playwright 腳本（`scripts/`） |
-| App | Capacitor 7 Android（appId `io.github.kahowu24065.treegame`，minSdk 跟 Capacitor 預設，compile/target 35） |
+| App | Capacitor 7 Android（appId `app.sekaitree.game`（1.4.31 起；之前 `io.github.kahowu24065.treegame`），minSdk 跟 Capacitor 預設，compile/target 35） |
 | 推送 | `push-server/`：Node 20，零框架 HTTP server＋firebase-admin，部署喺 Oracle VM |
 | Firebase | 項目 `sekai-tree`（Spark 免費方案），只用 FCM |
 
@@ -96,6 +96,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.28 | 純文字：玩法「推送通知」分頁刪走「應急提醒」「防止亂跳」「本機提醒（唔使網絡）」三段（guide.203–211 已刪）；玩法分頁「目標」由「冇完結日：」起改為「生長到打破世界最高紀錄，解鎖第二座空島，種更多的「世界之樹」」（四語）；圖鑑「樹種」卡刪走資料出處連結（ui.286 唔再用 `sp.source`，資料仍留喺 `data/species.ts`）同 species.026 嘅出處括號；versionCode 35 |
 | 1.4.29 | 島嶼切換：取消左右滑轉島（同手動轉鏡頭撞），改成成長日誌上面嘅島嶼列（`#isle-bar`，`switchIsle()`；平時半透明，掂到／hover 變實，放手後淡返；未破紀錄第二座顯示 🔒 未解鎖，撳會 toast 解鎖條件）；第一隻雀仔入圖鑑時彈一次生蛋規則（`nest.intro`，用 `NEST_MIN_HEALTH`／`NEST_HATCH_MS`，`meta.nestIntro` 記住）；成就：天氣格只剩名稱、條件、已捱過幾多、下一個成就，「同一場只計一次」同官方來源說明（`wx.badgeSrc`）只喺天氣標題下面講一次；成就描述簡化（四語）；圖鑑／里程碑／成就 zh-HK 改得更口語；versionCode 36 |
 | 1.4.30 | 島嶼列改成冇字嘅細橫條（`#isle-bar`，role=slider，兩粒點顯示位置，第二座未解鎖係空心點）：只係喺條橫條度向左掃去第二座、向右掃返第一座（≥24px，場景唔會轉島）；未解鎖掃會彈一彈＋toast；鍵盤 ←／→ 都得；平時半透明，掂住變實，放手 1.6 秒後淡返，成長日誌打開時收埋；只用 aria-label（`isle.aria0/aria1/ariaLocked`）；四語說明改做「喺成長日誌上面條橫條掃」；versionCode 37 |
+| 1.4.31 | 新 app ID：Android applicationId／namespace 同 iOS bundle ID 由 `io.github.kahowu24065.treegame` 改做 `app.sekaitree.game`（Java 搬去 `app/sekaitree/game/`）；係另一個 app，要卸舊裝新，存檔用 設定 → 匯出／匯入存檔 搬；`google-services.json` 只有舊 package 嘅 client 時唔套用 google-services plugin（build 照過），`TreePushPlugin.available()` 話 JS 知冇 Firebase，就唔叫 register／unregister（否則會 crash），伺服器推送暫停，本機提醒照常；Apple 已登記 `app.sekaitree.game`（Push＋IAP），舊 bundle ID 已刪；versionCode 38 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -280,6 +281,11 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.30 發佈（2026-10-02）
 - 見版本歷史；推送伺服器冇改。i18n 改動腳本 `/workspace/.ed/i18n132.py`。
+
+### 1.4.31 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改（firebase-admin 按 project `sekai-tree` 發，同 package 無關）。
+- 要做：Firebase console → 專案 sekai-tree → 新增 Android app `app.sekaitree.game`（加 release SHA-1／SHA-256），下載新 `google-services.json` 換 `android/app/google-services.json`，再出版本先有推送。iOS：Firebase 新增 iOS app `app.sekaitree.game`，GoogleService-Info.plist base64 放 secret `GOOGLE_SERVICE_INFO_PLIST`，APNs key 上傳 Firebase。
+- App Store Connect 要用 `app.sekaitree.game` 開 app record；未開之前 ios 分支 push 會令 TestFlight job 喺 upload 失敗（secrets 已設）。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。

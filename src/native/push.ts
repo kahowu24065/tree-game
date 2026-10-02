@@ -1,5 +1,6 @@
 import { PushNotifications } from '@capacitor/push-notifications';
 import { App } from '@capacitor/app';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { isNative, platformName } from './platform';
 import { getLocale, t as tl } from '../i18n';
 
@@ -9,6 +10,9 @@ export const PUSH_CHANNEL = 'weather-warnings';
 const TOKEN_KEY = 'sekai-tree-push-token';
 
 let listening = false;
+
+/** Android only (TreePushPlugin.java): is Firebase configured for this package in this build? */
+const TreePush = registerPlugin<{ available(): Promise<{ ok: boolean }> }>('TreePush');
 
 /** Game state the server needs to skip devices that already did today's 應急行動 (POST /state). */
 export interface PushState {
@@ -92,12 +96,14 @@ async function listen(): Promise<void> {
 export async function syncPush(enabled: boolean): Promise<void> {
   if (!isNative()) return;
   try {
+    // 1.4.31: an Android build without Firebase config for this package would crash in register() / unregister().
+    const fcm = Capacitor.getPlatform() !== 'android' || (await TreePush.available().catch(() => ({ ok: false }))).ok;
     if (!enabled) {
       const token = localStorage.getItem(TOKEN_KEY);
       if (token) await post('/unregister', { token });
       localStorage.removeItem(TOKEN_KEY);
       lastSent = '';
-      await PushNotifications.unregister();
+      if (fcm) await PushNotifications.unregister();
       return;
     }
     let perm = await PushNotifications.checkPermissions();
@@ -105,6 +111,8 @@ export async function syncPush(enabled: boolean): Promise<void> {
     if (perm.receive !== 'granted') return;
     // Channels are Android-only (the call rejects on iOS and would skip register()).
     if (platformName() === 'android') await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
+    // Without FCM the permission + channel still serve local reminders; only the server pushes are off.
+    if (!fcm) return;
     await listen();
     await PushNotifications.register();
   } catch {

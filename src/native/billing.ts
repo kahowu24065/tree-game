@@ -32,7 +32,7 @@ export function billingKey(platform = platformName()): string {
 export function defaultManageUrl(platform = platformName()): string {
   return platform === 'ios'
     ? 'https://apps.apple.com/account/subscriptions'
-    : `https://play.google.com/store/account/subscriptions?sku=${PRODUCT_ID}&package=io.github.kahowu24065.treegame`;
+    : `https://play.google.com/store/account/subscriptions?sku=${PRODUCT_ID}&package=app.sekaitree.game`;
 }
 
 let info: BillingInfo = { state: 'unavailable', active: false, price: null, manageUrl: defaultManageUrl(), expires: null, willRenew: false };

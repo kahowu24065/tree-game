@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.github.kahowu24065.treegame',
+  appId: 'app.sekaitree.game',
   appName: '世界之樹',
   webDir: 'dist',
   plugins: {

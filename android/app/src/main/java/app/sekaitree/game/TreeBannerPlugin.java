@@ -1,4 +1,4 @@
-package io.github.kahowu24065.treegame;
+package app.sekaitree.game;
 
 import android.view.Gravity;
 import android.view.View;
