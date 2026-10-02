@@ -130,6 +130,8 @@ export interface DayRecord {
   events: WeatherEventId[];
   /** True once real HKO data was seen for this date (then HKO decides the severe events). */
   hko: boolean;
+  /** v1.4.24: rain actually observed live that day (warnings in force / the current reading) — forecast rain never counts for water. */
+  rain?: WeatherEventId[];
 }
 
 /** v12: instant weather water effects already applied on a date (each at most once a day). */

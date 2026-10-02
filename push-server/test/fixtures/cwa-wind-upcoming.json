@@ -1,0 +1,546 @@
+{
+ "windCap": {
+  "records": {
+   "info": [
+    {
+     "language": "zh-TW",
+     "category": "Met",
+     "event": "強風",
+     "responseType": "Monitor",
+     "urgency": "Future",
+     "severity": "Moderate",
+     "certainty": "Likely",
+     "eventCode": {
+      "valueName": "profile:CAP-TWP:Event:1.0",
+      "value": "strongWind"
+     },
+     "effective": "2026-10-02T04:23:00+08:00",
+     "onset": "2026-10-02T11:00:00+08:00",
+     "expires": "2026-10-02T23:00:00+08:00",
+     "senderName": "中央氣象署",
+     "headline": "陸上強風特報(黃色燈號)",
+     "description": "東北風增強，2日上午至晚上桃園市、新竹市、新竹縣、苗栗縣、臺中市、彰化縣、澎湖縣、連江縣局部地區將有平均風6級以上或陣風8級以上發生的機率(黃色燈號)，請注意。",
+     "instruction": "黃色燈號：注意！在戶外請小心路樹、不堅固建築或定置物被強風吹落之碎片；戶外工作者請注意安全；加強牢固戶外物品；行車減速慢行，留意大眾運輸延誤訊息。",
+     "web": "https://www.cwa.gov.tw/V8/C/P/Warning/W25.html",
+     "parameter": [
+      {
+       "valueName": "alert_title",
+       "value": "陸上強風特報"
+      },
+      {
+       "valueName": "severity_level",
+       "value": "強風黃色燈號"
+      },
+      {
+       "valueName": "alert_criteria",
+       "value": "平均風6級以上或陣風8級以上"
+      },
+      {
+       "valueName": "alert_color",
+       "value": "黃色"
+      },
+      {
+       "valueName": "website_color",
+       "value": "255,255,0"
+      }
+     ],
+     "area": [
+      {
+       "areaDesc": "桃園市觀音區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6801200"
+       }
+      },
+      {
+       "areaDesc": "桃園市新屋區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6801100"
+       }
+      },
+      {
+       "areaDesc": "桃園市大園區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6800600"
+       }
+      },
+      {
+       "areaDesc": "新竹市北區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1001802"
+       }
+      },
+      {
+       "areaDesc": "新竹市香山區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1001803"
+       }
+      },
+      {
+       "areaDesc": "新竹縣新豐鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000406"
+       }
+      },
+      {
+       "areaDesc": "新竹縣竹北市",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000401"
+       }
+      },
+      {
+       "areaDesc": "苗栗縣苑裡鎮",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000502"
+       }
+      },
+      {
+       "areaDesc": "苗栗縣通霄鎮",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000503"
+       }
+      },
+      {
+       "areaDesc": "苗栗縣後龍鎮",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000506"
+       }
+      },
+      {
+       "areaDesc": "苗栗縣竹南鎮",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000504"
+       }
+      },
+      {
+       "areaDesc": "臺中市清水區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6601200"
+       }
+      },
+      {
+       "areaDesc": "臺中市大甲區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6601100"
+       }
+      },
+      {
+       "areaDesc": "臺中市大安區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6602200"
+       }
+      },
+      {
+       "areaDesc": "臺中市龍井區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6602500"
+       }
+      },
+      {
+       "areaDesc": "臺中市梧棲區",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "6601400"
+       }
+      },
+      {
+       "areaDesc": "彰化縣伸港鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1000705"
+       }
+      },
+      {
+       "areaDesc": "澎湖縣白沙鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "1001603"
+       }
+      },
+      {
+       "areaDesc": "連江縣東引鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "0900704"
+       }
+      },
+      {
+       "areaDesc": "連江縣北竿鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "0900702"
+       }
+      },
+      {
+       "areaDesc": "連江縣莒光鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "0900703"
+       }
+      },
+      {
+       "areaDesc": "連江縣南竿鄉",
+       "geocode": {
+        "valueName": "Taiwan_Geocode_103",
+        "value": "0900701"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "text": {
+  "records": {
+   "record": [
+    {
+     "datasetInfo": {
+      "datasetDescription": "豪雨特報",
+      "datasetLanguage": "zh-TW",
+      "validTime": {
+       "startTime": "2026-10-02 03:00:00",
+       "endTime": "2026-10-02 11:00:00"
+      },
+      "issueTime": "2026-10-02 03:00:00",
+      "update": "2026-10-02 04:25:16"
+     },
+     "contents": {
+      "content": {
+       "contentLanguage": "zh-TW",
+       "contentText": "\n                由於降雨趨於緩和，發生大雨或豪雨的機率降低，故解除豪雨特報。\n                "
+      }
+     }
+    },
+    {
+     "datasetInfo": {
+      "datasetDescription": "陸上強風特報",
+      "datasetLanguage": "zh-TW",
+      "validTime": {
+       "startTime": "2026-10-02 11:00:00",
+       "endTime": "2026-10-02 23:00:00"
+      },
+      "issueTime": "2026-10-02 04:23:00",
+      "update": "2026-10-02 04:25:16"
+     },
+     "contents": {
+      "content": {
+       "contentLanguage": "zh-TW",
+       "contentText": "\n                一、概述：東北風增強，2日上午至晚上桃園市、新竹市、新竹縣、苗栗縣、臺中市、彰化縣、澎湖縣、連江縣局部地區將有平均風6級以上或陣風8級以上發生的機率(黃色燈號)，請注意。\n\n二、注意(警戒)事項\n黃色燈號：注意！在戶外請小心因強風造成路樹、不堅固建築或定置物(如鐵皮屋、貨櫃及電線桿等)脫落或掉落；戶外工作者請注意安全；加強牢固戶外物品；行車減速慢行，留意大眾運輸延誤訊息。\n                "
+      }
+     },
+     "hazardConditions": {
+      "hazards": {
+       "hazard": [
+        {
+         "info": {
+          "language": "zh-TW",
+          "phenomena": "陸上強風",
+          "significance": "特報",
+          "affectedAreas": {
+           "location": [
+            {
+             "locationName": "桃園市"
+            },
+            {
+             "locationName": "新竹市"
+            },
+            {
+             "locationName": "新竹縣"
+            },
+            {
+             "locationName": "苗栗縣"
+            },
+            {
+             "locationName": "臺中市"
+            },
+            {
+             "locationName": "彰化縣"
+            },
+            {
+             "locationName": "澎湖縣"
+            },
+            {
+             "locationName": "連江縣"
+            }
+           ]
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   ]
+  }
+ },
+ "county": {
+  "records": {
+   "location": [
+    {
+     "locationName": "新竹市",
+     "geocode": 10018.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "新竹縣",
+     "geocode": 10004.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "桃園市",
+     "geocode": 68.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "彰化縣",
+     "geocode": 10007.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "屏東縣",
+     "geocode": 10013.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "南投縣",
+     "geocode": 10008.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "嘉義縣",
+     "geocode": 10010.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "苗栗縣",
+     "geocode": 10005.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "臺南市",
+     "geocode": 67.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "宜蘭縣",
+     "geocode": 10002.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "花蓮縣",
+     "geocode": 10015.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "基隆市",
+     "geocode": 10017.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "臺北市",
+     "geocode": 63.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "新北市",
+     "geocode": 65.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "嘉義市",
+     "geocode": 10020.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "澎湖縣",
+     "geocode": 10016.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "金門縣",
+     "geocode": 9020.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "臺中市",
+     "geocode": 66.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "locationName": "雲林縣",
+     "geocode": 10009.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "高雄市",
+     "geocode": 64.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "臺東縣",
+     "geocode": 10014.0,
+     "hazardConditions": {
+      "hazards": []
+     }
+    },
+    {
+     "locationName": "連江縣",
+     "geocode": 9007.0,
+     "hazardConditions": {
+      "hazards": [
+       {
+        "info": {
+         "language": "zh-TW",
+         "phenomena": "陸上強風",
+         "significance": "特報"
+        },
+        "validTime": {
+         "startTime": "2026-10-02 11:00:00",
+         "endTime": "2026-10-02 23:00:00"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

@@ -25,6 +25,7 @@ export async function localizeBureauText(data: HkoData, from: 'hk' | 'tw'): Prom
   return {
     ...data,
     messages: data.messages.map(c),
+    warnings: data.warnings.map((w) => (w.detail ? { ...w, detail: { ...w.detail, overview: c(w.detail.overview), precautions: c(w.detail.precautions), areas: w.detail.areas.map(c), place: c(w.detail.place) } } : w)),
     situation: c(data.situation),
     forecast: data.forecast.map((d) => ({ ...d, text: c(d.text), wind: c(d.wind) })),
   };

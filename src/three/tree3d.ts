@@ -96,9 +96,13 @@ export const skinUniforms = {
 };
 
 /** 0 solid … 1 semi-transparent, while the camera is looking at the nest. */
-export const peekUniform = { uPeek: { value: 0 } };
+/**
+ * v1.4.24 near fade: uNear 0 … 1 (following an animal or zoomed in) lets leaves and bark closer to the camera than
+ * uNearR.y turn gently see-through, down to ~30% at uNearR.x (distances in view space, set per frame).
+ */
+export const peekUniform = { uPeek: { value: 0 }, uNear: { value: 0 }, uNearR: { value: new THREE.Vector2(0.5, 1.5) } };
 
-const HEALTH_FRAG_HEAD = 'uniform float uWither; uniform float uDroop; uniform float uPulse; uniform float uPeek;';
+const HEALTH_FRAG_HEAD = 'uniform float uWither; uniform float uDroop; uniform float uPulse; uniform float uPeek; uniform float uNear; uniform vec2 uNearR;';
 /** Dull → yellow → brown by uWither (linear colours, keeps the vertex-colour shading). */
 const WITHER_LEAF = `
   {
@@ -118,7 +122,11 @@ const WITHER_BARK = `
 const PULSE = `
   gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.07, 0.05), uPulse);`;
 const PEEK = `
-  gl_FragColor.a = mix(1.0, 0.32, clamp(uPeek, 0.0, 1.0));`;
+  {
+    float aPeek = mix(1.0, 0.32, clamp(uPeek, 0.0, 1.0));
+    float aNear = mix(1.0, mix(0.3, 1.0, smoothstep(uNearR.x, uNearR.y, length(vViewPosition))), clamp(uNear, 0.0, 1.0));
+    gl_FragColor.a = min(aPeek, aNear);
+  }`;
 
 let leafMaterial: THREE.MeshStandardMaterial | null = null;
 export function leafMat(): THREE.MeshStandardMaterial {

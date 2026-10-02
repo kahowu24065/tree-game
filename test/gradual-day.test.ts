@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { WeatherEventId } from '../src/balance';
 import { nFactor, wFactor } from '../src/rules';
-import { DAY_MS, advanceFlow, applyWarningWater, createGame, dailySummaryText, settleDay } from '../src/sim';
+import { DAY_MS, advanceFlow as advanceFlowRaw, applyWarningWater as applyWarningWaterRaw, createGame, dailySummaryText, settleDay as settleDayRaw, recordEvents as recordEventsRaw } from '../src/sim';
 import { parseSave } from '../src/storage';
 import type { GameState } from '../src/types';
+
+// v1.4.24: these tests feed weather that was really observed — forecast-only rain no longer touches 水分.
+const seenRain = (s: Parameters<typeof recordEventsRaw>[0], date: string, evs: Parameters<typeof recordEventsRaw>[2]) => recordEventsRaw(s, date, [], false, evs);
+const settleDay: typeof settleDayRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), settleDayRaw(s, date, evs, ...rest));
+const applyWarningWater: typeof applyWarningWaterRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), applyWarningWaterRaw(s, date, evs, ...rest));
+const advanceFlow: typeof advanceFlowRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), advanceFlowRaw(s, date, evs, ...rest));
 
 const D = '2026-09-25';
 const MIDNIGHT = new Date(2026, 8, 25).getTime();

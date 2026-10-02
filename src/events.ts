@@ -16,6 +16,8 @@ import { t as tl } from './i18n';
 export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
   for (const w of warnings ?? []) {
+    // v1.4.24: a Taiwan alert that has not started, or not for this district, is information only.
+    if (w.inactive) continue;
     if (w.group === 'WHOT') out.add('hot');
     else if (w.group === 'WCOLD') out.add('cold');
     else if (w.group === 'WRAIN') out.add(w.code === 'WRAINB' ? 'blackrain' : 'rainstorm');
@@ -138,6 +140,23 @@ export function currentEvents(opts: { hk: boolean; warnings?: readonly HkoWarnin
     if (d) for (const e of dayEvents(d)) out.add(e);
   }
   return [...out].filter((e) => e !== 'clear');
+}
+
+/**
+ * v1.4.24: rain actually happening now — official rain warnings in force, or the live reading itself. Never the day's
+ * forecast: only this counts for 水分 (rain water, no-loss rain day).
+ */
+export function observedRainEvents(opts: { hk: boolean; warnings?: readonly HkoWarning[]; current: CurrentWeather }): WeatherEventId[] {
+  const out = new Set<WeatherEventId>();
+  const c = opts.current;
+  if (opts.hk && opts.warnings) for (const e of hkoWarningEvents(opts.warnings)) if (e === 'rainstorm' || e === 'blackrain') out.add(e);
+  if (!opts.hk) {
+    const mm = c.precipMm * 6;
+    if (mm >= WX_NUM.blackrain.mm) out.add('blackrain');
+    else if (mm >= WX_NUM.rainstorm.mm) out.add('rainstorm');
+  }
+  if (c.precipMm >= 0.2 || isRainCode(c.code)) out.add('drizzle');
+  return [...out];
 }
 
 export function hourEvent(h: HourPoint): WeatherEventId | null {

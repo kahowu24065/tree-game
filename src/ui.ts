@@ -69,6 +69,8 @@ export interface WeatherView {
   /** False when a bureau snapshot has a forecast but no live reading. Missing means the reading is real. */
   reading?: boolean;
   humidity?: number;
+  /** v1.4.24: the measured reading (absent for manual / offline weather) — 現在 shows this, the scene may add a storm. */
+  obs?: { code: number; windKmh: number; gustKmh: number; precipMm: number };
   rainInHours: number | null;
   error?: string;
   overridden: boolean;
@@ -176,8 +178,10 @@ export function previewLines(p: NightPlan): { text: string; value: string; tone:
   const tone = (v: number) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
   const waterSub =
     p.water.kind === 'loss' ? tl('ui.040', { p0: fmt(p.wBefore), p1: signed(p.water.delta) }) : p.water.kind === 'drizzle' ? tl('ui.041', { p0: fmt(p.wBefore), p1: signed(p.water.delta) }) : tl('ui.042', { p0: fmt(p.wBefore) });
+  // v1.4.24: observed rain not yet in 水分 is shown on its own (而家 stays the real value).
+  const pending = (p.pendingWater ?? []).map((h) => `${ev(h.event).label} ${signed(h.delta)}`).join(tl('ui.206'));
   const lines: { text: string; value: string; tone: string; sub?: string }[] = [
-    { text: tl('ui.044', { p0: fmt(p.wAfter), p1: p.waterDeath ? tl('ui.043') : p.wLabel }), value: p.waterDeath ? tl('ui.045') : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: waterSub },
+    { text: tl('ui.044', { p0: fmt(p.wAfter), p1: p.waterDeath ? tl('ui.043') : p.wLabel }), value: p.waterDeath ? tl('ui.045') : signed(p.wScore), tone: p.waterDeath ? 'down' : tone(p.wScore), sub: pending ? waterSub + tl('ui.wPending', { p0: pending }) : waterSub },
     { text: tl('ui.046', { p0: fmt(p.nAfter), p1: nLabel(p.nScore) }), value: signed(p.nScore), tone: tone(p.nScore), sub: tl('ui.047') },
   ];
   if (p.heat) lines.push(p.heat.handled ? { text: tl('ui.048', { p0: eventLabel('hot') }), value: '0', tone: 'flat', sub: tl('ui.049') } : { text: tl('ui.050', { p0: eventLabel('hot') }), value: signed(p.heat.score), tone: 'down', sub: tl('ui.051') });
@@ -542,7 +546,7 @@ export function renderChrome(view: View): void {
     const covered = Boolean(state.care.warmCover);
     const warmOk = coldOn && !covered && state.started && !state.over;
     // v15 layout: 澆水 over 疏水 | 施肥 over 除蟲 | 加固 | 保暖 (v1.4.1: 圖鑑 lives in the 樹木狀態 pop box).
-    dock.innerHTML = tl('ui.130', { p0: dockBtn('d-water short', 'data-action="water"', 'drop', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.116') : waterSub(water), water.used >= water.max || state.moisture >= W_SATURATED), p1: state.moisture > W_SATURATED ? 'alert' : '', p2: drains.used >= drains.max ? 'disabled' : '', p3: icon('drain'), p4: drains.used >= drains.max ? tl('ui.117') : tl('ui.118', { p0: drains.max - drains.used }), p5: dockBtn('d-feed short', 'data-action="fertilize"', 'sprout', tl('ui.099'), feed.used >= feed.max ? tl('ui.119') : `${feed.used}/${feed.max}`, feed.used >= feed.max), p6: state.pest.active ? 'alert' : '', p7: state.care.dewormed ? 'disabled' : '', p8: icon('bug'), p9: state.care.dewormed ? tl('ui.120') : state.pest.active ? tl('ui.121') : tl('ui.122'), p10: dockBtn('d-guard', 'data-open="care" data-focus="guard"', 'shield', tl('ui.123'), !state.windUnlocked ? tl('ui.124') : dbl ? tl('ui.125') : prepShort ? tl('ui.126') : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : ''), p11: warmOk ? 'hot-pulse' : 'done', p12: covered ? ' lit' : '', p13: warmOk ? '' : 'disabled aria-disabled="true"', p14: icon('mulch'), p15: covered ? tl('ui.127') : coldOn ? tl('ui.128') : tl('ui.129') });
+    dock.innerHTML = tl('ui.130', { p0: dockBtn('d-water short', 'data-action="water"', 'drop', tl('ui.115'), state.moisture > W_SATURATED ? tl('ui.waterNow', { p0: Math.round(state.moisture) }) : state.moisture >= W_SATURATED ? tl('ui.116') : waterSub(water), water.used >= water.max || state.moisture >= W_SATURATED), p1: state.moisture > W_SATURATED ? 'alert' : '', p2: drains.used >= drains.max ? 'disabled' : '', p3: icon('drain'), p4: drains.used >= drains.max ? tl('ui.117') : tl('ui.118', { p0: drains.max - drains.used }), p5: dockBtn('d-feed short', 'data-action="fertilize"', 'sprout', tl('ui.099'), feed.used >= feed.max ? tl('ui.119') : `${feed.used}/${feed.max}`, feed.used >= feed.max), p6: state.pest.active ? 'alert' : '', p7: state.care.dewormed ? 'disabled' : '', p8: icon('bug'), p9: state.care.dewormed ? tl('ui.120') : state.pest.active ? tl('ui.121') : tl('ui.122'), p10: dockBtn('d-guard', 'data-open="care" data-focus="guard"', 'shield', tl('ui.123'), !state.windUnlocked ? tl('ui.124') : dbl ? tl('ui.125') : prepShort ? tl('ui.126') : `R ${Math.round(state.resist)}`, !state.windUnlocked, dbl ? '×2' : prepShort ? '!' : ''), p11: warmOk ? 'hot-pulse' : 'done', p12: covered ? ' lit' : '', p13: warmOk ? '' : 'disabled aria-disabled="true"', p14: icon('mulch'), p15: covered ? tl('ui.127') : coldOn ? tl('ui.128') : tl('ui.129') });
   }
 
   const slot = document.getElementById('note-slot');
@@ -632,13 +636,13 @@ function renderWeatherCard(card: HTMLElement, view: View): void {
   }
   const chips = wx.warnings
     .slice(0, 4)
-    .map((w) => `<span class="wchip ${w.tone}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(warningDisplay(w))}</span></span>`)
+    .map((w) => `<span class="wchip ${w.tone}${w.inactive ? ' later' : ''}" title="${esc(w.name)}">${warnIcon(w)}<span>${esc(warningDisplay(w))}</span></span>`)
     .join('');
   const source = sourceLabel(wx);
   const temp = firstLoad || noReading ? '--' : `${Math.round(cond.tempC)}°C`;
   const shownLabel = firstLoad ? tl('ui.143') : noReading ? tl('ui.144') : label;
   setAttr(hit, 'aria-label', simulated ? tl('ui.145', { temp, shownLabel }) : tl('ui.146', { temp, shownLabel }));
-  setHtml(card.querySelector('.wx-art')!, weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || view.manual ? undefined : wx.nowIcon));
+  setHtml(card.querySelector('.wx-art')!, nowArt(view));
   setHtml(card.querySelector('.wx-main')!, `<b>${temp}</b><span>${esc(shownLabel)}</span>`);
   const place = card.querySelector<HTMLButtonElement>('.wx-place')!;
   setAttr(place, 'aria-label', tl('ui.148', { place: view.place, p1: view.placeNote ? tl('ui.147', { placeNote: view.placeNote }) : '' }));
@@ -1016,19 +1020,69 @@ function guardCards(view: View): string {
   return shield;
 }
 
+/** The live reading (not manual / offline weather), for 現在 and the weather card. */
+function liveObs(view: View): WeatherView['obs'] {
+  return view.manual || view.wx.overridden ? undefined : view.wx.obs;
+}
+
+/** A real thunderstorm: a thunderstorm warning in force (HKO / Macau / Taiwan) or a thunder reading. */
+function thunderNow(view: View): boolean {
+  const obs = liveObs(view);
+  if (view.wx.warnings.some((w) => !w.inactive && (w.group === 'WTS' || w.group === 'TWTS'))) return true;
+  if (obs) return obs.code >= 95 || view.wx.nowIcon === 65;
+  return view.cond.code >= 95 || (view.manual && (view.nowEvents ?? view.todayEvents).includes('thunder'));
+}
+
+/**
+ * v1.4.24 now-art: the measured weather's own icon (HKO icon / CWA wording / WMO code). Without a live reading (manual
+ * or offline) the scene's storm draws it — wind for 颱風／烈風, never a thunder cloud unless it really thunders.
+ */
+function nowArt(view: View): string {
+  const obs = liveObs(view);
+  const thunder = thunderNow(view);
+  if (obs) return weatherArt(obs.code, view.night, thunder || null, thunder ? undefined : view.wx.nowIcon);
+  const kind = view.cond.stormKind;
+  return weatherArt(view.cond.code, view.night, thunder ? true : kind, kind || view.manual ? undefined : view.wx.nowIcon);
+}
+
+/** "2日 11:00" from an ISO time with its own offset (CWA: +08:00), read as written (local bureau time). */
+function bureauTime(iso: string): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(iso ?? '');
+  return m ? tl('ui.wAt', { d: Number(m[2]), t: `${m[3]}:${m[4]}` }) : '';
+}
+
+/** v1.4.24 (Taiwan): the bulletin under its warning — when it starts / ends, which districts, 概述 and 注意事項. */
+function warnDetailHtml(w: HkoWarning): string {
+  const d = w.detail;
+  if (!d) return '';
+  const from = bureauTime(d.onset);
+  const until = bureauTime(d.expires);
+  const when = [from && (!d.started || !until) ? tl('ui.wFrom', { p0: from }) : '', until ? tl('ui.wUntil', { p0: until }) : ''].filter(Boolean).join(' ');
+  const parts: string[] = [];
+  if (when) parts.push(`<small class="wd-when">${esc(when)}${d.started ? '' : ` · ${esc(tl('ui.wNotYet'))}`}</small>`);
+  if (!d.mine && d.areas.length) parts.push(`<small class="wd-area">${esc(tl('ui.wNotMine', { p0: d.place || tl('ui.wYourArea'), p1: d.areas.join(tl('ui.206')) }))}</small>`);
+  if (d.overview) parts.push(`<p>${esc(d.overview)}</p>`);
+  if (d.precautions) parts.push(`<p class="wd-note">${esc(d.precautions)}</p>`);
+  return parts.length ? `<span class="warn-detail">${parts.join('')}</span>` : '';
+}
+
 /** v1.4.1 天氣概況: its own page — real-world warnings in force plus current conditions and the forecast. */
 export function weatherPageHtml(view: View): string {
   const { cond, wx } = view;
   const simulated = wx.provider === 'sim' && !wx.overridden;
   const reading = wx.reading !== false;
-  const label = reading ? nightLabel(wx.conditionText || weatherLabel(cond.code), view.night) : '';
+  // v1.4.24: 現在 is the measured reading; storm wind / rain exist only in the scene.
+  const obs = liveObs(view);
+  const label = reading ? nightLabel(wx.conditionText || weatherLabel(obs?.code ?? cond.code), view.night) : '';
+  const wind = obs ?? cond;
+  const precip = obs ? obs.precipMm : cond.precipMm;
   const facts = [
     reading && wx.humidity !== undefined ? tl('ui.253', { p0: Math.round(wx.humidity) }) : '',
-    !reading || wx.bureau === 'hko' ? '' : tl('ui.254', { p0: Math.round(cond.windKmh), p1: Math.round(cond.gustKmh) }),
-    reading && cond.precipMm > 0 ? tl('ui.255', { p0: Math.round(cond.precipMm * 10) / 10 }) : '',
+    !reading || wx.bureau === 'hko' ? '' : tl('ui.254', { p0: Math.round(wind.windKmh), p1: Math.round(wind.gustKmh) }),
+    reading && precip > 0 ? tl('ui.255', { p0: Math.round(precip * 10) / 10 }) : '',
   ].filter(Boolean);
   const rain = wx.rainInHours !== null && !cond.raining && !simulated && !wx.overridden ? (wx.rainInHours <= 1 ? tl('ui.140') : tl('ui.141', { rainInHours: wx.rainInHours })) : '';
-  const now = tl('ui.257', { p0: weatherArt(cond.code, view.night, Boolean(cond.stormKind), cond.stormKind || wx.overridden ? undefined : wx.nowIcon), p1: esc(view.place), p2: wx.station && !simulated && !wx.overridden ? tl('ui.256', { p0: esc(wx.station) }) : '', p3: reading ? `${Math.round(cond.tempC)}°C ${esc(label)}` : tl('ui.144'), p4: facts.map(esc).join(' · '), p5: rain ? `<br>${esc(rain)}` : '' });
+  const now = tl('ui.257', { p0: nowArt(view), p1: esc(view.place), p2: wx.station && !simulated && !wx.overridden ? tl('ui.256', { p0: esc(wx.station) }) : '', p3: reading ? `${Math.round(cond.tempC)}°C ${esc(label)}` : tl('ui.144'), p4: facts.map(esc).join(' · '), p5: rain ? `<br>${esc(rain)}` : '' });
   // Bureau advisory sentences (HKO warningMessage, SMG descriptions). Shown with the warning, not instead of it.
   const extraMessages = wx.hkoUsed ? wx.messages.filter((msg) => msg.trim()) : [];
   let warns: string;
@@ -1037,7 +1091,7 @@ export function weatherPageHtml(view: View): string {
       ? `<ul class="hko-warns">${wx.warnings.map((w) => {
           const shown = warningDisplay(w);
           const official = w.name !== shown ? `<small>${esc(w.name)}</small>` : '';
-          return `<li class="${w.tone}">${warnIcon(w)}<span><b>${esc(shown)}</b>${official}</span></li>`;
+          return `<li class="${w.tone}${w.inactive ? ' later' : ''}">${warnIcon(w)}<span><b>${esc(shown)}</b>${official}${warnDetailHtml(w)}</span></li>`;
         }).join('')}</ul>`
       : '';
     const prose = extraMessages.map((msg) => `<p>${esc(msg)}</p>`).join('');

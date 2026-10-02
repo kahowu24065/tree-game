@@ -64,6 +64,7 @@ import {
   hMultTier,
   inBand,
   isRainDay,
+  RAIN_DAY_EVENTS,
   nFactor,
   pickEvent,
   rainAdd,
@@ -185,12 +186,32 @@ export function ensureToday(state: GameState, today: string): string | null {
 /* ---------- Weather records ---------- */
 
 /** Remember what weather was seen on a date (HKO warnings seen at any time that day count). */
-export function recordEvents(state: GameState, date: string, events: readonly WeatherEventId[], hko: boolean): void {
+export function recordEvents(state: GameState, date: string, events: readonly WeatherEventId[], hko: boolean, rain?: readonly WeatherEventId[]): void {
   const rec = (state.dayEvents[date] ??= { events: [], hko: false });
   for (const e of events) if (e !== 'clear' && !rec.events.includes(e)) rec.events.push(e);
   rec.hko ||= hko;
+  if (rain) {
+    const seen = (rec.rain ??= []);
+    for (const e of rain) if (RAIN_DAY_EVENTS.includes(e) && !seen.includes(e)) seen.push(e);
+  }
   const keys = Object.keys(state.dayEvents).sort();
   while (keys.length > 21) delete state.dayEvents[keys.shift()!];
+}
+
+/** v1.4.24: rain really observed on `date` (older saves: an official-data day's recorded events were all live). */
+export function observedRain(state: GameState, date: string): WeatherEventId[] {
+  const rec = state.dayEvents[date];
+  if (!rec) return [];
+  return (rec.rain ?? (rec.hko ? rec.events : [])).filter((e) => RAIN_DAY_EVENTS.includes(e));
+}
+
+/**
+ * v1.4.24: the events that may touch 水分 — forecast-only rain is dropped, so it neither adds water (no root rot)
+ * nor makes a no-loss rain day. Only rain actually observed live counts; heat and the rest pass through.
+ */
+export function waterEvents(state: GameState, date: string, events: readonly WeatherEventId[]): WeatherEventId[] {
+  const rain = observedRain(state, date);
+  return events.filter((e) => !RAIN_DAY_EVENTS.includes(e) || rain.includes(e));
 }
 
 /** Events a date is settled with: what was seen that day, plus the day's forecast (HKO days: only drizzle/fine from the forecast). */
@@ -436,7 +457,7 @@ export function advanceFlow(state: GameState, date: string, events: readonly Wea
   }
   const f = state.flow;
   const ms = Math.min(toMs - f.at, DAY_MS - f.elapsed);
-  if (ms > 0) applyDrift(state, events, meta, ms);
+  if (ms > 0) applyDrift(state, waterEvents(state, date, events), meta, ms);
   f.at = Math.max(f.at, toMs);
 }
 
@@ -446,7 +467,7 @@ function completeFlowDay(state: GameState, date: string, events: readonly Weathe
   const f = state.flow ?? newFlow(state, date, nowMs, 0);
   state.flow = f;
   const rest = DAY_MS - f.elapsed;
-  if (rest > 0 && !state.over) applyDrift(state, events, meta, rest);
+  if (rest > 0 && !state.over) applyDrift(state, waterEvents(state, date, events), meta, rest);
   return f;
 }
 
@@ -464,6 +485,7 @@ export function applyWarningWater(
   time?: string,
 ): WarningHit[] {
   if (state.over) return [];
+  events = waterEvents(state, date, events);
   const perks = perksFrom(meta);
   const hot = events.includes('hot');
   const rain: WarningWaterEvent | null = events.includes('blackrain') ? 'blackrain' : events.includes('rainstorm') ? 'rainstorm' : null;
@@ -562,6 +584,8 @@ export interface NightPlan {
   event: WeatherEventId;
   hBefore: number;
   wBefore: number;
+  /** v1.4.24 今晚預計: observed rain not yet added to 水分 (settles first tonight). */
+  pendingWater?: { event: WarningWaterEvent; delta: number }[];
   water: NightWater;
   wAfter: number;
   wScore: number;
@@ -639,7 +663,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   // v1.4.17: only the part of today's drift not yet applied is still to come (all of it when the day has no flow yet).
   const flow = date !== null && state.flow?.date === date ? state.flow : null;
   const restMs = flow ? Math.max(0, DAY_MS - flow.elapsed) : DAY_MS;
-  const rates = flowRates(state, events, perks);
+  const rates = flowRates(state, date === null ? events : waterEvents(state, date, events), perks);
   const v = { w: state.moisture, n: state.nutrients, r: state.resist };
   simulateDrift(v, rates, restMs);
   v.w = q6(v.w);
@@ -751,8 +775,10 @@ function planGrowth(state: GameState, event: WeatherEventId, wind: WindHit | nul
  */
 export function previewNight(state: GameState, date: string, events: readonly WeatherEventId[], meta: MetaState | null): NightPlan {
   const copy: GameState = { ...state, log: [], waterFx: { ...state.waterFx }, pest: { ...state.pest }, flow: state.flow ? { ...state.flow } : undefined };
-  applyWarningWater(copy, date, events, meta, 0, '');
-  return planNight(copy, events, perksFrom(meta), date);
+  const hits = applyWarningWater(copy, date, events, meta, 0, '');
+  const plan = planNight(copy, events, perksFrom(meta), date);
+  // v1.4.24: 而家 is the real value; observed rain not yet applied is listed on its own.
+  return { ...plan, wBefore: state.moisture, pendingWater: hits.map((h) => ({ event: h.event, delta: h.delta })) };
 }
 
 /**
@@ -784,7 +810,7 @@ export function settleDay(state: GameState, date: string, events: readonly Weath
   const severeSeen = [...new Set(events)].filter((e) => WEATHER_EVENTS[e].category);
   if (severeSeen.length > cats) notes.push(tl('sim.028', { p0: hits.map((x) => eventLabel(x!.event)).join(tl('ui.206')) }));
   if (cats > 1) notes.push(tl('sim.029'));
-  const rainDay = flowRates(state, events, perks).w === 0;
+  const rainDay = flowRates(state, waterEvents(state, date, events), perks).w === 0;
   if (!rainDay && perks.waterSaver) notes.push(tl('sim.030'));
   if (rainDay) notes.push(tl('sim.031'));
   if (plan.heat) notes.push(plan.heat.handled ? tl('sim.032', { p0: eventLabel('hot') }) : tl('sim.033', { p0: eventLabel('hot'), base: plan.heat.base }));

@@ -11,6 +11,7 @@ import { cwaName, str } from './i18n.js';
 //   W-C0033-003  豪(大)雨特報 (CAP)            大雨／豪雨／大豪雨／超大豪雨 with areas
 //   W-C0033-004  低溫特報 (CAP)   W-C0033-005 高溫資訊 (CAP)   W-C0033-006 陸上強風特報 (CAP, 燈號)
 //   W-C0034-001  颱風警報 (CAP)                海上／海上陸上颱風警報, land-warning counties
+//   W-C0033-002  天氣特報 (text)               一、概述 / 二、注意(警戒)事項 + affected counties (1.4.24: detail fallback)
 //   大雷雨即時訊息 (1.4.15): the CWA REST API has no thunderstorm dataset (apidoc v1 lists only W-C0033-001..006/-010,
 //   W-C0034-001/-005; W-C0033-002 is 天氣特報 text). CWA publishes it as CAP (event 雷雨, eventCode thunderstorm,
 //   township areas) through NCDR 民生示警平台; the public 生效中示警 Atom feed needs no key.
@@ -28,8 +29,9 @@ export const DATASETS = {
   heatCap: 'W-C0033-005',
   windCap: 'W-C0033-006',
   typhoonCap: 'W-C0034-001',
+  text: 'W-C0033-002',
 };
-const TTL = { thunderCap: 2, obs: 10, obsMain: 10, rain: 10, week: 30, county: 3, rainCap: 3, coldCap: 10, heatCap: 10, windCap: 3, typhoonCap: 3 };
+const TTL = { thunderCap: 2, obs: 10, obsMain: 10, rain: 10, week: 30, county: 3, rainCap: 3, coldCap: 10, heatCap: 10, windCap: 3, typhoonCap: 3, text: 3 };
 
 /** Main island (+ Lanyu, Green Island), Penghu, Kinmen / Lieyu and Matsu. Tight enough to leave Fujian out. */
 export function inTaiwan(lat, lon) {
@@ -132,25 +134,76 @@ export function forecastDays(location) {
 
 const param = (info, name) => (info.parameter ?? []).find((p) => p.valueName === name)?.value ?? '';
 
-/** A CAP info block still in force now (not a 解除 notice, not expired, already started). */
-function capActive(info, now) {
+const at = (v) => {
+  const n = Date.parse(v ?? '');
+  return Number.isFinite(n) ? n : null;
+};
+/** CWA text datasets give local times ("2026-10-02 11:00:00", Taipei time) → ISO with +08:00. */
+export function twIso(v) {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?$/.exec(String(v ?? '').trim());
+  return m ? `${m[1]}T${m[2]}:${m[3] ?? '00'}+08:00` : String(v ?? '');
+}
+const norm = (d) => String(d ?? '').replaceAll('台', '臺').trim();
+const tidy = (t) => String(t ?? '').replace(/\r/g, '').replace(/[ \t\u3000]+/g, ' ').replace(/ *\n[\s]*/g, '\n').trim();
+
+/** A CAP info block not cancelled (解除) and not expired. 1.4.24: one that has not started yet still counts (shown with its onset). */
+function capLive(info, now) {
   if (!info || info.urgency === 'Past') return false;
   if (/解除/.test(`${info.headline ?? ''}${param(info, 'alert_title')}`)) return false;
-  const end = Date.parse(info.expires ?? '');
-  const start = Date.parse(info.onset ?? info.effective ?? '');
-  if (Number.isFinite(end) && now > end) return false;
-  if (Number.isFinite(start) && now < start) return false;
-  return true;
+  const end = at(info.expires);
+  return !(end !== null && now > end);
 }
 
-/** Does a CAP area list cover the player's county / town? County entries cover every town in it. */
-function covers(info, county, town) {
-  return (info.area ?? []).some((a) => {
-    const d = String(a.areaDesc ?? '').replaceAll('台', '臺').trim();
-    return d === county || (town && d === `${county}${town}`);
-  });
+/**
+ * Where a CAP applies, seen from the player's county / town: touches (any part of the county), mine (the whole
+ * county or the player's own town is listed), areas (the listed towns in the county; [] = whole county), counties.
+ */
+function areaOf(info, county, town) {
+  const list = (info.area ?? []).map((a) => norm(a.areaDesc)).filter(Boolean);
+  const c = norm(county);
+  const whole = list.includes(c);
+  const towns = c ? list.filter((d) => d !== c && d.startsWith(c)).map((d) => d.slice(c.length)) : [];
+  const counties = [...new Set(list.map((d) => TW_COUNTIES.find((k) => d.startsWith(k)) ?? d))];
+  return { touches: whole || towns.length > 0, mine: whole || Boolean(town && towns.includes(norm(town))), areas: whole ? [] : towns, counties };
 }
 
+/** 天氣特報 text (W-C0033-002 contentText, or a CAP description) → 概述 and 注意(警戒)事項. */
+export function splitBulletin(text) {
+  const t = String(text ?? '').replace(/\r/g, '').trim();
+  const pre = /注意(?:\(警戒\)|（警戒）)?事項[:：]?/.exec(t);
+  const head = pre ? t.slice(0, pre.index) : t;
+  const overview = tidy(head.replace(/^一、\s*概述[:：]?/, '').replace(/二、\s*$/, ''));
+  return { overview, precautions: pre ? tidy(t.slice(pre.index + pre[0].length)) : '' };
+}
+
+function typeOfName(name) {
+  const t = String(name ?? '');
+  if (/颱風/.test(t)) return 'typhoon';
+  if (rainTier(t)) return 'rain';
+  if (/強風/.test(t)) return 'wind';
+  if (/低溫/.test(t)) return 'cold';
+  if (/高溫/.test(t)) return 'heat';
+  if (/霧/.test(t)) return 'fog';
+  if (/雷/.test(t)) return 'thunder';
+  return '';
+}
+
+/** W-C0033-002 天氣特報 → [{ type, counties, overview, precautions, onset, expires, issued }] (解除 notices dropped). */
+export function bulletinRecords(data) {
+  const list = data?.records?.record;
+  return (Array.isArray(list) ? list : list ? [list] : [])
+    .map((r) => {
+      const di = r.datasetInfo ?? {};
+      const text = r.contents?.content?.contentText ?? '';
+      const hz = r.hazardConditions?.hazards?.hazard;
+      const counties = (Array.isArray(hz) ? hz : hz ? [hz] : []).flatMap((h) => {
+        const loc = h.info?.affectedAreas?.location;
+        return (Array.isArray(loc) ? loc : loc ? [loc] : []).map((l) => norm(l.locationName));
+      });
+      return { type: typeOfName(di.datasetDescription), counties, ...splitBulletin(text), onset: twIso(di.validTime?.startTime), expires: twIso(di.validTime?.endTime), issued: twIso(di.issueTime), cancelled: /解除/.test(text) };
+    })
+    .filter((r) => r.type && !r.cancelled);
+}
 const COLOR_LEVEL = { 黃色: 1, 橙色: 2, 紅色: 3 };
 function colorOf(info) {
   const c = param(info, 'alert_color') || (/(黃|橙|紅)色/.exec(`${param(info, 'severity_level')}${info.headline ?? ''}`)?.[0] ?? '');
@@ -174,64 +227,107 @@ function capList(data) {
 
 /** W-C0033-001 hazards for one county (shape checked defensively: the list is empty on calm days). */
 function countyHazards(data, county) {
-  const loc = (data?.records?.location ?? []).find((l) => l.locationName === county);
+  const loc = (data?.records?.location ?? []).find((l) => norm(l.locationName) === norm(county));
   const list = loc?.hazardConditions?.hazards ?? [];
   return (Array.isArray(list) ? list : [list]).map((h) => {
     const info = h.info ?? h;
-    return { phenomena: String(info.phenomena ?? ''), significance: String(info.significance ?? ''), end: h.validTime?.endTime ?? '' };
+    return { phenomena: String(info.phenomena ?? ''), significance: String(info.significance ?? ''), start: twIso(h.validTime?.startTime ?? ''), end: twIso(h.validTime?.endTime ?? '') };
   }).filter((h) => h.phenomena);
 }
 
 /**
- * Warnings in force for a county / town. Each: { type, level, name, issued, text }.
+ * Warnings for a county / town. Each: { type, level, name, issued, text, overview, precautions, onset, expires, areas,
+ * counties, mine, started, active }.
  *   typhoon 1 海上颱風警報 · 2 海上陸上颱風警報 (county on the land-warning list)
  *   rain 1 大雨 · 2 豪雨 · 3 大豪雨 · 4 超大豪雨      wind / cold / heat: 燈號 1 黃 · 2 橙 · 3 紅      fog: shown only
+ * 1.4.24: an alert that has not started yet, or that lists other towns of the player's county only, is still returned
+ * (with its 概述／注意事項, onset and areas) but `active` is false: no game event, no push.
  */
 export function cwaWarnings(sets, county, town, now = Date.now()) {
   const out = {};
-  const put = (type, level, name, info = null) => {
-    if (!level) return;
-    if ((out[type]?.level ?? 0) >= level) return;
-    out[type] = { type, level, name, issued: info?.effective ?? '', text: String(info?.description ?? '').trim() };
+  const bulletins = bulletinRecords(sets.text);
+  const c = norm(county);
+  const make = (type, level, name, src = {}) => {
+    const onset = src.onset ?? '';
+    const start = at(onset);
+    const started = start === null || now >= start;
+    const mine = src.mine ?? true;
+    const e = { type, level, name, issued: src.issued ?? '', text: '', overview: tidy(src.overview), precautions: tidy(src.precautions), onset, expires: src.expires ?? '', areas: src.areas ?? [], counties: src.counties ?? [], mine, started, active: started && mine };
+    if (!e.overview || !e.precautions) {
+      const b = bulletins.find((r) => r.type === type && (type === 'typhoon' || r.counties.includes(c)));
+      if (b) {
+        e.overview ||= b.overview;
+        e.precautions ||= b.precautions;
+        e.onset ||= b.onset;
+        e.expires ||= b.expires;
+        e.issued ||= b.issued;
+        if (!e.counties.length) e.counties = b.counties;
+        const s2 = at(e.onset);
+        e.started = s2 === null || now >= s2;
+        e.active = e.started && e.mine;
+      }
+    }
+    e.text = e.overview;
+    return e;
   };
-  const hazards = countyHazards(sets.county, county);
-  for (const h of hazards) {
-    if (/颱風/.test(h.phenomena)) put('typhoon', 2, '海上陸上颱風警報');
-    else if (rainTier(h.phenomena)) put('rain', rainTier(h.phenomena), RAIN_NAMES[rainTier(h.phenomena)]);
-    else if (/強風/.test(h.phenomena)) put('wind', 1, '陸上強風特報');
-    else if (/霧/.test(h.phenomena)) put('fog', 1, '濃霧特報');
-  }
+  const rank = (e) => (e.active ? 10 : 0) + e.level;
+  const put = (type, level, name, src) => {
+    if (!level) return;
+    const e = make(type, level, name, src);
+    if (out[type] && rank(out[type]) >= rank(e)) return;
+    out[type] = e;
+  };
+  const fromCap = (info, area) => ({ ...area, onset: info.onset || info.effective || '', expires: info.expires ?? '', issued: info.effective ?? '', overview: info.description, precautions: info.instruction });
+  const capTypes = new Set();
   for (const info of capList(sets.typhoonCap)) {
-    if (!capActive(info, now)) continue;
+    if (!capLive(info, now)) continue;
     const title = `${info.headline ?? ''}${param(info, 'alert_title')}`;
-    const land = /陸上/.test(title) && covers(info, county, town);
-    const text = typeof info.description === 'object' ? (info.description.section ?? []).map((s) => s.value).filter(Boolean).slice(0, 2).join(' ') : info.description;
-    put('typhoon', land ? 2 : 1, land ? '海上陸上颱風警報' : '海上颱風警報', { ...info, description: text });
+    const land = /陸上/.test(title) && areaOf(info, county, town).touches;
+    const sec = typeof info.description === 'object' ? info.description.section ?? [] : null;
+    const overview = sec ? sec.filter((x) => x.title !== '注意事項').map((x) => x.value).filter(Boolean).slice(0, 2).join('\n') : info.description;
+    const precautions = sec ? (sec.find((x) => x.title === '注意事項')?.value ?? '') : info.instruction;
+    capTypes.add('typhoon');
+    put('typhoon', land ? 2 : 1, land ? '海上陸上颱風警報' : '海上颱風警報', { ...fromCap(info, {}), overview, precautions, mine: true });
   }
   for (const info of capList(sets.rainCap)) {
-    if (!capActive(info, now) || !covers(info, county, town)) continue;
+    if (!capLive(info, now)) continue;
+    const area = areaOf(info, county, town);
+    if (!area.touches) continue;
+    capTypes.add('rain');
     const tier = rainTier(`${param(info, 'alert_title')}${param(info, 'severity_level')}${info.headline ?? ''}`) || 1;
-    put('rain', tier, RAIN_NAMES[tier], info);
+    put('rain', tier, RAIN_NAMES[tier], fromCap(info, area));
   }
   const lit = (type, set, title) => {
     for (const info of capList(set)) {
-      if (!capActive(info, now) || !covers(info, county, town)) continue;
+      if (!capLive(info, now)) continue;
+      const area = areaOf(info, county, town);
+      if (!area.touches) continue;
+      capTypes.add(type);
       const color = colorOf(info) || '黃色';
-      put(type, COLOR_LEVEL[color], `${title}（${color}燈號）`, info);
+      put(type, COLOR_LEVEL[color], `${title}（${color}燈號）`, fromCap(info, area));
     }
   };
   // 大雷雨即時訊息 (one level; CAP areas are townships, sometimes whole counties).
   for (const info of capList(sets.thunderCap)) {
-    if (!capActive(info, now) || !covers(info, county, town)) continue;
-    put('thunder', 1, '大雷雨即時訊息', info);
+    if (!capLive(info, now)) continue;
+    const area = areaOf(info, county, town);
+    if (!area.touches) continue;
+    put('thunder', 1, '大雷雨即時訊息', fromCap(info, area));
   }
   lit('wind', sets.windCap, '陸上強風特報');
   lit('cold', sets.coldCap, '低溫特報');
   lit('heat', sets.heatCap, '高溫資訊');
-  // A county-list 強風 without a CAP colour stays 黃色; a CAP 燈號 replaces it (higher level or same level with detail).
-  if (out.wind && !out.wind.text) {
-    const cap = capList(sets.windCap).find((i) => capActive(i, now) && covers(i, county, town));
-    if (cap) out.wind = { ...out.wind, text: String(cap.description ?? '') };
+  // County list (W-C0033-001): only for types no CAP describes in more detail (the CAP knows the towns and colour).
+  for (const h of countyHazards(sets.county, county)) {
+    const end = at(h.end);
+    if (end !== null && now > end) continue;
+    const src = { onset: h.start, expires: h.end, mine: true };
+    const type = typeOfName(h.phenomena);
+    if (!type || capTypes.has(type)) continue;
+    if (type === 'typhoon') put('typhoon', 2, '海上陸上颱風警報', src);
+    else if (type === 'rain') put('rain', rainTier(h.phenomena), RAIN_NAMES[rainTier(h.phenomena)], src);
+    else if (type === 'wind') put('wind', 1, '陸上強風特報', src);
+    else if (type === 'fog') put('fog', 1, '濃霧特報', src);
   }
   const order = ['typhoon', 'wind', 'thunder', 'rain', 'heat', 'cold', 'fog'];
   return order.filter((t) => out[t]).map((t) => out[t]);
@@ -244,6 +340,7 @@ export function cwaWarnings(sets, county, town, now = Date.now()) {
 export function eventsFromCwa(warnings) {
   const out = new Set();
   for (const w of warnings ?? []) {
+    if (w.active === false) continue;
     if (w.type === 'typhoon') out.add(w.level >= 2 ? 'typhoon8' : 'typhoon1');
     else if (w.type === 'rain') out.add(w.level >= 2 ? 'blackrain' : 'rainstorm');
     else if (w.type === 'wind') out.add(w.level >= 3 ? 'typhoon8' : w.level === 2 ? 'thunder' : 'typhoon1');
@@ -392,7 +489,7 @@ export function createCwaClient({ key = process.env.CWA_API_KEY, fetchImpl = fet
 }
 
 /** Datasets the warning list needs (push poll). */
-export const WARNING_SETS = ['obs', 'county', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap', 'thunderCap'];
+export const WARNING_SETS = ['obs', 'county', 'text', 'rainCap', 'coldCap', 'heatCap', 'windCap', 'typhoonCap', 'thunderCap'];
 
 const xmlText = (block, tag) => {
   const m = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`).exec(block);

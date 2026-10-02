@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { WEATHER_EVENTS } from '../src/balance';
 import { bookGameEnd, freshMeta, newGame } from '../src/meta';
 import { carbonKg, deltaG, finalDamage, hMult, nFactor, pickEvent, wFactor } from '../src/rules';
-import { actionLimit, catchUp, createGame, nextWaterTime, performAction, reinforce, setLogClock, settleDay } from '../src/sim';
+import { actionLimit, catchUp, createGame, nextWaterTime, performAction, reinforce, setLogClock, settleDay as settleDayRaw, recordEvents as recordEventsRaw } from '../src/sim';
 import { visualHeight } from '../src/three/tree3d';
 import type { GameState } from '../src/types';
+
+// v1.4.24: these tests feed weather that was really observed — forecast-only rain no longer touches 水分.
+const seenRain = (s: Parameters<typeof recordEventsRaw>[0], date: string, evs: Parameters<typeof recordEventsRaw>[2]) => recordEventsRaw(s, date, [], false, evs);
+const settleDay: typeof settleDayRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), settleDayRaw(s, date, evs, ...rest));
 
 const NOW = Date.UTC(2026, 8, 25, 4);
 const HOUR = 3600 * 1000;

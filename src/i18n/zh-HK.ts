@@ -115,7 +115,7 @@ const table: Record<string, string> = {
  "ui.113": "\n      <button type=\"button\" class=\"status-head\" data-open=\"care\"><b>樹木狀態</b>{p0}</button>\n      <p class=\"status-sub\">{p1} · {p2}{p3}</p>\n      <p class=\"status-facts\">\n        <span>樹齡 {p4} 日 = </span>\n        <span>真實樹齡 {p5} 日</span>\n        <span class=\"carbon-fact\">碳吸收量<br>約 {p6} 公斤 CO₂／年</span>\n      </p>\n      <div class=\"bars\">\n        {p7}\n        <div class=\"night-row\">{p8}</div>\n        {p9}\n        {p10}\n        {p11}\n      </div>\n      {p12}\n      {p13}{p14}",
  "ui.114": "<button type=\"button\" class=\"dock-btn d-plant\" data-action=\"plant-isle\" style=\"grid-column:1 / -1\"><span class=\"dock-ic\">{p0}</span><span class=\"dock-label\">種一棵新樹</span><small>第二座空島</small></button>",
  "ui.115": "澆水",
- "ui.116": "水分 100",
+ "ui.116": "已滿",
  "ui.117": "疏過喇",
  "ui.118": "疏水 {p0}",
  "ui.119": "施過喇",
@@ -1522,6 +1522,14 @@ const table: Record<string, string> = {
  "skin.osmanthus": "桂花金",
  "skin.maple": "楓葉紅",
  "skin.ginkgo": "銀杏黃",
- "skin.frost": "霜雪白"
+ "skin.frost": "霜雪白",
+ "ui.waterNow": "水分 {p0}",
+ "ui.wPending": "；仲有實測雨水未計入：{p0}",
+ "ui.wAt": "{d}日 {t}",
+ "ui.wFrom": "{p0} 起",
+ "ui.wUntil": "至 {p0}",
+ "ui.wNotYet": "未生效",
+ "ui.wNotMine": "{p0}唔喺發布範圍（只涉及：{p1}）",
+ "ui.wYourArea": "你嘅地區"
 };
 export default table;

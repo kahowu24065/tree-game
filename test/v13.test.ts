@@ -14,14 +14,20 @@ import {
   performEmergency,
   planNight,
   perksFrom,
-  previewNight,
+  previewNight as previewNightRaw,
   reinforce,
-  settleDay,
+  settleDay as settleDayRaw,
   windStageCm,
+  recordEvents as recordEventsRaw,
 } from '../src/sim';
 import { parseSave } from '../src/storage';
 import type { GameState } from '../src/types';
 import { collapseWarning, previewLines } from '../src/ui';
+
+// v1.4.24: these tests feed weather that was really observed — forecast-only rain no longer touches 水分.
+const seenRain = (s: Parameters<typeof recordEventsRaw>[0], date: string, evs: Parameters<typeof recordEventsRaw>[2]) => recordEventsRaw(s, date, [], false, evs);
+const settleDay: typeof settleDayRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), settleDayRaw(s, date, evs, ...rest));
+const previewNight: typeof previewNightRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), previewNightRaw(s, date, evs, ...rest));
 
 const NOW = Date.UTC(2026, 8, 26, 4);
 const D = '2026-09-26';
