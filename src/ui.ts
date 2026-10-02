@@ -1208,7 +1208,7 @@ function speciesAlbum(view: View): string {
   const cards = SPECIES.map((sp) => {
     const mine = sp.id === view.state.species;
     const stages = sp.stages.map((txt, i) => `<li><b>${STAGE_NAMES[i]}</b>${esc(txt)}</li>`).join('');
-    return tl('ui.286', { p0: mine ? 'mine' : '', id: sp.id, p2: stageSampleCm(3, sp.targetM * 100), targetM: sp.targetM, p4: mine ? tl('ui.285') : '', p5: esc(sp.name), p6: esc(sp.english), p7: esc(sp.scientific), p8: esc(sp.typicalM), maxM: sp.maxM, p10: esc(sp.blurb), p11: esc(sp.record), p12: esc(sp.source.url), p13: esc(sp.source.label), stages, p15: habitatBlock(sp.id) });
+    return tl('ui.286', { p0: mine ? 'mine' : '', id: sp.id, p2: stageSampleCm(3, sp.targetM * 100), targetM: sp.targetM, p4: mine ? tl('ui.285') : '', p5: esc(sp.name), p6: esc(sp.english), p7: esc(sp.scientific), p8: esc(sp.typicalM), maxM: sp.maxM, p10: esc(sp.blurb), p11: esc(sp.record), stages, p15: habitatBlock(sp.id) });
   }).join('');
   return tl('ui.287', { cards });
 }
