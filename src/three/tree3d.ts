@@ -97,8 +97,8 @@ export const skinUniforms = {
 
 /** 0 solid … 1 semi-transparent, while the camera is looking at the nest. */
 /**
- * v1.4.24 near fade: uNear 0 … 1 (following an animal or zoomed in) lets leaves and bark closer to the camera than
- * uNearR.y turn gently see-through, down to ~30% at uNearR.x (distances in view space, set per frame).
+ * Near fade (v1.4.24, stronger in 1.4.25): uNear 0 … 1 (following an animal or zoomed in) makes everything closer to the
+ * camera than uNearR.x see-through (40% opacity), easing back to solid at uNearR.y (view-space distances, set per frame).
  */
 export const peekUniform = { uPeek: { value: 0 }, uNear: { value: 0 }, uNearR: { value: new THREE.Vector2(0.5, 1.5) } };
 
@@ -121,10 +121,38 @@ const WITHER_BARK = `
   }`;
 const PULSE = `
   gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.85, 0.07, 0.05), uPulse);`;
+/** GLSL: the near-fade opacity of this fragment (1 = solid … 0.4). */
+export const NEAR_ALPHA = 'mix(1.0, 0.4, clamp(uNear, 0.0, 1.0) * (1.0 - smoothstep(uNearR.x, uNearR.y, length(vViewPosition))))';
+
+/**
+ * v1.4.25: give a scene prop material (rocks, fences, windmill, bushes…) the same near fade. `userData.nearOn` is its
+ * own on/off uniform, so a material an animal happens to share can be kept solid. Lit mesh materials only.
+ */
+export function addNearFade(m: THREE.Material): boolean {
+  const lit = m as THREE.MeshStandardMaterial & { isMeshLambertMaterial?: boolean; isMeshPhongMaterial?: boolean };
+  if (!(lit.isMeshStandardMaterial || lit.isMeshLambertMaterial || lit.isMeshPhongMaterial)) return false;
+  if (m.userData.nearOn) return true;
+  const on = { value: 1 };
+  m.userData.nearOn = on;
+  m.userData.nearBaseTransparent = m.transparent;
+  const prev = m.onBeforeCompile;
+  const prevKey = m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    Object.assign(shader.uniforms, { uNear: peekUniform.uNear, uNearR: peekUniform.uNearR, uNearOn: on });
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uNear; uniform vec2 uNearR; uniform float uNearOn;')
+      .replace('#include <opaque_fragment>', `#include <opaque_fragment>\n  gl_FragColor.a *= mix(1.0, ${NEAR_ALPHA}, uNearOn);`);
+  };
+  m.customProgramCacheKey = () => `${prevKey()}|near`;
+  m.needsUpdate = true;
+  return true;
+}
+
 const PEEK = `
   {
     float aPeek = mix(1.0, 0.32, clamp(uPeek, 0.0, 1.0));
-    float aNear = mix(1.0, mix(0.3, 1.0, smoothstep(uNearR.x, uNearR.y, length(vViewPosition))), clamp(uNear, 0.0, 1.0));
+    float aNear = ${NEAR_ALPHA};
     gl_FragColor.a = min(aPeek, aNear);
   }`;
 

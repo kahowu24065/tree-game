@@ -7,7 +7,7 @@ import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
-import { buildTree, healthUniforms, peekUniform, skinUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
+import { addNearFade, buildTree, healthUniforms, peekUniform, skinUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
 import type { NestBuildKind } from '../nest';
 import { buildNestDecor } from './nestDecor3d';
@@ -138,6 +138,10 @@ export class Scene3D {
   /** 0 solid crown … 1 while the nest is being watched. */
   private nestPeek = 0;
   private nearFade = 0;
+  private nearMode: 'follow' | 'zoom' | null = null;
+  private propFadeOn = false;
+  private propScanT = 0;
+  private readonly propFadeMats = new Set<THREE.Material>();
   private followAz = 0;
   private followPos = new THREE.Vector3();
   private heatK = 0;
@@ -1183,19 +1187,25 @@ export class Scene3D {
    * Fade the crown and branches so a nest on an inner branch can be seen. v1.4.24: also a gentle near-camera fade of
    * leaves and bark (only what is closer than the subject) whenever an animal is followed or the view is zoomed in.
    */
-  private applyNestPeek(on: boolean, dt: number, near = false, dist = 1): void {
+  private applyNestPeek(on: boolean, dt: number, near: 'follow' | 'zoom' | null = null, dist = 1): void {
     const goal = on ? 1 : 0;
     const k = dt === 0 ? 1 : 1 - Math.exp(-dt * 4);
     this.nestPeek += (goal - this.nestPeek) * k;
     if (Math.abs(this.nestPeek - goal) < 0.001) this.nestPeek = goal;
     peekUniform.uPeek.value = this.nestPeek;
     const nearGoal = near ? 1 : 0;
-    this.nearFade += (nearGoal - this.nearFade) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 3));
+    this.nearFade += (nearGoal - this.nearFade) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 5));
     if (Math.abs(this.nearFade - nearGoal) < 0.001) this.nearFade = nearGoal;
     peekUniform.uNear.value = this.nearFade;
-    peekUniform.uNearR.value.set(dist * 0.28, dist * 0.8);
+    // v1.4.25: following → everything up to just past the animal (in front of it and beside it) is ~40% opaque;
+    // zoomed in → everything in front of the aim point. Solid again a little further back.
+    if (near) this.nearMode = near;
+    if (this.nearMode === 'follow') peekUniform.uNearR.value.set(dist * 1.08, dist * 1.45);
+    else peekUniform.uNearR.value.set(dist * 0.72, dist * 1.02);
     const peek = this.nestPeek > 0.04;
-    const fade = peek || this.nearFade > 0.04;
+    const nearOn = this.nearFade > 0.04;
+    const fade = peek || nearOn;
+    this.syncPropFade(nearOn, this.nearMode === 'follow', dt);
     const group = this.tree?.group;
     if (!group) return;
     group.traverse((o) => {
@@ -1211,6 +1221,70 @@ export class Scene3D {
         m.depthWrite = !peek;
       }
     });
+  }
+
+  /**
+   * v1.4.25: scene props (rocks, fences, windmill / hatch decor, bushes, tree stakes…) get the same near fade while
+   * following an animal. Animals (and the nest, which belongs to them), the ground and water stay solid; a material
+   * an animal shares is switched off for the fade. Re-scanned twice a second while active (props get rebuilt).
+   */
+  private syncPropFade(on: boolean, follow: boolean, dt: number): void {
+    const active = on && follow;
+    if (!active && !this.propFadeOn) return;
+    this.propScanT -= dt;
+    if (active && (!this.propFadeOn || this.propScanT <= 0)) {
+      this.propScanT = 0.5;
+      const animalMats = new Set<THREE.Material>();
+      this.animals.root.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        for (const x of Array.isArray(m) ? m : m ? [m] : []) animalMats.add(x);
+      });
+      const ground = new Set<THREE.Object3D>([this.island.grass, this.island.dirt, ...(this.habitat?.ground ?? [])]);
+      const visit = (o: THREE.Object3D): void => {
+        if (o === this.animals.root || ground.has(o) || !o.visible) return;
+        const mesh = o as THREE.Mesh;
+        const part = mesh.userData?.treePart;
+        if (mesh.isMesh && part !== 'bark' && part !== 'leaf') {
+          for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            if (!m || (m as THREE.MeshStandardMaterial).map || animalMats.has(m)) continue;
+            if (addNearFade(m)) this.propFadeMats.add(m);
+          }
+        }
+        for (const c of o.children) visit(c);
+      };
+      visit(this.land);
+      for (const m of this.propFadeMats) {
+        const keep = animalMats.has(m);
+        (m.userData.nearOn as { value: number }).value = keep ? 0 : 1;
+        const want = keep ? Boolean(m.userData.nearBaseTransparent) : true;
+        if (m.transparent !== want) {
+          m.transparent = want;
+          m.needsUpdate = true;
+        }
+      }
+    }
+    if (!active && this.propFadeOn) {
+      for (const m of this.propFadeMats) {
+        const base = Boolean(m.userData.nearBaseTransparent);
+        if (m.transparent !== base) {
+          m.transparent = base;
+          m.needsUpdate = true;
+        }
+        (m.userData.nearOn as { value: number }).value = 0;
+      }
+    }
+    this.propFadeOn = active;
+  }
+
+  /** v1.4.25 checks: near-fade state (strength, distances, faded tree / prop materials). */
+  fadeInfo(): { near: number; from: number; to: number; mode: string | null; treeTransparent: number; props: number; propsOn: number } {
+    let treeTransparent = 0;
+    this.tree?.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m && o.userData?.treePart && o.userData.treePart !== 'extra' && m.transparent) treeTransparent += 1;
+    });
+    const propsOn = [...this.propFadeMats].filter((m) => m.transparent && (m.userData.nearOn as { value: number }).value > 0).length;
+    return { near: peekUniform.uNear.value, from: peekUniform.uNearR.value.x, to: peekUniform.uNearR.value.y, mode: this.nearMode, treeTransparent, props: this.propFadeMats.size, propsOn };
   }
 
   /** Whether the player has left the overview (zoomed or following), and who is being followed. */
@@ -1910,7 +1984,7 @@ export class Scene3D {
       this.followBias = this.followBiasGoal = 0;
       this.followCap = Infinity;
     }
-    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt, Boolean(focus) || this.zoomGoal < 0.97, dist);
+    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt, focus ? 'follow' : this.zoomGoal < 0.97 ? 'zoom' : null, dist);
     this.camera.position.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
     // Never put the camera under the ground when zoomed right in.
     if (this.isZoomed() || focus) {
