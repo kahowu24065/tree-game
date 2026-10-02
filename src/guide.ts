@@ -350,19 +350,6 @@ function pushTab(): string {
         [tl('guide.201'), tl('guide.202')],
       ],
     ),
-    h(tl('guide.203')),
-    p(tl('guide.204')),
-    h(tl('guide.205')),
-    ul([
-      tl('guide.206'),
-      tl('guide.207'),
-    ]),
-    h(tl('guide.208')),
-    ul([
-      tl('guide.209'),
-      tl('guide.210'),
-      tl('guide.211'),
-    ]),
   ].join('');
 }
 
