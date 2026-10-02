@@ -8,6 +8,8 @@
 //  • 1.4.14 Taiwan devices (isTW): 中央氣象署 warnings per county / town every TW_POLL_MS, non-HK push rules
 //    (safety / tree lines with hk=false, 2 readings to confirm a drop). GET /cwa?lat=&lon= serves the app a
 //    normalised bundle; the CWA key (env CWA_API_KEY) never leaves the server.
+//  • 1.4.26 GET /alerts?lat=&lon= — official alerts elsewhere (US NWS, Canada ECCC, Japan JMA, Europe MeteoAlarm;
+//    src/official.js). { covered:false } = no feed there; the app then uses observed numbers.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +20,7 @@ import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
+import { createOfficialClient } from './official.js';
 import { WARNING_SETS, createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
 
 const PORT = Number(process.env.PORT || 8080);
@@ -35,6 +38,7 @@ const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 const store = new TokenStore(path.join(DATA, 'tokens.json'));
 const fcm = await createSender();
 const cwa = createCwaClient();
+const official = createOfficialClient();
 let lastTwPoll = null;
 let lastPoll = null;
 let lastSmgPoll = null;
@@ -251,6 +255,19 @@ async function cwaAnswer(lat, lon) {
   return body;
 }
 
+// 1.4.26 GET /alerts answers (official NWS / ECCC / JMA / MeteoAlarm alerts): shared per ~2 km for 5 minutes.
+const alertAnswers = new Map();
+async function alertAnswer(lat, lon) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const hit = alertAnswers.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.body;
+  const found = await official.lookup(lat, lon);
+  const body = found ?? { covered: false, alerts: [] };
+  if (alertAnswers.size > 2000) alertAnswers.clear();
+  alertAnswers.set(key, { at: Date.now(), body });
+  return body;
+}
+
 // Simple per-IP rate limit for the device endpoints: 30 requests / 10 min.
 const hits = new Map();
 function limited(ip, cap = 30) {
@@ -324,6 +341,20 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await cwaAnswer(lat, lon);
       if (!body) return send(res, 404, { ok: false, error: 'no station nearby' });
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=120', ...CORS });
+      return res.end(JSON.stringify(body));
+    } catch (e) {
+      return send(res, 502, { ok: false, error: String(e?.message ?? e) });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/alerts') {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    if (limited(`alerts:${ip}`, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return send(res, 400, { ok: false, error: 'bad lat/lon' });
+    try {
+      const body = await alertAnswer(lat, lon);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=120', ...CORS });
       return res.end(JSON.stringify(body));
     } catch (e) {

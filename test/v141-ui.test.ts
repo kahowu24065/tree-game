@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CARE, PREPS, WEATHER_EVENTS, WX_NUM } from '../src/balance';
+import { CARE, PREPS, WEATHER_EVENTS, WX_OBS } from '../src/balance';
 import { guideModal, GUIDE_TABS } from '../src/guide';
 import { parseWarnsum } from '../src/hko';
 import { setLabelRegion } from '../src/labels';
@@ -89,8 +89,8 @@ describe('v1.4.1 玩法 panel', () => {
     const wx = guideModal('weather');
     expect(wx).toContain('山泥傾瀉警告');
     expect(wx).toContain('WL');
-    expect(wx).toContain(`陣風 ≥ ${WX_NUM.typhoon1.gust}`);
-    expect(wx).toContain(`日雨量 ≥ ${WX_NUM.blackrain.mm} 毫米`);
+    expect(wx).toContain(`陣風 ≥ ${WX_OBS.typhoon1.gust}`);
+    expect(wx).toContain(`一個鐘 ≥ ${WX_OBS.blackrain.mmHour} 毫米`);
     const push = guideModal('push');
     for (const s of ['降級', '取消', '注意安全', '2 小時', '40 分鐘']) expect(push).toContain(s);
   });

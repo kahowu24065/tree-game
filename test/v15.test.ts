@@ -75,7 +75,9 @@ describe('v15 寒冷：香港以外（絕對 + 相對）', () => {
     expect(dayEvent(d)).toBe('rainstorm');
     expect(dayEvents(d).sort()).toEqual(['cold', 'rainstorm']);
     const s = game();
-    expect(eventsForDate(s, D, d).sort()).toEqual(['cold', 'rainstorm']);
+    // 1.4.26: a forecast day alone never settles as events; only observed / official ones do.
+    expect(eventsForDate(s, D)).toEqual(['clear']);
+    expect(eventsForDate(s, D, ['cold', 'rainstorm']).sort()).toEqual(['cold', 'rainstorm']);
   });
 
   it('即時天氣（香港以外）用今日最低同現時溫度', () => {

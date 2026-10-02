@@ -48,7 +48,6 @@ import {
 import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
-import { dayEvents, mildEvent } from './events';
 import { freshNest, isNestHeightCount, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, settleNest } from './nest';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy } from './labels';
 import {
@@ -76,7 +75,7 @@ import {
   wTier,
   type NightWater,
 } from './rules';
-import type { Care, DayFlow, ForecastDay, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
+import type { Care, DayFlow, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
 import { formatHeight } from './util';
 import { t as tl } from './i18n';
 
@@ -214,11 +213,15 @@ export function waterEvents(state: GameState, date: string, events: readonly Wea
   return events.filter((e) => !RAIN_DAY_EVENTS.includes(e) || rain.includes(e));
 }
 
-/** Events a date is settled with: what was seen that day, plus the day's forecast (HKO days: only drizzle/fine from the forecast). */
-export function eventsForDate(state: GameState, date: string, day: ForecastDay | undefined): WeatherEventId[] {
+/**
+ * Events a date is settled with. 1.4.26: only what was actually seen that day — official warnings / feed alerts in
+ * force, or observed readings — plus `observed` (where no official feed exists: events from that date's completed
+ * hours and its temperatures). Forecasts never add events, so they never cause damage or count for achievements.
+ */
+export function eventsForDate(state: GameState, date: string, observed: readonly WeatherEventId[] = []): WeatherEventId[] {
   const rec = state.dayEvents[date];
-  const base = rec?.hko ? [mildEvent(day)] : day ? dayEvents(day) : ['clear' as const];
-  return [...new Set([...base, ...(rec?.events ?? [])])];
+  const all = [...new Set([...(rec?.events ?? []), ...observed])].filter((e) => e !== 'clear');
+  return all.length ? all : ['clear'];
 }
 
 /* ---------- Nightly settlement ---------- */

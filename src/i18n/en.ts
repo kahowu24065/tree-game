@@ -1,5 +1,14 @@
 /* String table: en, English. Keys are shared by all locales (zh-HK is the source). */
 const table: Record<string, string> = {
+ "alerts.attrib": "Source: {p0}",
+ "alerts.more": "Details",
+ "alerts.other": "Other official alert (no game effect)",
+ "alerts.rawNote": "Alert names and text are as issued.",
+ "alerts.src.eccc": "Environment Canada",
+ "alerts.src.jma": "Japan Meteorological Agency",
+ "alerts.src.meteoalarm": "MeteoAlarm (Europe)",
+ "alerts.src.nws": "US National Weather Service",
+ "alerts.unknown": "Official alerts are unavailable for now. Model numbers are not used here instead.",
  "animalHud.001": "flew in",
  "animalHud.002": "is circling overhead",
  "animalHud.003": "wandered in",
@@ -545,7 +554,7 @@ const table: Record<string, string> = {
  "guide.178": "With several advisories of one type (wind / rain) at once, only the most severe counts; high and low temperature can apply together with wind and rain.",
  "guide.179": "Rain levels: Heavy Rain → rainstorm; Extremely Heavy, Torrential and Extremely Torrential Rain → Black Rainstorm. Typhoons have two levels: a Sea warning alone is Signal No. 1/3, and a Land warning covering your county or city is Signal No. 8+.",
  "guide.180": "Readings come from the nearest CWA station and forecasts from the county/city weekly forecast. A Heavy Thunderstorm real-time alert counts as a severe thunderstorm, like the orange Strong Wind Advisory; when both apply only the most severe storm counts.",
- "guide.181": "Outside Hong Kong, Macau and Taiwan: follows Open-Meteo",
+ "guide.181": "Outside Hong Kong, Macau and Taiwan",
  "guide.182": "Different names, same rules: Very Hot Weather Warning = {p0}, {p1} = Typhoon Signal No. 1/3, {p2} = Typhoon Signal No. 8+, {p3} = Rainstorm, {p4} = Black rain; the emergency action is called \"{p5}\". No landslips.",
  "guide.183": "Threshold",
  "guide.184": "Each day only the most severe wind / rain event counts, plus very hot and cold (which can apply at the same time).",
@@ -577,6 +586,17 @@ const table: Record<string, string> = {
  "guide.210": "About 12 hours and 2 hours left while dying.",
  "guide.211": "Leaving the app with a warning's emergency action not done: a reminder 1 hour later.",
  "guide.212": "\n    <p class=\"eyebrow\">Settings</p>\n    <h2>How to play</h2>\n    <div class=\"seg guide-tabs\">{p0}</div>\n    <div class=\"howto guide-body\">{p1}</div>\n    <button type=\"button\" class=\"primary\" data-action=\"close-modal\">OK</button>\n  ",
+ "guide.feedCA": "Canada: Rainfall warning → {rain} (red → {black}); Wind warning → {t8} (yellow → {t1}); Hurricane warning → {t8}; Tropical storm warning → {t1}; Severe thunderstorm / Tornado warning → {thunder}; Heat warning → {hot}; Extreme cold warning → {cold}.",
+ "guide.feedCard": "Outside Hong Kong, Macau and Taiwan the weather card lists official alerts (game category, name as issued, times and source); where there is no official source it says observed readings are used.",
+ "guide.feedEU": "Europe: only MeteoAlarm orange or red count. Rain / flooding: orange → {rain}, red → {black}; wind: orange → {t1}, red → {t8}; thunderstorm, high and low temperature: orange or above → {thunder} / {hot} / {cold}. Yellow is shown only. Countries without matching area data (e.g. Switzerland) use observed readings.",
+ "guide.feedIntro": "US (National Weather Service), Canada (Environment Canada), Japan (JMA) and most of Europe (MeteoAlarm): only official alerts actually issued and in force count. Events, damage and achievements all follow these alerts alone (survived or handled), never Open-Meteo numbers or forecasts.",
+ "guide.feedJP": "Japan: Heavy Rain Emergency / Danger Warning → {black}; Heavy Rain Warning → {rain}; Storm (Snowstorm) Warning and Emergency Warnings → {t8}; Gale / Wind-and-Snow Advisory → {t1}; Thunderstorm Advisory → {thunder}; Low Temperature Advisory → {cold}. JMA's warning data has no heat warning (heatstroke alerts are separate), so Japan has no {hot}.",
+ "guide.feedUS": "US: Flash Flood Warning → {black}; Flood Warning → {rain}; Hurricane / Typhoon / High Wind / Extreme Wind Warning → {t8}; Tropical Storm Warning, Wind Advisory → {t1}; Severe Thunderstorm / Tornado Warning → {thunder}; Extreme Heat Warning → {hot}; Extreme Cold / Wind Chill / Freeze Warning → {cold}.",
+ "guide.obsBlack": "≥ {mm} mm in one hour, or ≥ {mm3} mm in 3 hours",
+ "guide.obsIntro": "Elsewhere, with no official alert feed (e.g. mainland China): Open-Meteo observed readings, i.e. each hour already past today plus the live reading (live rain ×{x} as an hourly rate). Forecasts never count.",
+ "guide.obsRain": "Rain ≥ {mm} mm in one hour",
+ "guide.obsThunder": "Thunderstorm observed (weather code ≥ {code})",
+ "guide.obsWind": "Mean wind ≥ {wind} km/h for {hours} hours in a row, or gusts ≥ {gust} km/h",
  "guide.waterLimit": "No daily limit; {perHour} per hour",
  "habitat.001": "Rocks",
  "habitat.002": "Boulder",
@@ -1578,6 +1598,8 @@ const table: Record<string, string> = {
  "weather.024": "Cannot reach the weather service",
  "weather.025": "The weather service is too busy right now (429)",
  "weather.026": "The weather service responded {status}",
- "weather.027": "{bare}"
+ "weather.027": "{bare}",
+ "wx.badgeSrc": "Only officially issued warnings count (Hong Kong, Macau, Taiwan, the US, Canada, Japan, Europe); observed readings are used only where there is no official feed (e.g. mainland China).",
+ "wx.obsNote": "No official alert feed here: the game uses observed readings only (today's past hours and the live reading, from Open-Meteo), never forecasts."
 };
 export default table;

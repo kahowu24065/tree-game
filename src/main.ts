@@ -1,7 +1,8 @@
 import './style.css';
 import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
-import { condForEvent, currentEvents, observedRainEvents, sceneCond, severeCountdown, type Countdown } from './events';
+import { condForEvent, currentEvents, hoursOfDate, observedEvents, observedRainEvents, sceneCond, severeCountdown, tempEvents, type Countdown, type EventMode } from './events';
+import { alertEvents, fetchOfficialAlerts, likelyFeedRegion, type OfficialAlerts } from './alerts';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
@@ -266,23 +267,77 @@ function officialActive(snapshot: WeatherSnapshot = weather): boolean {
   return Boolean(snapshot.hko) && (usesHko(snapshot) || usesSmg(snapshot) || usesCwa(snapshot));
 }
 
-/** Events happening right now according to live weather (HKO in HK, SMG in Macau). */
+/** 1.4.26 HK / Macau / Taiwan, decided by location (not by which data source answered). */
+function officialRegion(snapshot: WeatherSnapshot = weather): boolean {
+  return usesHko(snapshot) || usesSmg(snapshot) || usesCwa(snapshot);
+}
+
+/**
+ * 1.4.26 who decides severe weather here: HKO / SMG / CWA warnings ('official'), a national alert feed ('feed': US,
+ * Canada, Japan, Europe), or observed numbers ('observed', no feed). An unreachable feed in a feed region still counts
+ * as 'feed' (no alerts), so model numbers never stand in for official alerts.
+ */
+function eventMode(snapshot: WeatherSnapshot = weather): EventMode {
+  if (officialRegion(snapshot)) return 'official';
+  if (snapshot.alerts) return snapshot.alerts.covered ? 'feed' : 'observed';
+  return likelyFeedRegion(snapshot.lat, snapshot.lon) ? 'feed' : 'observed';
+}
+
+/** Rain on the live reading (drizzle), when there is a real reading. */
+function liveDrizzle(): boolean {
+  if (weather.provider === 'sim' || weather.origin === 'offline') return false;
+  return weather.current.precipMm >= 0.2 || isRainCode(weather.current.code);
+}
+
+/** Events happening right now: official warnings / feed alerts in force, or (no feed) observed numbers. Never forecasts. */
 function liveEvents(): WeatherEventId[] {
-  if (weather.provider === 'sim' && !weather.hko) return [];
+  const mode = eventMode();
+  if (mode === 'official') {
+    if (!officialActive()) return [];
+    return currentEvents({ hk: true, warnings: weather.hko?.warnings, current: weather.current });
+  }
+  if (mode === 'feed') {
+    const out = new Set<WeatherEventId>(alertEvents(weather.alerts));
+    if (liveDrizzle()) out.add('drizzle');
+    return [...out];
+  }
+  if (weather.provider === 'sim' || weather.origin === 'offline') return [];
   const day = weather.daily.find((d) => d.date === today());
-  return currentEvents({ hk: officialActive(), warnings: weather.hko?.warnings, current: weather.current, today: day });
+  const c = weather.current;
+  const temps = { tempMax: Math.max(c.tempC, day?.tempMax ?? -Infinity), tempMin: Math.min(c.tempC, day?.tempMin ?? Infinity), intl: day?.intl, normMax: day?.normMax, normMin: day?.normMin };
+  return [...new Set([...observedEvents(hoursOfDate(weather.pastHours, today()), c), ...tempEvents(temps)])].filter((e) => e !== 'clear');
 }
 
-/** v1.4.24: rain really falling now (warnings in force / live reading) — the only rain that counts for 水分. */
+/** v1.4.24: rain really falling now (warnings / alerts in force, or observed) — the only rain that counts for 水分. */
 function liveRain(): WeatherEventId[] {
-  if (weather.provider === 'sim' && !weather.hko) return [];
-  return observedRainEvents({ hk: officialActive(), warnings: weather.hko?.warnings, current: weather.current });
+  const mode = eventMode();
+  if (mode === 'official') return officialActive() ? observedRainEvents({ hk: true, warnings: weather.hko?.warnings, current: weather.current }) : [];
+  if (mode === 'feed') return observedRainEvents({ hk: true, events: alertEvents(weather.alerts), current: liveDrizzle() ? weather.current : { ...weather.current, precipMm: 0, code: 0 } });
+  if (weather.provider === 'sim' || weather.origin === 'offline') return [];
+  return observedRainEvents({ hk: false, current: weather.current, hours: hoursOfDate(weather.pastHours, today()) });
 }
 
-/** Events the day is settled with (manual developer weather wins). */
+/** Where no feed exists: what the date's completed hours observed, plus heat / cold from that day's temperatures. */
+function observedDay(date: string): WeatherEventId[] {
+  if (eventMode() !== 'observed' || weather.provider === 'sim') return [];
+  const hours = hoursOfDate(weather.pastHours, date);
+  const day = weather.daily.find((d) => d.date === date);
+  return [...(hours.length ? observedEvents(hours) : []), ...(day ? tempEvents(day) : [])];
+}
+
+/** Events the day is settled with (manual developer weather wins). 1.4.26: forecasts never add events. */
 function eventsFor(date: string): WeatherEventId[] {
   if (manual()) return dev.events.length ? [...dev.events] : ['clear'];
-  return eventsForDate(state, date, weather.daily.find((d) => d.date === date));
+  return eventsForDate(state, date, observedDay(date));
+}
+
+/** Name of whoever issued the warnings in force (toasts / countdown). */
+function warningSource(snapshot: WeatherSnapshot = weather): string {
+  if (usesSmg(snapshot)) return tl('main.005');
+  if (usesCwa(snapshot)) return tl('main.006');
+  if (officialActive(snapshot)) return tl('main.007');
+  if (eventMode(snapshot) === 'feed' && snapshot.alerts?.source) return tl(`alerts.src.${snapshot.alerts.source}`);
+  return '';
 }
 
 function todayEvents(): WeatherEventId[] {
@@ -340,7 +395,7 @@ function countdown(): Countdown | null {
     minutesToMidnight: 24 * 60 - clockMinutes(timezone),
     manual: manual() ? dev.forecast : null,
     nowMs: Date.now(),
-    activeSource: manual() ? tl('main.004') : usesSmg() ? tl('main.005') : usesCwa() ? tl('main.006') : officialActive() ? tl('main.007') : tl('main.008'),
+    activeSource: manual() ? tl('main.004') : warningSource() || tl('main.008'),
   });
 }
 
@@ -467,6 +522,8 @@ function view(input: SceneInput): View {
       humidity: manual() || (hk && !weather.hko?.current) ? undefined : weather.current.humidity,
       obs: manual() || weather.origin === 'offline' || (weather.provider === 'sim' && !weather.hko) ? undefined : { code: weather.current.code, windKmh: weather.current.windKmh, gustKmh: weather.current.gustKmh, precipMm: weather.current.precipMm },
       rainInHours: weather.rainInHours ?? null,
+      mode: manual() ? undefined : eventMode(),
+      feed: !manual() && eventMode() === 'feed' ? { source: weather.alerts?.source, alerts: weather.alerts?.alerts ?? [], attribution: weather.alerts?.attribution ?? '', known: Boolean(weather.alerts?.covered), tz: weather.timezone } : undefined,
       error: weather.error,
       overridden: manual(),
     },
@@ -729,7 +786,7 @@ function plantSecond(species?: SpeciesId): void {
   isle = 1;
   state = second;
   plantingSecond = false;
-  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), officialActive());
+  if (!manual() && (weather.provider !== 'sim' || weather.hko || weather.alerts)) recordEvents(state, today(), liveEvents(), officialActive() || eventMode() === 'feed');
   const fresh = grantIsle('plant');
   beginCoach();
   persist();
@@ -1024,14 +1081,14 @@ function applyWeather(snapshot: WeatherSnapshot): void {
         ? tl('main.040', { p0: snapshot.error ?? tl('main.039'), p1: clockOf(snapshot.fetchedAt) })
         : tl('main.041', { p0: snapshot.error ?? '' });
   reconcileClock();
-  if (snapshot.provider !== 'sim' || snapshot.hko) {
+  if (snapshot.provider !== 'sim' || snapshot.hko || snapshot.alerts) {
     const events = liveEvents();
     const had = state.dayEvents[today()]?.events ?? [];
-    recordEvents(state, today(), events, officialActive(snapshot), liveRain());
+    recordEvents(state, today(), events, officialActive(snapshot) || eventMode(snapshot) === 'feed', liveRain());
     noteWeatherDiary(snapshot);
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
-    if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: usesSmg(snapshot) ? tl('main.005') : usesCwa(snapshot) ? tl('main.006') : officialActive(snapshot) ? tl('main.007') : tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));
+    if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: warningSource(snapshot) || tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));
   }
   if (state.started && !state.over) {
     const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
@@ -1121,12 +1178,20 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const bureauId: WeatherProvider = tw ? 'cwa' : 'smg';
   const bureauTz = tw ? 'Asia/Taipei' : 'Asia/Macau';
   const hk = !mo && (loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon));
-  const [om, hkoRes, smgRes, placeRes] = await Promise.allSettled([
+  const intl = !hk && !mo;
+  const [om, hkoRes, smgRes, placeRes, alertRes] = await Promise.allSettled([
     fetchForecast(loc.lat, loc.lon),
     hk ? fetchHko(loc.lat, loc.lon) : Promise.resolve(null),
     tw ? fetchCwa(loc.lat, loc.lon) : mo ? fetchSmg(loc.lat, loc.lon) : Promise.resolve(null),
     loc.source === 'geo' ? reverseGeocode(loc.lat, loc.lon) : Promise.resolve(null),
+    intl ? fetchOfficialAlerts(loc.lat, loc.lon) : Promise.resolve(null),
   ]);
+  // 1.4.26 official alert feed (US / Canada / Japan / Europe). Unreachable → the last answer for about this spot (≤ 3 h).
+  const prevAlerts = loadWeatherCache()?.alerts;
+  const alerts: OfficialAlerts | null = !intl
+    ? null
+    : (alertRes.status === 'fulfilled' ? alertRes.value : null) ??
+      (prevAlerts && Date.now() - prevAlerts.fetchedAt < 3 * 3600_000 && weather.lat !== undefined && Math.abs(weather.lat - loc.lat) < 0.1 && Math.abs(weather.lon - loc.lon) < 0.1 ? prevAlerts : null);
   const hko = hkoRes.status === 'fulfilled' ? hkoRes.value : null;
   const smg = smgRes.status === 'fulfilled' ? smgRes.value : null;
   let official = mo ? smg?.data ?? null : hko;
@@ -1158,7 +1223,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   if (!base) {
     const cached = loadWeatherCache();
     if (cached && cached.provider !== 'sim' && Date.now() - cached.fetchedAt < WEATHER_STALE_MS && !(hk || mo)) {
-      applyWeather({ ...cached, origin: 'cache', error, hko: null, lat: loc.lat, lon: loc.lon, source: loc.source, place });
+      applyWeather({ ...cached, origin: 'cache', error, hko: null, alerts, lat: loc.lat, lon: loc.lon, source: loc.source, place });
       return;
     }
     const kept = hk || mo ? official ?? cached?.hko ?? null : null;
@@ -1181,7 +1246,7 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
       });
       return;
     }
-    applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko: official, lat: loc.lat, lon: loc.lon, source: loc.source, place, choice: choiceKey() });
+    applyWeather({ ...offlineSnapshot(today(), error ?? ''), hko: official, alerts, lat: loc.lat, lon: loc.lon, source: loc.source, place, choice: choiceKey() });
     return;
   }
   const snapshot: WeatherSnapshot = {
@@ -1199,6 +1264,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     hko: official,
     district,
     rainInHours: provider === 'open-meteo' ? base.rainInHours : null,
+    pastHours: provider === 'open-meteo' ? base.pastHours : undefined,
+    alerts,
     choice: choiceKey(),
     error: provider === 'hko' || (mo && smg && om.status === 'rejected') ? error : undefined,
   };
@@ -1307,7 +1374,7 @@ function startGame(species?: SpeciesId): void {
   // newGame wipes dayEvents. The weather card still shows a warning already loaded
   // (酷熱天氣警告 → 酷熱澆水); record it now or the status-card button stays hidden
   // until the next weather refresh (up to 30 minutes).
-  if (!manual() && (weather.provider !== 'sim' || weather.hko)) recordEvents(state, today(), liveEvents(), officialActive());
+  if (!manual() && (weather.provider !== 'sim' || weather.hko || weather.alerts)) recordEvents(state, today(), liveEvents(), officialActive() || eventMode() === 'feed');
   persist();
   syncWarningWater();
   plantingShow = 'arrive';

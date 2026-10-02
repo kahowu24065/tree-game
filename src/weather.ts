@@ -6,6 +6,7 @@ import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } 
 import { isNative } from './native/platform';
 import { nativePosition } from './native/location';
 import { t as tl } from './i18n';
+import type { OfficialAlerts } from './alerts';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
@@ -37,6 +38,10 @@ export interface WeatherSnapshot {
   rainInHours?: number | null;
   /** Next hours from Open-Meteo (for the 12-hour severe-weather countdown). */
   hourly?: HourPoint[];
+  /** 1.4.26 completed Open-Meteo hours (up to 48 h back) — the observed numbers where no official feed exists. */
+  pastHours?: HourPoint[];
+  /** 1.4.26 official alerts from a national feed (US / Canada / Japan / Europe) via the push server. */
+  alerts?: OfficialAlerts | null;
   /** v15 local normals (average daily min / max of the past 14 days), null when unavailable. */
   normals?: Normals | null;
   /** Location choice this snapshot was made for ('auto' or a PLACES id), so a changed choice refetches. */
@@ -304,6 +309,8 @@ export interface HourPoint {
   precipMm: number;
   code: number;
   gustKmh: number;
+  /** 1.4.26 mean wind (km/h); missing in older caches. */
+  windKmh?: number;
 }
 
 /** v15 local normals: average daily min / max over the past days Open-Meteo returned (null = no data). */
@@ -320,6 +327,7 @@ export interface ForecastResult {
   daily: ForecastDay[];
   rainInHours: number | null;
   hourly?: HourPoint[];
+  pastHours?: HourPoint[];
 }
 
 interface OpenMeteoHourly {
@@ -327,6 +335,7 @@ interface OpenMeteoHourly {
   precipitation?: number[];
   weather_code?: number[];
   wind_gusts_10m?: number[];
+  wind_speed_10m?: number[];
 }
 
 /** First hour (0-5) from the current hour on where rain is expected, or null. */
@@ -388,13 +397,25 @@ export function parseOpenMeteo(data: unknown): ForecastResult {
     },
     daily: days,
     rainInHours: rainSoon(body.hourly, current.time ?? ''),
-    hourly: (body.hourly?.time ?? []).map((time, i) => ({
-      time,
-      precipMm: num(body.hourly?.precipitation?.[i], 0),
-      code: num(body.hourly?.weather_code?.[i], 0),
-      gustKmh: num(body.hourly?.wind_gusts_10m?.[i], 0),
-    })),
+    ...splitHours(body.hourly, current.time ?? ''),
   };
+}
+
+/**
+ * 1.4.26 Open-Meteo hourly values are totals for the hour ENDING at `time`. Hours ending at or before the live reading
+ * are done (observed: `pastHours`); the rest, from the current hour on, are the forecast (`hourly`).
+ */
+export function splitHours(hourly: OpenMeteoHourly | undefined, nowIso: string): { hourly: HourPoint[]; pastHours: HourPoint[] } {
+  const all: HourPoint[] = (hourly?.time ?? []).map((time, i) => ({
+    time,
+    precipMm: num(hourly?.precipitation?.[i], 0),
+    code: num(hourly?.weather_code?.[i], 0),
+    gustKmh: num(hourly?.wind_gusts_10m?.[i], 0),
+    windKmh: num(hourly?.wind_speed_10m?.[i], 0),
+  }));
+  if (!nowIso) return { hourly: all, pastHours: [] };
+  const hour = nowIso.slice(0, 13);
+  return { pastHours: all.filter((h) => h.time <= nowIso), hourly: all.filter((h) => h.time.slice(0, 13) >= hour) };
 }
 
 export function forecastUrl(lat: number, lon: number): string {
@@ -402,12 +423,13 @@ export function forecastUrl(lat: number, lon: number): string {
   url.searchParams.set('latitude', lat.toFixed(4));
   url.searchParams.set('longitude', lon.toFixed(4));
   url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,is_day');
-  url.searchParams.set('hourly', 'precipitation,weather_code,wind_gusts_10m');
+  url.searchParams.set('hourly', 'precipitation,weather_code,wind_gusts_10m,wind_speed_10m');
   url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset');
   url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '7');
   url.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
   url.searchParams.set('forecast_hours', '12');
+  url.searchParams.set('past_hours', '48');
   url.searchParams.set('wind_speed_unit', 'kmh');
   return url.toString();
 }

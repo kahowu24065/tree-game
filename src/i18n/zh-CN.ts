@@ -1,5 +1,14 @@
 /* String table: zh-CN, Simplified Chinese (from zh-TW via OpenCC tw2sp, reviewed fixes). Keys are shared by all locales (zh-HK is the source). */
 const table: Record<string, string> = {
+ "alerts.attrib": "数据来源：{p0}",
+ "alerts.more": "详情",
+ "alerts.other": "其他官方警报（不影响游戏）",
+ "alerts.rawNote": "警报名称与内容依官方原文。",
+ "alerts.src.eccc": "加拿大环境部",
+ "alerts.src.jma": "日本气象厅",
+ "alerts.src.meteoalarm": "MeteoAlarm 欧洲气象警报",
+ "alerts.src.nws": "美国国家气象局",
+ "alerts.unknown": "官方警报暂时无法取得。这里不会改用模型数字。",
  "animalHud.001": "飞过来",
  "animalHud.002": "在天上盘旋",
  "animalHud.003": "走过来",
@@ -545,7 +554,7 @@ const table: Record<string, string> = {
  "guide.178": "同一类（风／雨）同时有几个特报，只计最严重的那个；高温、低温可以和风雨一起成立。",
  "guide.179": "雨量分级：大雨 → 暴雨；豪雨、大豪雨、超大豪雨 → 黑雨。台风分两级：只有海上警报是初级，陆上警报包括你那个县市就是高级。",
  "guide.180": "读数用最近的气象署测站，预报用县市一周预报。大雷雨即时消息和陆上强风橙色灯号一样是狂风雷暴，同时有就只计最严重的那个风灾。",
- "guide.181": "香港、澳门和台湾以外：跟 Open-Meteo",
+ "guide.181": "香港、澳门与台湾以外",
  "guide.182": "名称不同，规则一样：酷热天气警告＝{p0}、{p1}＝初级台风、{p2}＝高级台风、{p3}＝暴雨、{p4}＝黑雨；应急行动叫“{p5}”。没有山泥倾泻。",
  "guide.183": "门槛",
  "guide.184": "同一天只取最严重的风／雨事件，再加上酷热、寒冷（可以同时成立）。",
@@ -577,6 +586,17 @@ const table: Record<string, string> = {
  "guide.210": "濒死剩大约 12 小时和 2 小时。",
  "guide.211": "离开 app 时有警告的应急行动未做：1 小时后提醒你。",
  "guide.212": "\n    <p class=\"eyebrow\">设置</p>\n    <h2>玩法</h2>\n    <div class=\"seg guide-tabs\">{p0}</div>\n    <div class=\"howto guide-body\">{p1}</div>\n    <button type=\"button\" class=\"primary\" data-action=\"close-modal\">好</button>\n  ",
+ "guide.feedCA": "加拿大：Rainfall warning → {rain}（红色 → {black}）；Wind warning → {t8}（黄色 → {t1}）；Hurricane warning → {t8}；Tropical storm warning → {t1}；Severe thunderstorm／Tornado warning → {thunder}；Heat warning → {hot}；Extreme cold warning → {cold}。",
+ "guide.feedCard": "香港、澳门、台湾以外：天气卡列出官方预警（游戏类别、官方原名、时间与数据来源）；没有官方来源的地方会注明使用实测数字。",
+ "guide.feedEU": "欧洲：MeteoAlarm 橙色或红色才算。雨／洪水：橙 → {rain}、红 → {black}；风：橙 → {t1}、红 → {t8}；雷暴、高温、低温：橙或以上 → {thunder}／{hot}／{cold}。黄色只显示。没有对应地区数据的国家（例如瑞士）会用实测数字。",
+ "guide.feedIntro": "美国（国家气象局）、加拿大（加拿大环境部）、日本（气象厅）与欧洲大部分国家（MeteoAlarm）：只计官方正式发布、当前生效的预警。事件、伤害与成就全部只依这些预警（挺过或完成应对才算），不会用 Open-Meteo 数字或预报。",
+ "guide.feedJP": "日本：大雨特别警报、大雨危险警报 → {black}；大雨警报 → {rain}；暴风（雪）警报与特别警报 → {t8}；强风、风雪注意报 → {t1}；雷注意报 → {thunder}；低温注意报 → {cold}。气象厅的警报数据没有高温（中暑警戒信息不在其中），所以日本没有{hot}。",
+ "guide.feedUS": "美国：Flash Flood Warning → {black}；Flood Warning → {rain}；Hurricane／Typhoon／High Wind／Extreme Wind Warning → {t8}；Tropical Storm Warning、Wind Advisory → {t1}；Severe Thunderstorm／Tornado Warning → {thunder}；Extreme Heat Warning → {hot}；Extreme Cold／Wind Chill／Freeze Warning → {cold}。",
+ "guide.obsBlack": "一小时 ≥ {mm} 毫米，或 3 小时合计 ≥ {mm3} 毫米",
+ "guide.obsIntro": "其他没有官方预警来源的地方（例如中国内地）：用 Open-Meteo 的实测数字，也就是今天已过去的每个小时与实时读数（实时雨量 ×{x} 当作每小时雨量）。预报不计。",
+ "guide.obsRain": "一小时雨量 ≥ {mm} 毫米",
+ "guide.obsThunder": "实测有雷暴（天气代码 ≥ {code}）",
+ "guide.obsWind": "平均风连续 {hours} 小时 ≥ {wind} 公里/时，或阵风 ≥ {gust} 公里/时",
  "guide.waterLimit": "不限每天；每小时最多 {perHour} 次",
  "habitat.001": "石头",
  "habitat.002": "大石",
@@ -1559,6 +1579,8 @@ const table: Record<string, string> = {
  "weather.024": "无法连接到天气服务",
  "weather.025": "天气服务暂时太繁忙（429）",
  "weather.026": "天气服务响应 {status}",
- "weather.027": "{bare}区"
+ "weather.027": "{bare}区",
+ "wx.badgeSrc": "只计官方正式发布的预警（香港、澳门、台湾、美国、加拿大、日本、欧洲）；没有官方预警来源的地方（例如中国内地）才用实测数字。",
+ "wx.obsNote": "这里没有官方警报来源：游戏只用实测数字（今天已过去的时段与实时读数，来自 Open-Meteo），预报不计。"
 };
 export default table;

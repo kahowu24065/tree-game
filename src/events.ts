@@ -1,5 +1,5 @@
 /** Real weather → the game's weather events (設計書「天氣與災害權重表」). */
-import { COLD_ABS_MIN_C, COLD_REL_DROP_C, COLD_REL_MAX_C, HK_HOT_MAX_C, HOT_ABS_MAX_C, HOT_REL_MIN_C, HOT_REL_RISE_C, WEATHER_EVENTS, WX_NUM, type WeatherEventId } from './balance';
+import { COLD_ABS_MIN_C, COLD_REL_DROP_C, COLD_REL_MAX_C, HK_HOT_MAX_C, HOT_ABS_MAX_C, HOT_REL_MIN_C, HOT_REL_RISE_C, WEATHER_EVENTS, WX_NUM, WX_OBS, type WeatherEventId } from './balance';
 import { hkoIconRain, type HkoWarning } from './hko';
 import { pickEvent } from './rules';
 import type { CurrentWeather, DayCond, ForecastDay } from './types';
@@ -143,28 +143,85 @@ export function currentEvents(opts: { hk: boolean; warnings?: readonly HkoWarnin
 }
 
 /**
- * v1.4.24: rain actually happening now — official rain warnings in force, or the live reading itself. Never the day's
- * forecast: only this counts for 水分 (rain water, no-loss rain day).
+ * 1.4.26 how a place's severe weather is decided:
+ *  • 'official' — HK / Macau / Taiwan (by location): only HKO / SMG / CWA warnings actually issued;
+ *  • 'feed'     — an official alert feed covers the place (US NWS, Canada ECCC, Japan JMA, Europe MeteoAlarm): only
+ *                 those issued alerts;
+ *  • 'observed' — no feed (e.g. mainland China): observed numbers (elapsed hours + live reading), never forecasts.
  */
-export function observedRainEvents(opts: { hk: boolean; warnings?: readonly HkoWarning[]; current: CurrentWeather }): WeatherEventId[] {
+export type EventMode = 'official' | 'feed' | 'observed';
+
+/** Live reading as an hour-like point (15-minute rain → hourly rate). */
+function currentAsHour(c: CurrentWeather): HourPoint {
+  return { time: c.time, precipMm: c.precipMm * WX_OBS.currentToHour, code: c.code, gustKmh: c.gustKmh, windKmh: c.windKmh };
+}
+
+/**
+ * 1.4.26 events from OBSERVED numbers ('observed' mode only): completed hours (oldest first) plus, optionally, the live
+ * reading as the latest point. 黑雨 ≥ 70 mm in an hour or ≥ 100 mm in 3 hours; 暴雨 ≥ 30 mm in an hour; 高級 mean
+ * wind ≥ 63 km/h for 2 hours running or a gust ≥ 118; 初級 ≥ 41 for 2 hours or a gust ≥ 88; 雷暴 = thunderstorm code.
+ */
+export function observedEvents(hours: readonly HourPoint[], current?: CurrentWeather): WeatherEventId[] {
+  const pts = [...hours].sort((a, b) => a.time.localeCompare(b.time));
+  if (current) pts.push(currentAsHour(current));
+  const out = new Set<WeatherEventId>();
+  const sustained = (min: number) => {
+    for (let i = 1; i < pts.length; i++) {
+      let ok = true;
+      for (let k = 0; k < WX_OBS.windHours; k++) if (!((pts[i - k]?.windKmh ?? 0) >= min)) ok = false;
+      if (ok && i + 1 >= WX_OBS.windHours) return true;
+    }
+    return false;
+  };
+  const gust = Math.max(0, ...pts.map((h) => h.gustKmh));
+  if (gust >= WX_OBS.typhoon8.gust || sustained(WX_OBS.typhoon8.wind)) out.add('typhoon8');
+  else if (gust >= WX_OBS.typhoon1.gust || sustained(WX_OBS.typhoon1.wind)) out.add('typhoon1');
+  if (pts.some((h) => h.code >= WX_OBS.thunderCode)) out.add('thunder');
+  const rain = observedRainLevel(pts);
+  if (rain) out.add(rain);
+  if (current ? current.precipMm >= 0.2 || isRainCode(current.code) : pts.some((h) => h.precipMm >= 0.5)) out.add('drizzle');
+  return [...out];
+}
+
+function observedRainLevel(pts: readonly HourPoint[]): WeatherEventId | null {
+  const max = Math.max(0, ...pts.map((h) => h.precipMm));
+  let max3 = 0;
+  for (let i = 0; i < pts.length; i++) max3 = Math.max(max3, pts.slice(Math.max(0, i - 2), i + 1).reduce((s, h) => s + h.precipMm, 0));
+  if (max >= WX_OBS.blackrain.mmHour || max3 >= WX_OBS.blackrain.mm3h) return 'blackrain';
+  if (max >= WX_OBS.rainstorm.mmHour) return 'rainstorm';
+  return null;
+}
+
+/** Completed Open-Meteo hours that belong to `date` (local), oldest first. */
+export function hoursOfDate(hours: readonly HourPoint[] | undefined, date: string): HourPoint[] {
+  return (hours ?? []).filter((h) => h.time.slice(0, 10) === date);
+}
+
+/**
+ * v1.4.24: rain actually happening now — official rain warnings / alerts in force, or the live reading itself. Never the
+ * day's forecast: only this counts for 水分 (rain water, no-loss rain day). 1.4.26: `official` = warnings or feed alerts
+ * decide heavy rain (`events` = their game events); otherwise the observed hours of today + the live reading.
+ */
+export function observedRainEvents(opts: { hk: boolean; warnings?: readonly HkoWarning[]; current: CurrentWeather; events?: readonly WeatherEventId[]; hours?: readonly HourPoint[] }): WeatherEventId[] {
   const out = new Set<WeatherEventId>();
   const c = opts.current;
-  if (opts.hk && opts.warnings) for (const e of hkoWarningEvents(opts.warnings)) if (e === 'rainstorm' || e === 'blackrain') out.add(e);
-  if (!opts.hk) {
-    const mm = c.precipMm * 6;
-    if (mm >= WX_NUM.blackrain.mm) out.add('blackrain');
-    else if (mm >= WX_NUM.rainstorm.mm) out.add('rainstorm');
+  if (opts.hk) {
+    for (const e of opts.events ?? hkoWarningEvents(opts.warnings)) if (e === 'rainstorm' || e === 'blackrain') out.add(e);
+  } else {
+    const level = observedRainLevel([...(opts.hours ?? []), currentAsHour(c)]);
+    if (level) out.add(level);
   }
   if (c.precipMm >= 0.2 || isRainCode(c.code)) out.add('drizzle');
   return [...out];
 }
 
+/** Hour → severe event (forecast hours: a heads-up only, never a game event). Same numbers as WX_OBS. */
 export function hourEvent(h: HourPoint): WeatherEventId | null {
-  if (h.gustKmh >= 118) return 'typhoon8';
-  if (h.gustKmh >= 88) return 'typhoon1';
-  if (h.code >= 95 || h.gustKmh >= 62) return 'thunder';
-  if (h.precipMm >= 30) return 'blackrain';
-  if (h.precipMm >= 10) return 'rainstorm';
+  if (h.gustKmh >= WX_OBS.typhoon8.gust || (h.windKmh ?? 0) >= WX_OBS.typhoon8.wind) return 'typhoon8';
+  if (h.gustKmh >= WX_OBS.typhoon1.gust || (h.windKmh ?? 0) >= WX_OBS.typhoon1.wind) return 'typhoon1';
+  if (h.code >= WX_OBS.thunderCode) return 'thunder';
+  if (h.precipMm >= WX_OBS.blackrain.mmHour) return 'blackrain';
+  if (h.precipMm >= WX_OBS.rainstorm.mmHour) return 'rainstorm';
   return null;
 }
 
