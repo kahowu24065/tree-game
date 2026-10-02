@@ -11,6 +11,8 @@ import { drawAnimal } from './draw-animals';
 import { hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
+import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
+import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
@@ -72,6 +74,10 @@ export interface WeatherView {
   /** v1.4.24: the measured reading (absent for manual / offline weather) — 現在 shows this, the scene may add a storm. */
   obs?: { code: number; windKmh: number; gustKmh: number; precipMm: number };
   rainInHours: number | null;
+  /** 1.4.26 who decides severe weather here (absent for manual weather). */
+  mode?: EventMode;
+  /** 1.4.26 national alert feed (US / Canada / Japan / Europe) when it covers the player. */
+  feed?: { source?: AlertSource; alerts: OfficialAlert[]; attribution: string; known: boolean; tz: string };
   error?: string;
   overridden: boolean;
 }
@@ -1066,6 +1072,48 @@ function warnDetailHtml(w: HkoWarning): string {
   return parts.length ? `<span class="warn-detail">${parts.join('')}</span>` : '';
 }
 
+/** "2日 11:00" in the place's own time zone (feed times may be UTC). */
+function feedTime(iso: string | null, tz: string): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz || undefined, day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t));
+    const get = (k: string) => parts.find((x) => x.type === k)?.value ?? '';
+    return tl('ui.wAt', { d: Number(get('day')), t: `${get('hour')}:${get('minute')}` });
+  } catch {
+    return '';
+  }
+}
+
+const FEED_GROUP: Partial<Record<WeatherEventId, string>> = { rainstorm: 'WRAIN', blackrain: 'WRAIN', hot: 'WHOT', cold: 'WCOLD', thunder: 'WTS', typhoon1: 'TWWIND', typhoon8: 'TWWIND' };
+
+/** 1.4.26 official feed alerts: game category + the name as issued, when, where, and the official text. */
+export function feedAlertsHtml(feed: NonNullable<WeatherView['feed']>, now = Date.now()): string {
+  if (!feed.known) return `<p>${esc(tl('alerts.unknown'))}</p>`;
+  const items = feed.alerts.map((a) => {
+    const live = alertInForce(a, now);
+    const cat = a.event ? eventLabel(a.event) : tl('alerts.other');
+    const raw = [a.name, a.nameEn && a.nameEn.toLowerCase() !== a.name.toLowerCase() ? a.nameEn : ''].filter(Boolean).join(' · ');
+    const lv = a.level.toLowerCase();
+    const tone = !a.event ? 'gray' : a.event === 'blackrain' ? 'black' : lv === 'red' || lv === 'extreme' || a.event === 'typhoon8' ? 'red' : lv === 'yellow' || lv === 'minor' ? 'yellow' : 'amber';
+    const group = (a.event && FEED_GROUP[a.event]) || 'WTS';
+    const icon = warnIcon({ code: group, group, name: raw, short: '', tone, kind: null } as unknown as HkoWarning);
+    const from = feedTime(a.onset, feed.tz);
+    const until = feedTime(a.ends, feed.tz);
+    const when = [from ? tl('ui.wFrom', { p0: from }) : '', until ? tl('ui.wUntil', { p0: until }) : ''].filter(Boolean).join(' ');
+    const parts: string[] = [];
+    if (when) parts.push(`<small class="wd-when">${esc(when)}${live ? '' : ` · ${esc(tl('ui.wNotYet'))}`}</small>`);
+    if (a.area) parts.push(`<small class="wd-area">${esc(a.area)}</small>`);
+    if (a.headline && a.headline !== a.name) parts.push(`<p>${esc(a.headline)}</p>`);
+    const body = [a.description, a.instruction].filter(Boolean).map((x) => `<p class="wd-note">${esc(x)}</p>`).join('');
+    if (body) parts.push(`<details><summary>${esc(tl('alerts.more'))}</summary>${body}</details>`);
+    return `<li class="${tone}${live ? '' : ' later'}">${icon}<span><b>${esc(cat)}</b><small>${esc(raw)}</small><span class="warn-detail">${parts.join('')}</span></span></li>`;
+  });
+  const list = items.length ? `<ul class="hko-warns">${items.join('')}</ul>` : tl('ui.259');
+  const credit = `<p class="fine">${esc(tl('alerts.rawNote'))} ${esc(tl('alerts.attrib', { p0: feed.attribution }))}</p>`;
+  return list + credit;
+}
+
 /** v1.4.1 天氣概況: its own page — real-world warnings in force plus current conditions and the forecast. */
 export function weatherPageHtml(view: View): string {
   const { cond, wx } = view;
@@ -1102,12 +1150,17 @@ export function weatherPageHtml(view: View): string {
     warns = tl('ui.261');
   } else if (wx.bureau === 'hko') {
     warns = tl('ui.262');
+  } else if (wx.feed && !wx.overridden) {
+    warns = feedAlertsHtml(wx.feed);
+  } else if (wx.mode === 'observed' && !wx.overridden) {
+    warns = tl('ui.265', { p0: tl('wx.obsNote') });
   } else {
     warns = tl('ui.265', { p0: wx.overridden ? tl('ui.263') : tl('ui.264') });
   }
   const bureauName = wx.bureau === 'smg' ? tl('ui.157') : wx.bureau === 'cwa' ? tl('ui.158') : tl('ui.159');
   const office = wx.warnings.length || extraMessages.length ? tl('ui.266', { bureauName }) : bureauName;
-  const warnCard = tl('ui.268', { p0: wx.hkoUsed ? office : tl('ui.267'), warns });
+  const feedName = wx.feed?.source && !wx.overridden ? tl(`alerts.src.${wx.feed.source}`) : '';
+  const warnCard = tl('ui.268', { p0: wx.hkoUsed ? office : feedName ? tl('ui.266', { bureauName: feedName }) : tl('ui.267'), warns });
   // Hong Kong and Macau only list days that source actually forecast. A padded day would be the game inventing weather.
   const outlook = wx.situation.trim();
   const bureauForecast = wx.bureau === 'hko' || wx.bureau === 'smg' || wx.bureau === 'cwa';

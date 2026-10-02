@@ -91,6 +91,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.23 | 水分機制：W 每小時跌 1（一日 24，慢慢跌，取代舊基本流失；落雨日照舊唔跌、一級徽章 ×0.9 照舊；熱／雨等天氣修正照舊）；澆水每下 +5、最多到 100（只有落雨可以超過 100 → 爛根照舊）；取消每日澆水限制，改為每個鐘頭（時鐘小時）最多 2 次，底部掣顯示「剩 n 次」／「HH:00 再澆」（英文 n left／At HH:00），照顧頁顯示「本小時 n/2」；酷熱澆水不變（+5、上限 100、每日一次、唔計入每小時限制）；新增「水分不足」本地通知（id 108，23:00，預計今晚結算水分會扣健康先提，每晚最多一次，跟裝置語言）；四語計法／教學更新；versionCode 30 |
 | 1.4.24 | 水分：只有真係觀測到嘅雨（警告生效／即時讀數，記喺 `dayEvents[date].rain`）先會加水、令當日唔流失；預報雨唔再加水、唔會爛根（`waterEvents()` 喺 applyWarningWater／advanceFlow／planNight／settleDay 過濾）；今晚預計「而家」顯示真實水分，未計嘅觀測雨另列；澆水掣超過 100 顯示「水分 105」，啱啱 100 顯示「已滿」（四語）。台灣：推送伺服器 /cwa 每個特報加 overview（概述）、precautions（注意事項）、onset／expires、areas（你縣市內列明嘅區）、mine／started／active，未生效或者唔包你區都照傳（加 W-C0033-002 天氣特報文字做後備）；app 喺警告下面顯示「X日 HH:MM 起／至」、概述、注意事項，同「你區唔喺發布範圍」提示；inactive 嘅特報唔觸發遊戲事件、唔推送。「現在」卡用實測風速同觀測圖示，風暴數值只喺場景。圖示：颱風／強風／烈風用風圖示，雷暴圖示只限真雷暴警告／觀測。跟動物或者拉近時，鏡頭前面嘅葉同樹皮按距離輕微變透明（鳥巢透視照舊）；versionCode 31 |
 | 1.4.25 | 鏡頭近距透明加強：拉近時，瞄準點前面嘅葉同樹皮（< 0.72 × 鏡頭距離）變 40% 不透明，到 1.02 倍先回復實心；跟住動物時，動物前面同旁邊（< 1.08 × 距離，1.45 倍回復）嘅葉、樹枝、樹幹、石頭、風車／孵化裝飾、圍欄、灌木等場景物件都變 40%（`addNearFade()` 幫 props 材質加 shader；動物同鳥巢、地面、水保持實心，同動物共用嘅材質會關掉）；`__tree.fadeInfo()` 檢查用；versionCode 32 |
+| 1.4.26 | 天氣事件只跟官方：香港／澳門／臺灣（按位置判斷，唔係按資料來源）只計天文台／氣象局／氣象署正式發出嘅警告，攞唔到都唔會改用 Open-Meteo 數字或預報；美國 NWS、加拿大 ECCC、日本 JMA（r8 JSON）、歐洲 MeteoAlarm 經推送伺服器 `GET /alerts`（`push-server/src/official.js`，EMMA_ID 多邊形 `src/geo/meteoalarm-areas.json.gz`）只計正式發出嘅警報；冇官方來源（例如中國內地）先用實測數字（Open-Meteo `past_hours=48` 已過時段＋即時讀數 ×4，`WX_OBS`：大雨 ≥30 mm/h、豪雨 ≥70 mm/h 或 3 小時 ≥100、暴風 平均 ≥63 連續 2 小時或陣風 ≥118、烈風 ≥41／≥88、雷暴要天氣代碼 ≥95）；`eventsForDate` 唔再加預報；天氣卡列官方警報（遊戲類別＋官方原名＋時間＋詳情＋來源）；成就說明同玩法加來源說明；versionCode 33 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -253,3 +254,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.25 發佈（2026-10-02）
 - 近距透明加強同跟動物時場景物件透明（見版本歷史）；推送伺服器冇改，冇重新部署。之後 main merge 入 `ios`。
+
+### 1.4.26 發佈（2026-10-02）
+- 見版本歷史；推送伺服器有改（新 `/alerts`、`official.js`、`src/geo/`），部署前備份 `/opt/tree-push/app.bak-20261002-0211`、`/var/lib/tree-push.bak-20261002-0211`（VM UTC）。之後 main merge 入 `ios`。
+- 模式：`eventMode()`（main.ts）＝ official（港澳台）／feed（`/alerts` covered）／observed；伺服器連唔到又冇 3 小時內嘅舊答案時，`likelyFeedRegion()` 粗略方框內當 feed（冇事件），唔會用數字頂替。
+- 限制：JMA 警報資料冇高溫（日本冇酷熱）；舊 `/bosai/warning/data/warning/` 自 2026-05-28 凍結，要用 `/warning/data/r8/`。MeteoAlarm EMMA_ID 多邊形來自 saratoga-weather.org 整理版（第三方）；瑞士、盧森堡等冇多邊形又冇 CAP polygon 嘅國家當冇來源（用實測數字）。英國／挪威／瑞典用警報自帶 CAP polygon。
+- 推送：香港以外（非 TW）嘅推送照舊係 Open-Meteo 預報提示（`intl.js`），唔影響遊戲事件。

@@ -54,7 +54,8 @@ describe('v1.4.24 水分：只計真係觀測到嘅雨', () => {
     const day = { date: D, code: 65, tempMax: 30, tempMin: 25, precipMm: 40, windKmh: 10, gustKmh: 20 } as never;
     expect(currentEvents({ hk: false, current: cur(), today: day })).toContain('rainstorm');
     expect(observedRainEvents({ hk: false, current: cur() })).toEqual([]);
-    expect(observedRainEvents({ hk: false, current: cur({ precipMm: 5 }) })).toEqual(['rainstorm', 'drizzle']);
+    expect(observedRainEvents({ hk: false, current: cur({ precipMm: 5 }) })).toEqual(['drizzle']);
+    expect(observedRainEvents({ hk: false, current: cur({ precipMm: 8 }) })).toEqual(['rainstorm', 'drizzle']);
     expect(observedRainEvents({ hk: true, warnings: [], current: cur({ code: 61 }) })).toEqual(['drizzle']);
   });
 });

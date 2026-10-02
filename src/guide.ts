@@ -67,7 +67,7 @@ import {
   WX_TRACKS,
   WIND_UNLOCK_STAGE,
   WX_CATEGORY_ORDER,
-  WX_NUM,
+  WX_OBS,
   type WeatherEventId,
 } from './balance';
 import { SPECIES, STAGE_NAMES, STAGE_SHARES } from './data/species';
@@ -277,12 +277,13 @@ function weatherTab(): string {
   const intlRows: string[][] = [
     [eventLabel('hot', 'intl'), tl('guide.147', { HOT_ABS_MAX_C, HOT_REL_MIN_C, NORMAL_PAST_DAYS, HOT_REL_RISE_C })],
     [L('cold'), tl('guide.148', { COLD_ABS_MIN_C, COLD_REL_MAX_C, NORMAL_PAST_DAYS, COLD_REL_DROP_C })],
-    [eventLabel('rainstorm', 'intl'), tl('guide.149', { mm: WX_NUM.rainstorm.mm })],
-    [eventLabel('blackrain', 'intl'), tl('guide.149', { mm: WX_NUM.blackrain.mm })],
-    [L('thunder'), tl('guide.150', { gust: WX_NUM.thunder.gust })],
-    [eventLabel('typhoon1', 'intl'), tl('guide.151', { gust: WX_NUM.typhoon1.gust, wind: WX_NUM.typhoon1.wind })],
-    [eventLabel('typhoon8', 'intl'), tl('guide.151', { gust: WX_NUM.typhoon8.gust, wind: WX_NUM.typhoon8.wind })],
+    [eventLabel('rainstorm', 'intl'), tl('guide.obsRain', { mm: WX_OBS.rainstorm.mmHour })],
+    [eventLabel('blackrain', 'intl'), tl('guide.obsBlack', { mm: WX_OBS.blackrain.mmHour, mm3: WX_OBS.blackrain.mm3h })],
+    [L('thunder'), tl('guide.obsThunder', { code: WX_OBS.thunderCode })],
+    [eventLabel('typhoon1', 'intl'), tl('guide.obsWind', { hours: WX_OBS.windHours, wind: WX_OBS.typhoon1.wind, gust: WX_OBS.typhoon1.gust })],
+    [eventLabel('typhoon8', 'intl'), tl('guide.obsWind', { hours: WX_OBS.windHours, wind: WX_OBS.typhoon8.wind, gust: WX_OBS.typhoon8.gust })],
   ];
+  const ev = { black: eventLabel('blackrain', 'intl'), rain: eventLabel('rainstorm', 'intl'), t8: eventLabel('typhoon8', 'intl'), t1: eventLabel('typhoon1', 'intl'), thunder: L('thunder'), hot: eventLabel('hot', 'intl'), cold: L('cold') };
   const I = (id: WeatherEventId) => eventLabel(id, 'intl');
   const twRows: string[][] = [
     [tl('guide.152'), I('typhoon1'), tl('ui.123')],
@@ -318,6 +319,9 @@ function weatherTab(): string {
     ]),
     h(tl('guide.181')),
     p(tl('guide.182', { p0: eventLabel('hot', 'intl'), p1: eventLabel('typhoon1', 'intl'), p2: eventLabel('typhoon8', 'intl'), p3: eventLabel('rainstorm', 'intl'), p4: eventLabel('blackrain', 'intl'), p5: emergencyName('rainDrain', 'intl') })),
+    p(tl('guide.feedIntro')),
+    ul([tl('guide.feedUS', ev), tl('guide.feedCA', ev), tl('guide.feedJP', ev), tl('guide.feedEU', ev)]),
+    p(tl('guide.obsIntro', { x: WX_OBS.currentToHour })),
     table([tl('guide.094'), tl('guide.183')], intlRows),
     p(tl('guide.184')),
     h(tl('guide.185')),
@@ -325,6 +329,7 @@ function weatherTab(): string {
       tl('guide.186'),
       tl('guide.187'),
       tl('guide.188'),
+      tl('guide.feedCard'),
     ].filter(Boolean)),
     h(tl('guide.189')),
     eventTableHtml(),

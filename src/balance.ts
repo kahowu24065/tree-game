@@ -297,6 +297,22 @@ export const WX_NUM = {
   blackrain: { mm: 70 },
   rainstorm: { mm: 25 },
 } as const;
+/**
+ * 1.4.26 thresholds for OBSERVED numbers — only where no official alert feed exists (e.g. mainland China). Applied to
+ * Open-Meteo's elapsed hours of the day plus the live reading (a 15-minute value, ×4 for an hourly rate); forecasts
+ * never create events. Wind must hold for `hours` consecutive hours (or one gust at `gust`). Thunder needs an observed
+ * thunderstorm weather code (≥ 95). Heat / cold keep isHotDay / isColdDay.
+ */
+export const WX_OBS = {
+  blackrain: { mmHour: 70, mm3h: 100 },
+  rainstorm: { mmHour: 30 },
+  typhoon8: { wind: 63, gust: 118 },
+  typhoon1: { wind: 41, gust: 88 },
+  windHours: 2,
+  thunderCode: 95,
+  /** Open-Meteo `current.precipitation` covers 15 minutes. */
+  currentToHour: 4,
+} as const;
 /** Game heat threshold for model numbers in / near HK (HKO WHOT decides when HKO data is there). */
 export const HK_HOT_MAX_C = 33;
 
