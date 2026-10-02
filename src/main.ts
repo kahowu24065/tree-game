@@ -1963,6 +1963,7 @@ if (DEV_PANEL) {
     viewInfo: api.viewInfo,
     zoomBy: (f: number, x?: number, y?: number) => scene3d?.zoomBy(f, x, y),
     resetView: () => scene3d?.resetView(),
+    fadeInfo: () => scene3d?.fadeInfo() ?? null,
     viewState: () => scene3d?.viewState(),
     flyers: () => scene3d?.flyerHeights() ?? [],
     animalScreen: (id: string) => scene3d?.animalScreen(id) ?? null,
