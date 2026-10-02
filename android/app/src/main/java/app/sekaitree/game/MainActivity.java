@@ -1,4 +1,4 @@
-package io.github.kahowu24065.treegame;
+package app.sekaitree.game;
 
 import android.os.Bundle;
 import android.webkit.WebView;
@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TreeBannerPlugin.class);
+        registerPlugin(TreePushPlugin.class);
         super.onCreate(savedInstanceState);
         // Opening the game starts the music bed without a tap.
         WebView webView = getBridge().getWebView();
