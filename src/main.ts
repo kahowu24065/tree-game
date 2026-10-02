@@ -1555,9 +1555,6 @@ function doAction(action: string, target: HTMLElement): void {
     case 'new-game':
       openStart();
       return;
-    case 'isle':
-      switchIsle(target?.dataset.isle === '1' ? 1 : 0);
-      return;
     case 'reset-view':
       scene3d?.resetView();
       return;
@@ -1644,7 +1641,6 @@ function localizeStatic(): void {
     ['#rail', 'html.rail'],
     ['#view-reset', 'main.064'],
     ['#sheet', 'ui.185'],
-    ['#isle-bar', 'isle.bar'],
     ['#gear', 'html.settings'],
     ['#dock', 'html.dock'],
     ['#drawer', 'html.drawer'],
@@ -1667,12 +1663,17 @@ function localizeStatic(): void {
 localizeStatic();
 wakeIsleBar();
 
-/** 1.4.29 the island bar is faint when idle, solid while touched / hovered / focused, then fades back. */
+/**
+ * 1.4.30 wordless island bar: faint when idle, solid while touched / hovered, fades back after.
+ * Swipe left on the bar → second island, right → first (only on the bar; the scene never switches islands).
+ */
 function wakeIsleBar(): void {
   const bar = document.getElementById('isle-bar');
   if (!bar) return;
   let timer = 0;
   let mouseOver = false;
+  let drag: { id: number; x: number; dx: number } | null = null;
+  const track = () => bar.querySelector<HTMLElement>('.isle-track');
   const wake = () => {
     window.clearTimeout(timer);
     bar.classList.add('awake');
@@ -1680,8 +1681,26 @@ function wakeIsleBar(): void {
   const rest = (ms: number) => {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => {
-      if (!mouseOver) bar.classList.remove('awake');
+      if (!mouseOver && !drag) bar.classList.remove('awake');
     }, ms);
+  };
+  const bounce = () => {
+    bar.classList.remove('bounce');
+    void bar.offsetWidth;
+    bar.classList.add('bounce');
+  };
+  const release = (e: PointerEvent, cancel: boolean) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = drag.dx;
+    drag = null;
+    bar.classList.remove('dragging');
+    const t = track();
+    if (t) t.style.transform = '';
+    rest(1600);
+    if (cancel || Math.abs(dx) < 24) return;
+    const to: 0 | 1 = dx < 0 ? 1 : 0;
+    if (to === isle || (to === 1 && !canOpenSecond(homeTree()))) bounce();
+    switchIsle(to);
   };
   bar.addEventListener('pointerenter', (e) => {
     mouseOver = e.pointerType === 'mouse';
@@ -1691,11 +1710,33 @@ function wakeIsleBar(): void {
     mouseOver = false;
     rest(900);
   });
-  bar.addEventListener('pointerdown', wake);
-  bar.addEventListener('pointerup', () => rest(1800));
-  bar.addEventListener('pointercancel', () => rest(900));
+  bar.addEventListener('pointerdown', (e) => {
+    wake();
+    drag = { id: e.pointerId, x: e.clientX, dx: 0 };
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add('dragging');
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.dx = e.clientX - drag.x;
+    const t = track();
+    // Follow the finger a little (rubber band), so the swipe feels attached to the bar.
+    if (t) t.style.transform = `translateX(${Math.max(-18, Math.min(18, drag.dx * 0.35))}px)`;
+  });
+  bar.addEventListener('pointerup', (e) => release(e, false));
+  bar.addEventListener('pointercancel', (e) => release(e, true));
+  bar.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    wake();
+    rest(1600);
+    const to: 0 | 1 = e.key === 'ArrowLeft' ? 1 : 0;
+    if (to === isle || (to === 1 && !canOpenSecond(homeTree()))) bounce();
+    switchIsle(to);
+  });
   bar.addEventListener('focusin', () => {
-    if (bar.querySelector(':focus-visible')) wake();
+    if (bar.matches(':focus-visible')) wake();
   });
   bar.addEventListener('focusout', () => rest(900));
 }

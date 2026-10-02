@@ -25,7 +25,8 @@ describe('1.4.29', () => {
     const scene = readFileSync('src/three/scene3d.ts', 'utf8');
     expect(scene).not.toContain('onIslandSwipe');
     expect(readFileSync('index.html', 'utf8')).toContain('id="isle-bar"');
-    for (const k of ['isle.one', 'isle.two', 'isle.locked']) expect(t(k)).not.toBe(k);
-    expect(t('guide.066')).not.toContain('滑');
+    for (const k of ['isle.aria0', 'isle.aria1', 'isle.ariaLocked']) expect(t(k)).not.toBe(k);
+    // 1.4.30: the bar is wordless (dots only); the help says to swipe the bar.
+    expect(t('guide.066')).toContain('橫條向左掃');
   });
 });
