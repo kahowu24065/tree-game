@@ -149,3 +149,94 @@ export function intlDropMessageFor({ category, from, to }, loc = 'zh-HK') {
   if (to > 0) return { title: str('drop', loc, { a, b: intlLabel(category, to, loc) }), body: str('intlDropBody', loc), category, level: to };
   return { title: str('intlEnd', loc, { a }), body: str('intlEndBody', loc), category, level: 0 };
 }
+
+// ── 1.4.27 observed numbers (no official alert feed) — ported 1:1 from tree-game src/events.ts observedEvents +
+// balance.ts WX_OBS (a tree-game test checks the port). Pushes use only hours that already happened + the live reading.
+export const WX_OBS = {
+  blackrain: { mmHour: 70, mm3h: 100 },
+  rainstorm: { mmHour: 30 },
+  typhoon8: { wind: 63, gust: 118 },
+  typhoon1: { wind: 41, gust: 88 },
+  windHours: 2,
+  thunderCode: 95,
+  currentToHour: 4,
+};
+const RAIN_CODES = (code) => (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+
+function rainLevel(pts) {
+  const max = Math.max(0, ...pts.map((h) => h.precipMm));
+  let max3 = 0;
+  for (let i = 0; i < pts.length; i++) max3 = Math.max(max3, pts.slice(Math.max(0, i - 2), i + 1).reduce((s, h) => s + h.precipMm, 0));
+  if (max >= WX_OBS.blackrain.mmHour || max3 >= WX_OBS.blackrain.mm3h) return 'blackrain';
+  if (max >= WX_OBS.rainstorm.mmHour) return 'rainstorm';
+  return null;
+}
+
+/** events.ts observedEvents (hours oldest first; current = live reading, 15-minute rain). */
+export function observedEvents(hours, current) {
+  const pts = [...hours].sort((a, b) => a.time.localeCompare(b.time));
+  if (current) pts.push({ time: current.time ?? '', precipMm: current.precipMm * WX_OBS.currentToHour, code: current.code, gustKmh: current.gustKmh, windKmh: current.windKmh });
+  const out = new Set();
+  const sustained = (min) => {
+    for (let i = 1; i < pts.length; i++) {
+      let ok = true;
+      for (let k = 0; k < WX_OBS.windHours; k++) if (!((pts[i - k]?.windKmh ?? 0) >= min)) ok = false;
+      if (ok && i + 1 >= WX_OBS.windHours) return true;
+    }
+    return false;
+  };
+  const gust = Math.max(0, ...pts.map((h) => h.gustKmh));
+  if (gust >= WX_OBS.typhoon8.gust || sustained(WX_OBS.typhoon8.wind)) out.add('typhoon8');
+  else if (gust >= WX_OBS.typhoon1.gust || sustained(WX_OBS.typhoon1.wind)) out.add('typhoon1');
+  if (pts.some((h) => h.code >= WX_OBS.thunderCode)) out.add('thunder');
+  const rain = rainLevel(pts);
+  if (rain) out.add(rain);
+  if (current ? current.precipMm >= 0.2 || RAIN_CODES(current.code) : pts.some((h) => h.precipMm >= 0.5)) out.add('drizzle');
+  return [...out];
+}
+
+/** Open-Meteo request for observed pushes: live reading, the last 24 completed hours, and 14 past days for normals. */
+export function observedUrl(lat, lon) {
+  const u = new URL('https://api.open-meteo.com/v1/forecast');
+  u.searchParams.set('latitude', lat.toFixed(4));
+  u.searchParams.set('longitude', lon.toFixed(4));
+  u.searchParams.set('current', 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m');
+  u.searchParams.set('hourly', 'temperature_2m,precipitation,weather_code,wind_gusts_10m,wind_speed_10m');
+  u.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min');
+  u.searchParams.set('timezone', 'auto');
+  u.searchParams.set('forecast_days', '1');
+  u.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
+  u.searchParams.set('past_hours', '24');
+  u.searchParams.set('forecast_hours', '1');
+  u.searchParams.set('wind_speed_unit', 'kmh');
+  return u.toString();
+}
+
+export function parseObserved(body) {
+  const c = body?.current ?? {};
+  const now = c.time ?? '';
+  if (!now) throw new Error('no current reading');
+  const h = body.hourly ?? {};
+  const hours = (h.time ?? []).map((time, i) => ({ time, tempC: num(h.temperature_2m?.[i], null), precipMm: num(h.precipitation?.[i], 0), code: num(h.weather_code?.[i], 0), gustKmh: num(h.wind_gusts_10m?.[i], 0), windKmh: num(h.wind_speed_10m?.[i], 0) })).filter((x) => x.time <= now);
+  const d = body.daily ?? {};
+  const today = now.slice(0, 10);
+  const first = (d.time ?? []).findIndex((t) => t >= today);
+  const avg = (vals) => {
+    const ok = (vals ?? []).slice(0, first < 0 ? undefined : first).filter((v) => typeof v === 'number' && Number.isFinite(v));
+    return ok.length ? Math.round((ok.reduce((a, b) => a + b, 0) / ok.length) * 10) / 10 : null;
+  };
+  return {
+    current: { time: now, tempC: num(c.temperature_2m, 20), precipMm: num(c.precipitation, 0), code: num(c.weather_code, 0), windKmh: num(c.wind_speed_10m, 0), gustKmh: num(c.wind_gusts_10m, 0) },
+    hours,
+    today,
+    normals: first > 0 ? { max: avg(d.temperature_2m_max), min: avg(d.temperature_2m_min) } : null,
+  };
+}
+
+/** Severe events going on now: the last 3 completed hours + the live reading; heat / cold from today's observed temperatures. */
+export function observedEventsIntl(w) {
+  const recent = w.hours.slice(-3);
+  const todayTemps = [w.current.tempC, ...w.hours.filter((x) => x.time.slice(0, 10) === w.today && x.tempC !== null).map((x) => x.tempC)];
+  const temps = { tempMax: Math.max(...todayTemps), tempMin: Math.min(...todayTemps), normMax: w.normals?.max ?? null, normMin: w.normals?.min ?? null };
+  return [...new Set([...observedEvents(recent, w.current), ...tempEvents(temps)])].filter((e) => e !== 'drizzle');
+}

@@ -26,6 +26,8 @@ export interface OfficialAlert {
   area: string;
   /** In force when the server answered. */
   active: boolean;
+  /** 1.4.27 'jp-heat' / 'jp-heat-special' (環境省 熱中症警戒アラート / 特別警戒アラート) — shown with our translated name. */
+  kind?: string;
 }
 
 export interface OfficialAlerts {
@@ -57,6 +59,7 @@ export function parseAlerts(body: unknown, now = Date.now()): OfficialAlerts | n
     instruction: s(a.instruction),
     area: s(a.area),
     active: a.active === true,
+    ...(s(a.kind) ? { kind: s(a.kind) } : {}),
   }));
   const source = ['nws', 'eccc', 'jma', 'meteoalarm'].includes(s(b.source)) ? (s(b.source) as AlertSource) : undefined;
   return { covered: b.covered && Boolean(source), source, attribution: s(b.attribution), link: s(b.link), alerts, fetchedAt: now };

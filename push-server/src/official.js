@@ -13,6 +13,8 @@ import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { feedStr, intlLabel, normLocale, str } from './i18n.js';
+
 const UA = 'sekai-tree-push (github.com/kahowu24065/tree-game)';
 const FEED_TTL = 5 * 60_000;
 const MAX_TEXT = 1500;
@@ -20,7 +22,7 @@ const MAX_TEXT = 1500;
 export const ATTRIBUTION = {
   nws: 'U.S. National Weather Service (NOAA) — api.weather.gov',
   eccc: 'Environment and Climate Change Canada — MSC GeoMet, Open Government Licence – Canada',
-  jma: 'Japan Meteorological Agency 気象庁 — www.jma.go.jp (municipality lookup: GSI 国土地理院)',
+  jma: 'Japan Meteorological Agency 気象庁 — www.jma.go.jp; heatstroke alerts: Ministry of the Environment 環境省 — www.wbgt.env.go.jp (municipality lookup: GSI 国土地理院)',
   meteoalarm: 'MeteoAlarm (EUMETNET) / national meteorological services — CC BY 4.0',
 };
 const LINKS = { nws: 'https://www.weather.gov/', eccc: 'https://weather.gc.ca/', jma: 'https://www.jma.go.jp/bosai/warning/', meteoalarm: 'https://meteoalarm.org/' };
@@ -161,6 +163,61 @@ export function parseJma(reports, class20, now) {
   return out;
 }
 
+// ── Japan heatstroke alerts (環境省 熱中症予防情報サイト) ─────────────────────────────────────────────────────────
+// 熱中症警戒アラート (WBGT ≥ 33) / 熱中症特別警戒アラート (WBGT ≥ 35), per 府県予報区 — the same codes as JMA offices.
+// Files: https://www.wbgt.env.go.jp/alert/dl/YYYY/alert_YYYYMMDD_HH.csv (HH 05 / 17 / 14; season late April – October).
+// Flags: 0 none, 1 警戒アラート, 2 特別警戒判定 (special not issued → counted as 警戒), 3 特別警戒アラート, 9 not in this file's window.
+export const JP_HEAT = {
+  1: { kind: 'jp-heat', name: '熱中症警戒アラート', nameEn: 'Heatstroke Alert' },
+  3: { kind: 'jp-heat-special', name: '熱中症特別警戒アラート', nameEn: 'Special Heatstroke Alert' },
+};
+function csvRows(text) {
+  return String(text ?? '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((l) => l.split(','));
+}
+/** { report: 'YYYY-MM-DDTHH:MM', target1, target2, flags: { office: [flag1, flag2] } } or null. */
+export function parseHeatCsv(text) {
+  const rows = csvRows(text);
+  const head = Object.fromEntries(rows.filter((r) => r.length > 1 && /^[A-Za-z]/.test(r[0])).map((r) => [r[0], r[1]]));
+  const iso = (d) => (d ? d.replace(/\//g, '-') : null);
+  if (!head.ReportDate) return null;
+  const flags = {};
+  for (const r of rows) if (/^\d{6}$/.test(r[3] ?? '')) flags[r[3]] = [Number(r[6]), Number(r[7])];
+  return { report: `${iso(head.ReportDate)}T${(head.ReportTime ?? '00:00').slice(0, 5)}`, target1: iso(head.TargetDate1), target2: iso(head.TargetDate2), flags };
+}
+/** JST calendar date of `now` shifted by `days`. */
+export function jstDate(now, days = 0) {
+  return new Date(now + 9 * 3600_000 + days * 86400_000).toISOString().slice(0, 10);
+}
+/** Heat alerts for an office from the parsed files (newest first): today's (in force) and tomorrow's (issued, later). */
+export function heatAlerts(files, office, now) {
+  const today = jstDate(now);
+  const tomorrow = jstDate(now, 1);
+  const out = [];
+  for (const [date, active] of [[today, true], [tomorrow, false]]) {
+    let flag = null;
+    let report = null;
+    for (const f of files) {
+      if (!f) continue;
+      const col = f.target1 === date ? 0 : f.target2 === date ? 1 : -1;
+      const raw = col < 0 ? undefined : f.flags[office]?.[col];
+      const v = raw === 2 ? 1 : raw; // 2 = special-alert criteria met but not issued → WBGT ≥ 35 still means the ordinary alert
+      if (v === undefined || v === 9) continue;
+      if (flag === null) {
+        flag = v;
+        report = f.report;
+      } else if (v === 3 && flag !== 3) flag = 3; // a special alert stays issued for its day
+    }
+    const def = JP_HEAT[flag];
+    if (!def) continue;
+    const ends = new Date(Date.parse(`${date}T00:00:00+09:00`) + 86400_000).toISOString();
+    out.push({ id: `heat-${office}-${date}`, event: 'hot', kind: def.kind, name: def.name, nameEn: def.nameEn, level: flag === 3 ? 'special' : 'alert', onset: `${date}T00:00:00+09:00`, ends, headline: '', description: '', instruction: '', area: '', active, report });
+  }
+  return out;
+}
+
 // ── Europe MeteoAlarm ───────────────────────────────────────────────────────────────────────────────────────────
 export const MA_SLUGS = { AT: 'austria', BE: 'belgium', BA: 'bosnia-herzegovina', BG: 'bulgaria', HR: 'croatia', CY: 'cyprus', CZ: 'czechia', DK: 'denmark', EE: 'estonia', FI: 'finland', FR: 'france', DE: 'germany', GR: 'greece', HU: 'hungary', IS: 'iceland', IE: 'ireland', IL: 'israel', IT: 'italy', LV: 'latvia', LT: 'lithuania', LU: 'luxembourg', MT: 'malta', MD: 'moldova', ME: 'montenegro', NL: 'netherlands', MK: 'republic-of-north-macedonia', NO: 'norway', PL: 'poland', PT: 'portugal', RO: 'romania', RS: 'serbia', SK: 'slovakia', SI: 'slovenia', ES: 'spain', SE: 'sweden', CH: 'switzerland', UK: 'united-kingdom' };
 /** Feeds that carry CAP polygons instead of EMMA_ID codes, with a rough box for coverage. */
@@ -269,6 +326,27 @@ export function createOfficialClient({ fetchImpl = globalThis.fetch, now = () =>
     cache.set(key, { at: now(), value });
     return value;
   }
+  async function getText(url) {
+    const res = await fetchImpl(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(15_000) });
+    if (res.status === 404 || res.status === 403) return null;
+    if (!res.ok) throw new Error(`${new URL(url).host} HTTP ${res.status}`);
+    return res.text();
+  }
+  /** Today's and yesterday's heat files, newest first (missing ones skipped; out of season → none). */
+  async function heatFiles() {
+    const t = now();
+    const files = [];
+    for (const [days, hh] of [[0, '17'], [0, '14'], [0, '05'], [-1, '17'], [-1, '14']]) {
+      const d = jstDate(t, days);
+      const url = `https://www.wbgt.env.go.jp/alert/dl/${d.slice(0, 4)}/alert_${d.replace(/-/g, '')}_${hh}.csv`;
+      const f = await cached(`heat:${d}:${hh}`, 20 * 60_000, async () => {
+        const text = await getText(url).catch(() => null);
+        return text ? parseHeatCsv(text) : null;
+      });
+      if (f) files.push(f);
+    }
+    return files;
+  }
   async function getJson(url, { allow400 = false } = {}) {
     const res = await fetchImpl(url, { headers: { 'user-agent': UA, accept: 'application/geo+json, application/json' }, signal: AbortSignal.timeout(15_000) });
     if (allow400 && (res.status === 400 || res.status === 404)) return null;
@@ -296,7 +374,8 @@ export function createOfficialClient({ fetchImpl = globalThis.fetch, now = () =>
     const office = jmaOffice(areaJson, class20);
     if (!office) return null;
     const reports = await cached(`jma:${office}`, FEED_TTL, () => getJson(`https://www.jma.go.jp/bosai/warning/data/r8/${office}.json`));
-    return answer('jma', parseJma(reports, class20, now()));
+    const heat = await heatFiles().catch(() => []);
+    return answer('jma', [...parseJma(reports, class20, now()), ...heatAlerts(heat, office, now())]);
   }
   async function meteoalarm(lat, lon) {
     const areas = emmaAt(loadMeteoalarmAreas(areasFile), lat, lon);
@@ -327,4 +406,50 @@ export function createOfficialClient({ fetchImpl = globalThis.fetch, now = () =>
     return null;
   }
   return { lookup };
+}
+
+// ── pushes from official alerts (1.4.27) ───────────────────────────────────────────────────────────────────────
+const EVENT_LEVEL = { hot: ['heat', 1], cold: ['cold', 1], rainstorm: ['rain', 1], blackrain: ['rain', 2], typhoon1: ['typhoon', 1], thunder: ['typhoon', 2], typhoon8: ['typhoon', 3] };
+
+/** Alerts in force → push levels per category (as the game counts them) + the alert behind each level. */
+export function feedLevels(answer, now) {
+  const levels = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+  const names = {};
+  for (const a of answer?.alerts ?? []) {
+    if (!a.event || !a.active || (ms(a.ends) !== null && ms(a.ends) <= now) || !EVENT_LEVEL[a.event]) continue;
+    const [cat, lv] = EVENT_LEVEL[a.event];
+    if (lv > levels[cat] || (lv === levels[cat] && a.kind === 'jp-heat-special')) {
+      levels[cat] = lv;
+      names[cat] = { name: a.name, nameEn: a.nameEn, kind: a.kind ?? null, src: a.kind?.startsWith('jp-heat') ? 'moe' : answer.source };
+    }
+  }
+  return { levels, names };
+}
+
+const CJK = /[\u3040-\u30ff\u4e00-\u9fff]/;
+/** An alert's name in the device's language: our translation for 熱中症 alerts; else as issued (English for zh players when the original isn't CJK). */
+export function feedName(n, loc) {
+  if (!n) return null;
+  const l = normLocale(loc);
+  if (n.kind === 'jp-heat') return feedStr('jpHeat', l);
+  if (n.kind === 'jp-heat-special') return feedStr('jpHeatSpecial', l);
+  if (l === 'en') return n.nameEn || n.name;
+  return CJK.test(n.name ?? '') ? n.name : n.nameEn || n.name;
+}
+const act = (cat, loc) => str(cat === 'rain' ? 'act_rainIntl' : cat === 'typhoon' ? 'act_typhoonHigh' : `act_${cat}`, loc);
+
+export function feedMessageFor({ category, level }, names, reminder = false, loc = 'zh-HK') {
+  const n = names?.[category];
+  const name = feedName(n, loc) ?? intlLabel(category, level, loc);
+  const src = feedStr(`src_${n?.src ?? 'meteoalarm'}`, loc);
+  const body = feedStr('feedBody', loc, { label: intlLabel(category, level, loc), act: act(category, loc) });
+  return reminder
+    ? { title: feedStr('feedStill', loc, { name }), body: str('reminder', loc, { body: act(category, loc) }), category, level }
+    : { title: feedStr('feedIssue', loc, { src, name }), body, category, level };
+}
+
+export function feedDropMessageFor({ category, from, to }, before, after, loc = 'zh-HK') {
+  const a = feedName(before?.[category], loc) ?? intlLabel(category, from, loc);
+  if (to > 0) return { title: str('drop', loc, { a, b: feedName(after?.[category], loc) ?? intlLabel(category, to, loc) }), body: feedStr('feedDropBody', loc), category, level: to };
+  return { title: feedStr('feedEnd', loc, { a }), body: feedStr('feedEndBody', loc, { src: feedStr(`src_${before?.[category]?.src ?? 'meteoalarm'}`, loc) }), category, level: 0 };
 }

@@ -61,11 +61,16 @@ export function parseState(body, now = Date.now()) {
   const lat = Number(body.region?.lat);
   const lon = Number(body.region?.lon);
   const region = Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat: Math.round(lat * 2) / 2, lon: Math.round(lon * 2) / 2 } : null;
+  const alat = Number(body.area?.lat);
+  const alon = Number(body.area?.lon);
+  // 1.4.27 alert area (~0.1°) for official-alert pushes outside HK / Macau / Taiwan.
+  const area = region && Number.isFinite(alat) && Number.isFinite(alon) && Math.abs(alat) <= 90 && Math.abs(alon) <= 180 ? { lat: Math.round(alat * 10) / 10, lon: Math.round(alon * 10) / 10 } : null;
   return {
     day: body.day,
     tz,
     done: { heat: bool(d.heat), drain: bool(d.drain), reinforce: bool(d.reinforce), warm: bool(d.warm) },
     region,
+    area,
     isMO: body.isMO === true,
     // Taiwan (中央氣象署): its own poll by county / town; never the HKO poll or the Open-Meteo cells.
     isTW: body.isTW === true && body.isMO !== true,

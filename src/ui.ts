@@ -1093,7 +1093,8 @@ export function feedAlertsHtml(feed: NonNullable<WeatherView['feed']>, now = Dat
   const items = feed.alerts.map((a) => {
     const live = alertInForce(a, now);
     const cat = a.event ? eventLabel(a.event) : tl('alerts.other');
-    const raw = [a.name, a.nameEn && a.nameEn.toLowerCase() !== a.name.toLowerCase() ? a.nameEn : ''].filter(Boolean).join(' · ');
+    const local = a.kind === 'jp-heat' ? tl('alerts.jpHeat') : a.kind === 'jp-heat-special' ? tl('alerts.jpHeatSpecial') : '';
+    const raw = [local, a.name, !local && a.nameEn && a.nameEn.toLowerCase() !== a.name.toLowerCase() ? a.nameEn : ''].filter(Boolean).join(' · ');
     const lv = a.level.toLowerCase();
     const tone = !a.event ? 'gray' : a.event === 'blackrain' ? 'black' : lv === 'red' || lv === 'extreme' || a.event === 'typhoon8' ? 'red' : lv === 'yellow' || lv === 'minor' ? 'yellow' : 'amber';
     const group = (a.event && FEED_GROUP[a.event]) || 'WTS';
