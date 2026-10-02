@@ -93,7 +93,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.25 | 鏡頭近距透明加強：拉近時，瞄準點前面嘅葉同樹皮（< 0.72 × 鏡頭距離）變 40% 不透明，到 1.02 倍先回復實心；跟住動物時，動物前面同旁邊（< 1.08 × 距離，1.45 倍回復）嘅葉、樹枝、樹幹、石頭、風車／孵化裝飾、圍欄、灌木等場景物件都變 40%（`addNearFade()` 幫 props 材質加 shader；動物同鳥巢、地面、水保持實心，同動物共用嘅材質會關掉）；`__tree.fadeInfo()` 檢查用；versionCode 32 |
 | 1.4.26 | 天氣事件只跟官方：香港／澳門／臺灣（按位置判斷，唔係按資料來源）只計天文台／氣象局／氣象署正式發出嘅警告，攞唔到都唔會改用 Open-Meteo 數字或預報；美國 NWS、加拿大 ECCC、日本 JMA（r8 JSON）、歐洲 MeteoAlarm 經推送伺服器 `GET /alerts`（`push-server/src/official.js`，EMMA_ID 多邊形 `src/geo/meteoalarm-areas.json.gz`）只計正式發出嘅警報；冇官方來源（例如中國內地）先用實測數字（Open-Meteo `past_hours=48` 已過時段＋即時讀數 ×4，`WX_OBS`：大雨 ≥30 mm/h、豪雨 ≥70 mm/h 或 3 小時 ≥100、暴風 平均 ≥63 連續 2 小時或陣風 ≥118、烈風 ≥41／≥88、雷暴要天氣代碼 ≥95）；`eventsForDate` 唔再加預報；天氣卡列官方警報（遊戲類別＋官方原名＋時間＋詳情＋來源）；成就說明同玩法加來源說明；versionCode 33 |
 | 1.4.27 | 香港／澳門／臺灣以外嘅推送改跟官方：有官方來源（NWS／ECCC／JMA／MeteoAlarm，經 `official.lookup`）就按正式發出嘅警報推（開始＋升級＋取消，降級／取消要連續 2 次確認，裝置語言，通知寫官方名稱），冇來源嘅地方只按實測數字（Open-Meteo 已過 3 小時＋即時讀數，`intl.js` `observedEventsIntl`），唔再按預報；每 10 分鐘一輪，按 ~0.1° 地區（新 app 傳 `area`，舊 app 用 0.5° `region`）合併查詢、feed 有快取；日本加環境省熱中症警戒アラート（WBGT≥33）／熱中症特別警戒アラート（WBGT≥35）（`wbgt.env.go.jp/alert/dl/` CSV，按府縣予報區＝JMA office 代碼）→ 酷熱，天氣卡顯示四語名稱；玩法說明更新；versionCode 34 |
-| 1.4.28 | 純文字：玩法「推送通知」分頁刪走「應急提醒」「防止亂跳」「本機提醒（唔使網絡）」三段（guide.203–211 已刪）；玩法分頁「目標」由「冇完結日：」起改為「生長到打破世界最高紀錄，解鎖第二座空島，種更多的「世界之樹」」（四語）；versionCode 35 |
+| 1.4.28 | 純文字：玩法「推送通知」分頁刪走「應急提醒」「防止亂跳」「本機提醒（唔使網絡）」三段（guide.203–211 已刪）；玩法分頁「目標」由「冇完結日：」起改為「生長到打破世界最高紀錄，解鎖第二座空島，種更多的「世界之樹」」（四語）；圖鑑「樹種」卡刪走資料出處連結（ui.286 唔再用 `sp.source`，資料仍留喺 `data/species.ts`）同 species.026 嘅出處括號；versionCode 35 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -270,4 +270,4 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 限制：官方來源一輪攞唔到就嗰輪唔推（保留狀態，唔會誤報取消）；MeteoAlarm 多邊形係第三方整理。
 
 ### 1.4.28 發佈（2026-10-02）
-- 只改文字（`guide.ts` pushTab、`guide.006`）；推送伺服器冇改。
+- 只改文字（`guide.ts` pushTab、`guide.006`、圖鑑樹種出處）；推送伺服器冇改。
