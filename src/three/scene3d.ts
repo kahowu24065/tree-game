@@ -137,6 +137,7 @@ export class Scene3D {
   private followOn = false;
   /** 0 solid crown … 1 while the nest is being watched. */
   private nestPeek = 0;
+  private nearFade = 0;
   private followAz = 0;
   private followPos = new THREE.Vector3();
   private heatK = 0;
@@ -1174,13 +1175,23 @@ export class Scene3D {
     this.viewNudgeAt = performance.now();
   }
 
-  /** Fade the crown and branches so a nest on an inner branch can be seen. */
-  private applyNestPeek(on: boolean, dt: number): void {
+  /**
+   * Fade the crown and branches so a nest on an inner branch can be seen. v1.4.24: also a gentle near-camera fade of
+   * leaves and bark (only what is closer than the subject) whenever an animal is followed or the view is zoomed in.
+   */
+  private applyNestPeek(on: boolean, dt: number, near = false, dist = 1): void {
     const goal = on ? 1 : 0;
-    this.nestPeek += (goal - this.nestPeek) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 4));
+    const k = dt === 0 ? 1 : 1 - Math.exp(-dt * 4);
+    this.nestPeek += (goal - this.nestPeek) * k;
     if (Math.abs(this.nestPeek - goal) < 0.001) this.nestPeek = goal;
     peekUniform.uPeek.value = this.nestPeek;
-    const fade = this.nestPeek > 0.04;
+    const nearGoal = near ? 1 : 0;
+    this.nearFade += (nearGoal - this.nearFade) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 3));
+    if (Math.abs(this.nearFade - nearGoal) < 0.001) this.nearFade = nearGoal;
+    peekUniform.uNear.value = this.nearFade;
+    peekUniform.uNearR.value.set(dist * 0.28, dist * 0.8);
+    const peek = this.nestPeek > 0.04;
+    const fade = peek || this.nearFade > 0.04;
     const group = this.tree?.group;
     if (!group) return;
     group.traverse((o) => {
@@ -1188,10 +1199,12 @@ export class Scene3D {
       const part = mesh.userData?.treePart;
       if ((part !== 'bark' && part !== 'leaf') || !(mesh.material instanceof THREE.Material)) return;
       const m = mesh.material;
-      if (m.transparent !== fade) {
+      // The nest peek drops depth writes (see the whole crown through itself); the near fade keeps them, so only
+      // the leaves in front go see-through, onto the subject and the sky.
+      if (m.transparent !== fade || m.depthWrite !== !peek) {
+        if (m.transparent !== fade) m.needsUpdate = true;
         m.transparent = fade;
-        m.depthWrite = !fade;
-        m.needsUpdate = true;
+        m.depthWrite = !peek;
       }
     });
   }
@@ -1845,7 +1858,6 @@ export class Scene3D {
       dist = Math.max(0.22, focus.size * (chase ? 5.5 : 4.2)) * this.followZoom;
     }
     this.followOn = Boolean(focus);
-    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt);
     // Follow-cam looks from lower down so animals are seen in profile (chase: just above and behind).
     this.lift += (this.liftGoal - this.lift) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.5));
     const camEl = focus ? clamp((chase ? 0.2 : Math.min(el, 0.38)) + this.followOrbitEl + this.lift, -0.25, 1.25) : el;
@@ -1894,6 +1906,7 @@ export class Scene3D {
       this.followBias = this.followBiasGoal = 0;
       this.followCap = Infinity;
     }
+    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt, Boolean(focus) || this.zoomGoal < 0.97, dist);
     this.camera.position.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
     // Never put the camera under the ground when zoomed right in.
     if (this.isZoomed() || focus) {
@@ -2133,8 +2146,9 @@ export class Scene3D {
     const ground = new THREE.Mesh(new THREE.CylinderGeometry(build.canopyRadius * 1.1 + gm, build.canopyRadius * 1.0 + gm, build.height * 0.02, 20), new THREE.MeshStandardMaterial({ color: '#8cc26a', flatShading: true }));
     ground.position.y = -build.height * 0.01;
     scene.add(ground);
-    const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value, peek: peekUniform.uPeek.value };
+    const saved = { w: windUniforms.uWind.value, g: windUniforms.uGust.value, h: windUniforms.uHeight.value, peek: peekUniform.uPeek.value, near: peekUniform.uNear.value };
     peekUniform.uPeek.value = 0;
+    peekUniform.uNear.value = 0;
     windUniforms.uWind.value = 0;
     windUniforms.uGust.value = 0;
     windUniforms.uHeight.value = build.localHeight;
@@ -2150,6 +2164,7 @@ export class Scene3D {
     windUniforms.uGust.value = saved.g;
     windUniforms.uHeight.value = saved.h;
     peekUniform.uPeek.value = saved.peek;
+    peekUniform.uNear.value = saved.near;
     build.dispose();
     ground.geometry.dispose();
     this.speciesThumbs.set(key, url);

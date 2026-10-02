@@ -19,6 +19,15 @@ export interface CwaRawWarning {
   name: string;
   issued?: string;
   text?: string;
+  /** v1.4.24 push server: 概述、注意(警戒)事項, onset / expiry, listed districts and whether this one is covered / started. */
+  overview?: string;
+  precautions?: string;
+  onset?: string;
+  expires?: string;
+  areas?: string[];
+  mine?: boolean;
+  started?: boolean;
+  active?: boolean;
 }
 
 export interface CwaResponse {
@@ -75,7 +84,20 @@ export function cwaWarningName(raw: string): string {
 }
 
 /** One CWA warning → the shared warning shape. The name is CWA's own, shown in the current language. */
-export function mapCwaWarning(w: CwaRawWarning): HkoWarning | null {
+export function mapCwaWarning(w: CwaRawWarning, place = ''): HkoWarning | null {
+  const out = mapCwaBase(w);
+  if (!out) return null;
+  const inactive = w.active === false || w.started === false || w.mine === false;
+  const overview = (w.overview ?? '').trim();
+  const precautions = (w.precautions ?? '').trim();
+  const detail =
+    overview || precautions || w.onset || w.areas?.length
+      ? { overview, precautions, onset: w.onset ?? '', expires: w.expires ?? '', areas: w.areas ?? [], mine: w.mine !== false, started: w.started !== false, place }
+      : undefined;
+  return { ...out, ...(inactive ? { inactive: true } : {}), ...(detail ? { detail } : {}) };
+}
+
+function mapCwaBase(w: CwaRawWarning): HkoWarning | null {
   const group = GROUP[w.type];
   if (!group || !(w.level >= 1)) return null;
   const level = Math.round(w.level);
@@ -102,8 +124,12 @@ export function mapCwaWarning(w: CwaRawWarning): HkoWarning | null {
 const ORDER: Record<string, number> = { TWTY: 0, TWWIND: 1, TWTS: 2, TWRAIN: 3, TWHOT: 4, TWCOLD: 5, TWFOG: 6 };
 
 export function parseCwa(body: CwaResponse, now = Date.now()): CwaBundle {
-  const warnings = (body.warnings ?? []).map(mapCwaWarning).filter((w): w is HkoWarning => Boolean(w)).sort((a, b) => (ORDER[a.group] ?? 9) - (ORDER[b.group] ?? 9));
-  const messages = [...new Set((body.warnings ?? []).map((w) => (w.text ?? '').trim()).filter(Boolean))];
+  const warnings = (body.warnings ?? [])
+    .map((w) => mapCwaWarning(w, body.town ?? ''))
+    .filter((w): w is HkoWarning => Boolean(w))
+    .sort((a, b) => Number(Boolean(a.inactive)) - Number(Boolean(b.inactive)) || (ORDER[a.group] ?? 9) - (ORDER[b.group] ?? 9));
+  // Older push servers only send `text`; a bulletin with its own detail is shown under its warning instead.
+  const messages = [...new Set((body.warnings ?? []).filter((w) => !w.overview && !w.precautions).map((w) => (w.text ?? '').trim()).filter(Boolean))];
   const c = body.current;
   const place = body.town ? `${body.county}${body.town}` : body.county;
   return {

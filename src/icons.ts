@@ -1,3 +1,4 @@
+import type { StormKind } from './types';
 /** Inline SVG icons (no emoji, so headless browsers and old phones render them the same). */
 const s = (body: string, vb = '0 0 24 24') =>
   `<svg viewBox="${vb}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
@@ -39,7 +40,11 @@ export const ICONS = {
 export type IconName = keyof typeof ICONS;
 
 /** Colourful weather illustration. When an HKO icon number is given it wins over the WMO code. */
-export function weatherArt(code: number, night: boolean, storm: boolean, hkoIcon?: number): string {
+/**
+ * `storm`: the scene's storm kind. v1.4.24: 颱風／烈風 (typhoon, gale) draw WIND, heavy rain draws a downpour; the
+ * thunder cloud is only for a real thunderstorm (WMO ≥ 95, HKO icon 65, or `true` = a thunderstorm warning in force).
+ */
+export function weatherArt(code: number, night: boolean, storm: StormKind | boolean | null | undefined, hkoIcon?: number): string {
   const sunArt = (color = '#ffc94a') =>
     `<g><circle cx="19" cy="17" r="8" fill="${color}"/><g stroke="${color}" stroke-width="2.4" stroke-linecap="round"><path d="M19 3.5v3M19 27.5v3M5.5 17h3M29.5 17h3M9.5 7.5l2 2M26.5 24.5l2 2M28.5 7.5l-2 2M9.5 26.5l2-2"/></g></g>`;
   const moon = '<path d="M30 20a11 11 0 0 1-14-14 11 11 0 1 0 14 14z" fill="#ffe7a3" stroke="#f1c75b" stroke-width="1.5"/>';
@@ -84,7 +89,10 @@ export function weatherArt(code: number, night: boolean, storm: boolean, hkoIcon
     }
   }
   if (body === null) {
-    if (storm || code >= 95) body = cloud('#8f9aa8', 0, -2) + bolt + drops;
+    const thunder = storm === true || code >= 95;
+    if (thunder) body = cloud('#8f9aa8', 0, -2) + bolt + drops;
+    else if (storm === 'typhoon' || storm === 'gale') body = (storm === 'typhoon' ? cloud('#b9c3ce', -3, -14) : '') + wind.replace('#7fa7c9', storm === 'typhoon' ? '#4f7aa3' : '#5f8db5');
+    else if (storm === 'heavy-rain') body = cloud('#9aa6b4', 0, -3) + manyDrops;
     else if (code >= 51) body = cloud('#d8e0e8', 0, -2) + drops;
     else if (code === 45 || code === 48) body = cloud('#e7edf1', 0, -4) + fog;
     else if (code === 3) body = cloud('#e5ebf0', -4, -6) + cloud('#f7fafc', 2, 0);

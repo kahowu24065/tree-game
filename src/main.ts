@@ -1,7 +1,7 @@
 import './style.css';
 import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
-import { condForEvent, currentEvents, sceneCond, severeCountdown, type Countdown } from './events';
+import { condForEvent, currentEvents, observedRainEvents, sceneCond, severeCountdown, type Countdown } from './events';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc } from './util';
@@ -263,6 +263,12 @@ function liveEvents(): WeatherEventId[] {
   return currentEvents({ hk: officialActive(), warnings: weather.hko?.warnings, current: weather.current, today: day });
 }
 
+/** v1.4.24: rain really falling now (warnings in force / live reading) — the only rain that counts for 水分. */
+function liveRain(): WeatherEventId[] {
+  if (weather.provider === 'sim' && !weather.hko) return [];
+  return observedRainEvents({ hk: officialActive(), warnings: weather.hko?.warnings, current: weather.current });
+}
+
 /** Events the day is settled with (manual developer weather wins). */
 function eventsFor(date: string): WeatherEventId[] {
   if (manual()) return dev.events.length ? [...dev.events] : ['clear'];
@@ -448,6 +454,7 @@ function view(input: SceneInput): View {
       station: tName(weather.station),
       reading: !hk || Boolean(weather.hko?.current),
       humidity: manual() || (hk && !weather.hko?.current) ? undefined : weather.current.humidity,
+      obs: manual() || weather.origin === 'offline' || (weather.provider === 'sim' && !weather.hko) ? undefined : { code: weather.current.code, windKmh: weather.current.windKmh, gustKmh: weather.current.gustKmh, precipMm: weather.current.precipMm },
       rainInHours: weather.rainInHours ?? null,
       error: weather.error,
       overridden: manual(),
@@ -909,6 +916,8 @@ function syncWarningWater(): boolean {
   if (!state.started || state.over) return false;
   // Real weather: only what was actually seen today (HKO warnings / live detection), not forecast guesses — those
   // still count at the nightly settlement (and already show in 今晚預計). Manual developer weather counts at once.
+  // v1.4.24: rain counts only when observed live (recorded in dayEvents[].rain); manual weather counts as observed.
+  if (manual()) recordEvents(state, today(), [], false, todayEvents());
   const seen = manual() ? todayEvents() : (state.dayEvents[today()]?.events ?? []);
   const hits = applyWarningWater(state, today(), seen, meta, virtualNow());
   if (!hits.length) return false;
@@ -936,7 +945,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
   if (snapshot.provider !== 'sim' || snapshot.hko) {
     const events = liveEvents();
     const had = state.dayEvents[today()]?.events ?? [];
-    recordEvents(state, today(), events, officialActive(snapshot));
+    recordEvents(state, today(), events, officialActive(snapshot), liveRain());
     const fresh = events.filter((e) => WEATHER_EVENTS[e].severe && !had.includes(e));
     const watered = today() === before && syncWarningWater();
     if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: usesSmg(snapshot) ? tl('main.005') : usesCwa(snapshot) ? tl('main.006') : officialActive(snapshot) ? tl('main.007') : tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));

@@ -81,7 +81,13 @@ test('大雷雨即時訊息: NCDR feed → CWA CAP → thunder (wind level 2, ha
   const w = cwaWarnings({ thunderCap }, '臺北市', '信義區', at);
   assert.deepEqual(w.map((x) => x.name), ['大雷雨即時訊息']);
   assert.deepEqual(eventsFromCwa(w), ['thunder']);
-  assert.deepEqual(cwaWarnings({ thunderCap }, '臺北市', '中正區', at), []);
+  // 1.4.24: another town of the county → shown (areas, mine false) but no event.
+  const other = cwaWarnings({ thunderCap }, '臺北市', '中正區', at);
+  assert.equal(other.length, 1);
+  assert.equal(other[0].mine, false);
+  assert.deepEqual(other[0].areas, ['信義區']);
+  assert.deepEqual(eventsFromCwa(other), []);
+  assert.deepEqual(cwaWarnings({ thunderCap }, '高雄市', '前鎮區', at), []);
   assert.deepEqual(cwaWarnings({ thunderCap }, '臺北市', '信義區', Date.parse('2026-10-01T15:10:00+08:00')), []);
   assert.deepEqual(parseCapXml(cap.replace('<msgType>Alert', '<msgType>Cancel')), []);
   const { levels, names } = twLevels(w);
@@ -91,4 +97,37 @@ test('大雷雨即時訊息: NCDR feed → CWA CAP → thunder (wind level 2, ha
   const both = twLevels([...w, { type: 'wind', level: 3, name: '陸上強風特報（紅色燈號）' }]);
   assert.equal(both.levels.typhoon, 3);
   assert.equal(both.names.typhoon, '陸上強風特報（紅色燈號）');
+});
+
+test('1.4.24 陸上強風 not yet started / other towns: 概述、注意事項、onset, areas, no event', async () => {
+  const { readFileSync } = await import('node:fs');
+  const sets = JSON.parse(readFileSync(new URL('./fixtures/cwa-wind-upcoming.json', import.meta.url), 'utf8'));
+  const before = Date.parse('2026-10-02T08:00:00+08:00');
+  const during = Date.parse('2026-10-02T12:00:00+08:00');
+  const [w] = cwaWarnings(sets, '臺中市', '烏日區', before);
+  assert.equal(w.type, 'wind');
+  assert.equal(w.level, 1);
+  assert.match(w.overview, /^東北風增強/);
+  assert.match(w.precautions, /^黃色燈號/);
+  assert.equal(w.onset, '2026-10-02T11:00:00+08:00');
+  assert.equal(w.expires, '2026-10-02T23:00:00+08:00');
+  assert.deepEqual(w.areas, ['清水區', '大甲區', '大安區', '龍井區', '梧棲區']);
+  assert.equal(w.started, false);
+  assert.equal(w.mine, false);
+  assert.deepEqual(eventsFromCwa([w]), []);
+  assert.equal(twLevels([w]).levels.typhoon, 0);
+  // Started, but still not this town.
+  assert.equal(cwaWarnings(sets, '臺中市', '烏日區', during)[0].active, false);
+  // A listed town: active once it starts.
+  const mine = cwaWarnings(sets, '臺中市', '清水區', during)[0];
+  assert.equal(mine.active, true);
+  assert.deepEqual(eventsFromCwa([mine]), ['typhoon1']);
+  assert.equal(cwaWarnings(sets, '臺中市', '清水區', before)[0].active, false);
+  // Without the CAP the county list + 天氣特報 text still give the detail (county-wide, so mine).
+  const county = cwaWarnings({ county: sets.county, text: sets.text }, '臺中市', '烏日區', during)[0];
+  assert.match(county.overview, /^東北風增強/);
+  assert.match(county.precautions, /^黃色燈號/);
+  assert.equal(county.onset, '2026-10-02T11:00:00+08:00');
+  assert.equal(county.active, true);
+  assert.equal(cwaWarnings({ county: sets.county, text: sets.text }, '臺中市', '烏日區', before)[0].active, false);
 });

@@ -22,6 +22,23 @@ export interface HkoWarning {
   standby: boolean;
   tone: 'red' | 'amber' | 'black' | 'yellow' | 'blue' | 'gray';
   issued: string;
+  /** v1.4.24 (Taiwan): shown only — not started yet, or the player's district is not listed. No game event. */
+  inactive?: boolean;
+  /** v1.4.24 (Taiwan): the bulletin itself, shown under the warning. */
+  detail?: WarningDetail;
+}
+
+export interface WarningDetail {
+  overview: string;
+  precautions: string;
+  onset: string;
+  expires: string;
+  /** Listed districts in the player's county ([] = the whole county). */
+  areas: string[];
+  mine: boolean;
+  started: boolean;
+  /** The player's district (for the "not listed" note). */
+  place: string;
 }
 
 export interface HkoForecastDay {
@@ -130,7 +147,7 @@ export function parseWarnsum(data: unknown): HkoWarning[] {
 export function drivingWarning(warnings: HkoWarning[]): HkoWarning | null {
   let best: HkoWarning | null = null;
   for (const w of warnings) {
-    if (!w.kind) continue;
+    if (!w.kind || w.inactive) continue;
     if (!best || SEVERITY[w.kind] > SEVERITY[best.kind!] || (w.kind === best.kind && w.tone === 'black')) best = w;
   }
   return best;

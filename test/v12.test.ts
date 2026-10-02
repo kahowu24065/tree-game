@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { freshMeta } from '../src/meta';
 import { rainAdd, rollFor, wFactor, wTier } from '../src/rules';
-import { advice, applyWarningWater, checkRescue, createGame, performAction, previewNight, settleDay } from '../src/sim';
+import { advice, applyWarningWater as applyWarningWaterRaw, checkRescue, createGame, performAction, previewNight as previewNightRaw, settleDay as settleDayRaw, recordEvents as recordEventsRaw } from '../src/sim';
 import { parseSave } from '../src/storage';
 import type { GameState } from '../src/types';
 import type { WeatherEventId } from '../src/balance';
+
+// v1.4.24: these tests feed weather that was really observed — forecast-only rain no longer touches 水分.
+const seenRain = (s: Parameters<typeof recordEventsRaw>[0], date: string, evs: Parameters<typeof recordEventsRaw>[2]) => recordEventsRaw(s, date, [], false, evs);
+const settleDay: typeof settleDayRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), settleDayRaw(s, date, evs, ...rest));
+const applyWarningWater: typeof applyWarningWaterRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), applyWarningWaterRaw(s, date, evs, ...rest));
+const previewNight: typeof previewNightRaw = (s, date, evs, ...rest) => (seenRain(s, date, evs), previewNightRaw(s, date, evs, ...rest));
 
 const NOW = Date.UTC(2026, 8, 26, 4);
 const D = '2026-09-26';
