@@ -497,18 +497,19 @@ export function lessonModal(id: LessonId, page: number): string {
   return tl('ui.108', { p0: esc(cur.title), p1: esc(cur.body), step, btn });
 }
 
-let isleBarHtml = '';
-/** 1.4.29 island switch above the growth log: 第一座島 / 第二座空島 (locked until a world record). */
+/** 1.4.30 wordless swipe bar above the growth log: two dots show where you are; swipe on the bar to switch. */
 function renderIsleBar(isle: View['isle'], show: boolean): void {
   const bar = document.getElementById('isle-bar');
   if (!bar) return;
   bar.hidden = !show;
-  const btn = (n: 0 | 1, label: string, locked: boolean) =>
-    `<button type="button" class="isle-btn${isle.here === n ? ' on' : ''}${locked ? ' locked' : ''}" data-action="isle" data-isle="${n}" aria-pressed="${isle.here === n}"${locked ? ` title="${esc(tl('isle.lockedHint'))}"` : ''}>${locked ? '🔒 ' : ''}${esc(label)}${locked ? `<small>${esc(tl('isle.locked'))}</small>` : ''}</button>`;
-  const html = btn(0, tl('isle.one'), false) + btn(1, tl('isle.two'), !isle.open && isle.here !== 1);
-  if (html === isleBarHtml) return;
-  isleBarHtml = html;
-  bar.innerHTML = html;
+  if (!bar.firstElementChild) bar.innerHTML = '<span class="isle-track"><i class="isle-dot" data-n="0"></i><i class="isle-dot" data-n="1"></i></span>';
+  const locked = !isle.open && isle.here !== 1;
+  bar.dataset.here = String(isle.here);
+  bar.dataset.locked = locked ? '1' : '0';
+  bar.setAttribute('aria-valuemin', '1');
+  bar.setAttribute('aria-valuemax', '2');
+  bar.setAttribute('aria-valuenow', String(isle.here + 1));
+  bar.setAttribute('aria-label', tl(isle.here === 1 ? 'isle.aria1' : locked ? 'isle.ariaLocked' : 'isle.aria0'));
 }
 
 export function renderChrome(view: View): void {

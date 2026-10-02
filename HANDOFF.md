@@ -95,6 +95,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.27 | 香港／澳門／臺灣以外嘅推送改跟官方：有官方來源（NWS／ECCC／JMA／MeteoAlarm，經 `official.lookup`）就按正式發出嘅警報推（開始＋升級＋取消，降級／取消要連續 2 次確認，裝置語言，通知寫官方名稱），冇來源嘅地方只按實測數字（Open-Meteo 已過 3 小時＋即時讀數，`intl.js` `observedEventsIntl`），唔再按預報；每 10 分鐘一輪，按 ~0.1° 地區（新 app 傳 `area`，舊 app 用 0.5° `region`）合併查詢、feed 有快取；日本加環境省熱中症警戒アラート（WBGT≥33）／熱中症特別警戒アラート（WBGT≥35）（`wbgt.env.go.jp/alert/dl/` CSV，按府縣予報區＝JMA office 代碼）→ 酷熱，天氣卡顯示四語名稱；玩法說明更新；versionCode 34 |
 | 1.4.28 | 純文字：玩法「推送通知」分頁刪走「應急提醒」「防止亂跳」「本機提醒（唔使網絡）」三段（guide.203–211 已刪）；玩法分頁「目標」由「冇完結日：」起改為「生長到打破世界最高紀錄，解鎖第二座空島，種更多的「世界之樹」」（四語）；圖鑑「樹種」卡刪走資料出處連結（ui.286 唔再用 `sp.source`，資料仍留喺 `data/species.ts`）同 species.026 嘅出處括號；versionCode 35 |
 | 1.4.29 | 島嶼切換：取消左右滑轉島（同手動轉鏡頭撞），改成成長日誌上面嘅島嶼列（`#isle-bar`，`switchIsle()`；平時半透明，掂到／hover 變實，放手後淡返；未破紀錄第二座顯示 🔒 未解鎖，撳會 toast 解鎖條件）；第一隻雀仔入圖鑑時彈一次生蛋規則（`nest.intro`，用 `NEST_MIN_HEALTH`／`NEST_HATCH_MS`，`meta.nestIntro` 記住）；成就：天氣格只剩名稱、條件、已捱過幾多、下一個成就，「同一場只計一次」同官方來源說明（`wx.badgeSrc`）只喺天氣標題下面講一次；成就描述簡化（四語）；圖鑑／里程碑／成就 zh-HK 改得更口語；versionCode 36 |
+| 1.4.30 | 島嶼列改成冇字嘅細橫條（`#isle-bar`，role=slider，兩粒點顯示位置，第二座未解鎖係空心點）：只係喺條橫條度向左掃去第二座、向右掃返第一座（≥24px，場景唔會轉島）；未解鎖掃會彈一彈＋toast；鍵盤 ←／→ 都得；平時半透明，掂住變實，放手 1.6 秒後淡返，成長日誌打開時收埋；只用 aria-label（`isle.aria0/aria1/ariaLocked`）；四語說明改做「喺成長日誌上面條橫條掃」；versionCode 37 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -276,6 +277,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 ### 1.4.29 發佈（2026-10-02）
 - 見版本歷史；推送伺服器冇改。
 - i18n：`/tmp` 被清咗，舊 json 工作檔唔再用；而家直接改 `src/i18n/*.ts`（工具 `/workspace/.ed/tsi18n.py`，改動腳本 `/workspace/.ed/i18n130.py`（四語）、`i18n131.py`（zh-HK 口語））。
+
+### 1.4.30 發佈（2026-10-02）
+- 見版本歷史；推送伺服器冇改。i18n 改動腳本 `/workspace/.ed/i18n132.py`。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
