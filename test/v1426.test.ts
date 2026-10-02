@@ -103,7 +103,7 @@ describe('official alert feeds', () => {
     expect(likelyFeedRegion(22.3, 114.2)).toBe(false);
   });
 
-  it('badge text says where counts come from', () => {
-    for (const region of ['hk', 'intl'] as const) expect(weatherTrackCopy('t8', region).detail).toMatch(/官方|official/i);
+  it('badge text says where counts come from (1.4.29: once under 成就 → 天氣, not in every box)', () => {
+    for (const region of ['hk', 'intl'] as const) expect(weatherTrackCopy('t8', region).detail).not.toMatch(/官方/);
   });
 });

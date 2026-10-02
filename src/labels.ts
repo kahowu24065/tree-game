@@ -53,8 +53,8 @@ export function weatherTrackCopy(id: WeatherTrackId, region: Region = current): 
   const track = weatherTrack(id);
   const name = region === 'intl' && 'intlName' in track && track.intlName ? track.intlName : track.name;
   const base = region === 'intl' ? regionalize('intlDetail' in track && track.intlDetail ? track.intlDetail : track.detail, 'intl') : track.detail;
-  // 1.4.26: where the count comes from — official warnings only, observed numbers only where no official feed exists.
-  return { name, detail: `${base} ${tl('wx.badgeSrc')}` };
+  // 1.4.29: the official-only rule (wx.badgeSrc) is said once under 成就 → 天氣, not in every description.
+  return { name, detail: base };
 }
 
 /** Title for an achievement claimed at a count, e.g. 捱過 5 個風暴. */

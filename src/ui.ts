@@ -15,7 +15,7 @@ import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
-import { nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
+import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
@@ -497,6 +497,20 @@ export function lessonModal(id: LessonId, page: number): string {
   return tl('ui.108', { p0: esc(cur.title), p1: esc(cur.body), step, btn });
 }
 
+let isleBarHtml = '';
+/** 1.4.29 island switch above the growth log: 第一座島 / 第二座空島 (locked until a world record). */
+function renderIsleBar(isle: View['isle'], show: boolean): void {
+  const bar = document.getElementById('isle-bar');
+  if (!bar) return;
+  bar.hidden = !show;
+  const btn = (n: 0 | 1, label: string, locked: boolean) =>
+    `<button type="button" class="isle-btn${isle.here === n ? ' on' : ''}${locked ? ' locked' : ''}" data-action="isle" data-isle="${n}" aria-pressed="${isle.here === n}"${locked ? ` title="${esc(tl('isle.lockedHint'))}"` : ''}>${locked ? '🔒 ' : ''}${esc(label)}${locked ? `<small>${esc(tl('isle.locked'))}</small>` : ''}</button>`;
+  const html = btn(0, tl('isle.one'), false) + btn(1, tl('isle.two'), !isle.open && isle.here !== 1);
+  if (html === isleBarHtml) return;
+  isleBarHtml = html;
+  bar.innerHTML = html;
+}
+
 export function renderChrome(view: View): void {
   const { state, cond } = view;
   const card = document.getElementById('weather-card');
@@ -507,6 +521,7 @@ export function renderChrome(view: View): void {
   if (close && !close.innerHTML) close.innerHTML = icon('close');
 
   const bare = view.isle.bare;
+  renderIsleBar(view.isle, state.started || bare);
   const status = document.getElementById('status-card');
   if (status && bare) {
     status.classList.remove('pop-open');
@@ -1279,11 +1294,8 @@ function achievementTab(view: View): string {
     const info = weatherTrackCopy(track.id);
     const next = nextWxAwardCount(track.id, n);
     const nextTitle = weatherAchievementCopy(wxAwardId(track.id, next)).title;
-    const earned = Object.values(state.wx?.awards ?? {})
-      .filter((a): a is NonNullable<typeof a> => Boolean(a && parseWxAwardId(a.id)?.track === track.id))
-      .sort((a, b) => (parseWxAwardId(a.id)?.count ?? 0) - (parseWxAwardId(b.id)?.count ?? 0));
-    const got = earned.length ? tl('ui.315', { p0: earned.map((a) => esc(weatherAchievementCopy(a.id).title)).join(tl('ui.206')) }) : '';
-    return tl('ui.316', { p0: n ? 'done' : '', p1: esc(info.name), n, p3: esc(track.unit), p4: esc(info.detail), p5: esc(nextTitle), next, got });
+    // 1.4.29: name, condition, how many weathered, next achievement — nothing else.
+    return tl('ui.316', { p0: n ? 'done' : '', p1: esc(info.name), n, p3: esc(track.unit), p4: esc(info.detail), p5: esc(nextTitle) });
   }).join('');
   const collected = (meta.weather ?? []).filter((m) => parseWxAwardId(m.id));
   const collection = collected.length
@@ -1309,7 +1321,7 @@ function achievementTab(view: View): string {
   const eggCollection = collectedEggs.length
     ? tl('ui.302', { p0: collectedEggs.map((m) => tl('ui.322', { p0: esc(nestAwardTitle(m.count)), p1: esc(m.treeName), p2: esc(speciesDef(m.species).name), p3: esc(m.date) })).join('') })
     : '';
-  return tl('ui.324', { isles, p1: hatched ? 'done' : '', hatched, p3: nextNestBuildCount(hatched), p4: nextBuild ? tl('ui.323', { p0: esc(nestBuildPhrase(nextBuild)) }) : '', p5: nextNestHeightCount(hatched), p6: esc(nestAwardTitle(nextEgg)), nextEgg, gotBuilds, gotEggs, eggCollection, groups, collection });
+  return tl('ui.324', { isles, p1: hatched ? 'done' : '', hatched, p3: nextNestBuildCount(hatched), p4: nextBuild ? tl('ui.323', { p0: esc(nestBuildPhrase(nextBuild)) }) : '', p5: nextNestHeightCount(hatched), p6: esc(nestAwardTitle(nextEgg)), nextEgg, gotBuilds, gotEggs, eggCollection, groups, wxNote: esc(tl('wx.badgeSrc')), collection });
 }
 
 type Thumbnailer = (id: string, unlocked: boolean) => string | null;
@@ -1391,6 +1403,11 @@ function focusModal(modal: HTMLElement): void {
   } else {
     modal.querySelector('button')?.focus();
   }
+}
+
+/** 1.4.29 one-time pop-up when the first bird arrives: the egg-laying rules (from nest.ts). */
+export function nestIntroModal(bird: string): string {
+  return tl('nest.intro', { bird: esc(bird), minH: NEST_MIN_HEALTH, hours: NEST_HATCH_MS / 3600_000 });
 }
 
 export function openModal(inner: string, cls = ''): void {

@@ -169,8 +169,6 @@ export class Scene3D {
   private voyageFrom = new THREE.Vector3();
   private voyageTo = new THREE.Vector3();
   private voyageDone: (() => void) | null = null;
-  /** Horizontal swipe on the overview (dx in CSS pixels, negative = finger moved left). */
-  onIslandSwipe: ((dx: number) => void) | null = null;
   private fence: Fence | null = null;
   // Player zoom / pan / follow (pinch, wheel, tap an animal).
   private zoom = 1;
@@ -852,8 +850,8 @@ export class Scene3D {
         this.dragging = this.startDrag(p!.x, p!.y);
       } else if (this.pointers.size === 0) {
         this.dragging = null;
-        const swiped = e.type === 'pointerup' && this.consumeSwipe(e);
-        if (!swiped && e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
+        // 1.4.29: no swipe between islands (it fought manual panning); the island bar switches instead.
+        if (e.type === 'pointerup' && this.tap && !this.tap.moved && performance.now() - this.tap.t < 350) this.tapAt(e.clientX, e.clientY);
         this.tap = null;
       }
       this.lastDrag = performance.now();
@@ -1324,18 +1322,6 @@ export class Scene3D {
 
   sailing(): boolean {
     return this.voyageT < 1;
-  }
-
-  private consumeSwipe(e: PointerEvent): boolean {
-    const tap = this.tap;
-    if (!tap?.moved || this.isZoomed() || this.followRef || this.follow || this.voyageT < 1) return false;
-    const dx = e.clientX - tap.x;
-    const dy = e.clientY - tap.y;
-    if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35 || performance.now() - tap.t > 700) return false;
-    this.dragAz = tap.az;
-    this.dragEl = tap.el;
-    this.onIslandSwipe?.(dx);
-    return true;
   }
 
   private buildFarIsles(): { group: THREE.Group; tree: THREE.Object3D; play: boolean }[] {
