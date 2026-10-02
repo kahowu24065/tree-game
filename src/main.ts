@@ -15,7 +15,7 @@ import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
 import { beginAmbience, playCelebrate, playControl, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
-import { freshNest, isNestHeightCount, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nestPhase, tickNest } from './nest';
+import { freshNest, isNestHeightCount, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, tickNest } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -58,6 +58,7 @@ import {
   locationModal,
   noteNext,
   noteToggle,
+  nestIntroModal,
   openModal,
   overModal,
   milestoneModal,
@@ -176,7 +177,6 @@ let scene3d: Scene3D | null = null;
 let scene2d: Scene | null = null;
 try {
   scene3d = new Scene3D(canvas, quality);
-  scene3d.onIslandSwipe = (dx) => handleIslandSwipe(dx);
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
     (species, stage, cm) => scene3d?.speciesThumb(species, stage, cm) ?? null,
@@ -570,6 +570,23 @@ function render(): void {
   if (wxPage && !wxPage.hidden) renderWeatherPage(v);
   drawScene(input, performance.now());
   devRender?.();
+  queueNestIntro();
+}
+
+let nestIntroTimer = 0;
+/** 1.4.29 once ever: when the first bird is in the encyclopedia, explain when birds lay eggs (waits for other windows). */
+function queueNestIntro(): void {
+  if (meta.nestIntro || nestIntroTimer || !state.started || state.over || !nestCandidates(state).length) return;
+  nestIntroTimer = window.setTimeout(() => {
+    nestIntroTimer = 0;
+    const modal = document.getElementById('modal');
+    const birds = nestCandidates(state);
+    if (meta.nestIntro || opening || !birds.length || (modal && !modal.hidden)) return;
+    const bird = [...state.animals].reverse().find((id) => birds.includes(id)) ?? birds[0]!;
+    meta.nestIntro = true;
+    saveMeta(meta);
+    openModal(nestIntroModal(nestBirdName(bird)));
+  }, 900);
 }
 
 function drawScene(input: SceneInput, time: number): void {
@@ -678,22 +695,14 @@ function arriveIsle(next: 0 | 1): void {
   else if (next === 1 && !second) toast(tl('main.019'));
 }
 
-function handleIslandSwipe(dx: number): void {
-  if (!scene3d || scene3d.sailing()) return;
-  const toSecond = dx < 0;
-  if (isle === 0 && toSecond) {
-    if (!canOpenSecond(state)) {
-      toast(tl('main.020'));
-      return;
-    }
-    scene3d.sailToOther(reducedMotion, () => arriveIsle(1));
+/** 1.4.29 island bar above the growth log (replaces the swipe, which fought manual camera panning). */
+function switchIsle(to: 0 | 1): void {
+  if (to === isle || scene3d?.sailing()) return;
+  if (to === 1 && !canOpenSecond(homeTree())) {
+    toast(tl('main.020'));
     return;
   }
-  if (isle === 1 && !toSecond) {
-    scene3d.sailToOther(reducedMotion, () => arriveIsle(0));
-    return;
-  }
-  toast(isle === 0 ? tl('main.021') : tl('main.022'));
+  if (!scene3d?.sailToOther(reducedMotion, () => arriveIsle(to))) arriveIsle(to);
 }
 
 function plantSecond(species?: SpeciesId): void {
@@ -1546,6 +1555,9 @@ function doAction(action: string, target: HTMLElement): void {
     case 'new-game':
       openStart();
       return;
+    case 'isle':
+      switchIsle(target?.dataset.isle === '1' ? 1 : 0);
+      return;
     case 'reset-view':
       scene3d?.resetView();
       return;
@@ -1632,6 +1644,7 @@ function localizeStatic(): void {
     ['#rail', 'html.rail'],
     ['#view-reset', 'main.064'],
     ['#sheet', 'ui.185'],
+    ['#isle-bar', 'isle.bar'],
     ['#gear', 'html.settings'],
     ['#dock', 'html.dock'],
     ['#drawer', 'html.drawer'],
@@ -1652,6 +1665,40 @@ function localizeStatic(): void {
   }
 }
 localizeStatic();
+wakeIsleBar();
+
+/** 1.4.29 the island bar is faint when idle, solid while touched / hovered / focused, then fades back. */
+function wakeIsleBar(): void {
+  const bar = document.getElementById('isle-bar');
+  if (!bar) return;
+  let timer = 0;
+  let mouseOver = false;
+  const wake = () => {
+    window.clearTimeout(timer);
+    bar.classList.add('awake');
+  };
+  const rest = (ms: number) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (!mouseOver) bar.classList.remove('awake');
+    }, ms);
+  };
+  bar.addEventListener('pointerenter', (e) => {
+    mouseOver = e.pointerType === 'mouse';
+    wake();
+  });
+  bar.addEventListener('pointerleave', () => {
+    mouseOver = false;
+    rest(900);
+  });
+  bar.addEventListener('pointerdown', wake);
+  bar.addEventListener('pointerup', () => rest(1800));
+  bar.addEventListener('pointercancel', () => rest(900));
+  bar.addEventListener('focusin', () => {
+    if (bar.querySelector(':focus-visible')) wake();
+  });
+  bar.addEventListener('focusout', () => rest(900));
+}
 
 // v1.4.19 language picker (設定): save, tell the push server, then reload so every table is rebuilt in the new language.
 document.addEventListener('change', (event) => {

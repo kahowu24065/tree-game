@@ -299,6 +299,8 @@ export interface MetaState {
   isle: IsleAward[];
   /** Hatched-egg achievements from every tree. */
   nest?: MetaNest[];
+  /** 1.4.29 the one-time 雀鳥生蛋 rules pop-up was shown (first bird in the encyclopedia). */
+  nestIntro?: boolean;
 }
 
 /** Kept after visiting or planting on the second island. */
