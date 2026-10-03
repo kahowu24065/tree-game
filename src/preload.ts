@@ -40,18 +40,30 @@ export async function runPreload(tasks: Task[], cap = PRELOAD_CAP_MS): Promise<v
   diag.preload = { ms: Math.round(performance.now() - started), timedOut, tasks: results };
 }
 
-/** Fade the preload screen out; resolves once it is gone. */
-export function hidePreload(): Promise<void> {
+/**
+ * Fade the preload screen out; resolves once it is gone. 1.4.34: a Web Animation whose `finished` only resolves
+ * after it really ran (a fixed timer could remove the screen before a busy main thread ever showed the fade).
+ */
+export async function hidePreload(): Promise<void> {
   const el = document.getElementById('preload');
+  if (!el) {
+    document.documentElement.classList.remove('preloading');
+    return;
+  }
+  // The canvas below must have painted (and the screen's colour stops applying) before the fade starts.
   document.documentElement.classList.remove('preloading');
-  if (!el) return Promise.resolve();
-  el.classList.add('out');
-  return new Promise((r) =>
-    window.setTimeout(() => {
-      el.remove();
-      r();
-    }, FADE_MS),
-  );
+  await frames(2);
+  let done: Promise<unknown>;
+  if (typeof el.animate === 'function') {
+    const anim = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_MS, easing: 'ease', fill: 'forwards' });
+    done = anim.finished.catch(() => undefined);
+  } else {
+    el.classList.add('out');
+    done = new Promise((r) => window.setTimeout(r, FADE_MS));
+  }
+  // Safety net only (never shorter than the fade itself).
+  await Promise.race([done, new Promise((r) => window.setTimeout(r, FADE_MS * 4))]);
+  el.remove();
 }
 
 /** Resolve after `n` animation frames (lets the render loop build the scene first). */

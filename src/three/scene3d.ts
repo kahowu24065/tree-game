@@ -1901,7 +1901,8 @@ export class Scene3D {
       // Hold the planting vista until the tree's own framing has settled, then glide straight to the normal distance.
       this.seedT += dt;
       const framed = Math.abs(this.camDist - want) < Math.max(0.4, want * 0.04);
-      const hold = this.seedT < 1.2 && (this.seedT < 0.45 || !framed);
+      // 1.4.34: at least 0.75 s still, which covers the preload screen's fade.
+      const hold = this.seedT < 1.3 && (this.seedT < 0.75 || !framed);
       if (hold) {
         this.zoom = this.zoomGoal = this.farZoom();
         this.introGlide = -1;

@@ -12,15 +12,16 @@ const KEY = 'sekai-tree-sound';
 const FADE = 2.5;
 
 /** First file that decodes wins (1.4.33: AAC first for the day piece, which iOS decodes in hardware). */
-const FILES: Record<string, string | string[]> = {
+export const AUDIO_FILES: Record<string, string | string[]> = {
   day: ['day.m4a', 'day.mp3'],
   night: ['night.ogg', 'night.m4a'],
-  birds: 'birds.ogg',
+  // 1.4.34: AAC copies for iPhones before iOS 18.4 (no Ogg there).
+  birds: ['birds.ogg', 'birds.m4a'],
   crickets: 'crickets.mp3',
-  rain: 'rain.ogg',
-  storm: 'storm.ogg',
-  pluck: 'pluck.ogg',
-  switch: 'switch.ogg',
+  rain: ['rain.ogg', 'rain.m4a'],
+  storm: ['storm.ogg', 'storm.m4a'],
+  pluck: ['pluck.ogg', 'pluck.m4a'],
+  switch: ['switch.ogg', 'switch.m4a'],
   bird: 'bird.wav',
   frog: 'frog.wav',
   chirp: 'chirp.wav',
@@ -111,12 +112,43 @@ function stamp(): string {
 
 const pendingLoads = new Map<string, Promise<void>>();
 
+/**
+ * 1.4.34: Capacitor iOS answers media files (m4a / mp3 / wav…) with a plain URLResponse instead of an HTTP one,
+ * so fetch() reports status 0 / ok=false although the bytes are there. Accept any non-empty body from a
+ * status-0 answer, and fall back to XHR (which reads the scheme handler's data the same way).
+ */
+export async function fetchBytes(url: string): Promise<ArrayBuffer> {
+  let fetchError = '';
+  try {
+    const res = await fetch(url);
+    if (res.ok || res.status === 0) {
+      const raw = await res.arrayBuffer();
+      if (raw.byteLength > 0) return raw;
+      fetchError = `HTTP ${res.status} empty`;
+    } else fetchError = `HTTP ${res.status}`;
+  } catch (error) {
+    fetchError = error instanceof Error ? error.message : String(error);
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      const buf = xhr.response as ArrayBuffer | null;
+      if (buf && buf.byteLength > 0 && (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300))) resolve(buf);
+      else reject(new Error(`fetch ${fetchError}; xhr ${xhr.status} ${buf?.byteLength ?? 0} B`));
+    };
+    xhr.onerror = () => reject(new Error(`fetch ${fetchError}; xhr error`));
+    xhr.send();
+  });
+}
+
 function loadOne(id: string): Promise<void> {
   if (buffers.has(id)) return Promise.resolve();
   const running = pendingLoads.get(id);
   if (running) return running;
   const ctx = ac;
-  const spec = FILES[id];
+  const spec = AUDIO_FILES[id];
   if (!ctx || !spec) return Promise.resolve();
   const files = Array.isArray(spec) ? spec : [spec];
   const job = (async () => {
@@ -125,9 +157,7 @@ function loadOne(id: string): Promise<void> {
     const errors: string[] = [];
     for (const file of files) {
       try {
-        const res = await fetch(fileUrl(file));
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const raw = await res.arrayBuffer();
+        const raw = await fetchBytes(fileUrl(file));
         const buf = await ctx.decodeAudioData(raw);
         buffers.set(id, buf);
         fileDiag.set(id, { id, state: 'ok', file, ms: Math.round(performance.now() - started), seconds: Math.round(buf.duration * 10) / 10 });
