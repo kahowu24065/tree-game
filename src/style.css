@@ -4266,6 +4266,31 @@ html[lang='en'] .emerg > span {
   margin: 6px 0 10px;
 }
 
+/* 1.4.39: 月費 | 永久 side by side; the store price sits on a second line inside each button. */
+.prem-plans {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.prem-plans .prem-buy {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  line-height: 1.25;
+}
+
+.prem-price {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+}
+
 .prem-buy[aria-disabled='true'] {
   opacity: 0.5;
 }

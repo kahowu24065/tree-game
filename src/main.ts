@@ -125,8 +125,8 @@ import { cwaArea, fetchCwa, inTaiwan } from './cwa';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { setAdsPremium, syncBanner } from './native/banner';
-import { billingInfo, billingSupported, initBilling, onBilling, purchase, restore } from './native/billing';
-import { PREMIUM_EXTRAS, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
+import { billingInfo, billingSupported, initBilling, onBilling, planReady, purchase, restore } from './native/billing';
+import { PREMIUM_EXTRAS, type Plan, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
 import { premiumModal, premiumRow, weatherAlbumModal, type PremiumMode } from './premiumUi';
 import { isNative, platformName } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
@@ -711,15 +711,16 @@ if (billingSupported()) {
 /** 1.4.37: app build without a RevenueCat key — the paywall is shown, buying / restoring is "not open yet". */
 const storeNotYet = (): boolean => isNative() && !billingSupported();
 
-async function buyPremium(): Promise<void> {
-  if (storeNotYet()) {
+async function buyPremium(plan: Plan): Promise<void> {
+  // No store key, or this plan's product / price not loaded (not set up yet, offline): "not open yet".
+  if (storeNotYet() || !planReady(billingInfo(), plan)) {
     toast(tl('prem.notYet'));
     return;
   }
   if (buying) return;
   buying = true;
   showPremium('paywall', true);
-  const res = await purchase();
+  const res = await purchase(plan);
   buying = false;
   if (res === 'ok') {
     applyPremium(true);
@@ -1699,7 +1700,7 @@ function doAction(action: string, target: HTMLElement): void {
       showPremium('paywall');
       return;
     case 'premium-buy':
-      void buyPremium();
+      void buyPremium(target.dataset.plan === 'lifetime' ? 'lifetime' : 'monthly');
       return;
     case 'premium-restore':
       void restorePremium();

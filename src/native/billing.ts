@@ -2,7 +2,7 @@
  * Store subscription via RevenueCat (StoreKit on iOS, Play Billing on Android). Public SDK keys come from build-time
  * env (VITE_RC_IOS_KEY / VITE_RC_ANDROID_KEY, never committed). Browsers and builds without a key: unavailable.
  */
-import { ENTITLEMENT, PRODUCT_ID } from '../premium';
+import { ENTITLEMENT, LIFETIME_ID, PRODUCT_ID, type Plan } from '../premium';
 import { isNative, platformName } from './platform';
 
 export type BillingState = 'unavailable' | 'loading' | 'ready';
@@ -10,8 +10,12 @@ export type BillingState = 'unavailable' | 'loading' | 'ready';
 export interface BillingInfo {
   state: BillingState;
   active: boolean;
-  /** Store-localised price, e.g. "HK$8.00" (null until the offering loads). */
+  /** Store-localised monthly price, e.g. "HK$8.00" (null until the offering loads / not set up). */
   price: string | null;
+  /** 1.4.39: store-localised one-time lifetime price (null until loaded / not set up). */
+  lifetimePrice: string | null;
+  /** The active entitlement comes from the lifetime purchase (no expiry, no renewal). */
+  lifetime: boolean;
   /** Store page to manage / cancel (from RevenueCat, else the platform default). */
   manageUrl: string;
   /** Expiry / renewal (ISO) of the entitlement, when active. */
@@ -35,12 +39,17 @@ export function defaultManageUrl(platform = platformName()): string {
     : `https://play.google.com/store/account/subscriptions?sku=${PRODUCT_ID}&package=app.sekaitree.game`;
 }
 
-let info: BillingInfo = { state: 'unavailable', active: false, price: null, manageUrl: defaultManageUrl(), expires: null, willRenew: false };
+let info: BillingInfo = { state: 'unavailable', active: false, price: null, lifetimePrice: null, lifetime: false, manageUrl: defaultManageUrl(), expires: null, willRenew: false };
 const listeners: Listener[] = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let rc: any = null;
+// Monthly / lifetime: an offering package, else (lifetime only) the store product fetched by id.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pkg: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let lifePkg: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let lifeProduct: any = null;
 
 function emit(patch: Partial<BillingInfo>): void {
   info = { ...info, ...patch };
@@ -63,7 +72,8 @@ export function billingSupported(): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyCustomer(ci: any): void {
   const ent = ci?.entitlements?.active?.[ENTITLEMENT];
-  emit({ active: Boolean(ent), expires: ent?.expirationDate ?? null, willRenew: Boolean(ent?.willRenew), manageUrl: ci?.managementURL || defaultManageUrl() });
+  const lifetime = Boolean(ent) && (String(ent?.productIdentifier ?? '').startsWith(LIFETIME_ID) || (!ent?.expirationDate && !ent?.willRenew));
+  emit({ active: Boolean(ent), lifetime, expires: ent?.expirationDate ?? null, willRenew: Boolean(ent?.willRenew), manageUrl: ci?.managementURL || defaultManageUrl() });
 }
 
 export async function initBilling(): Promise<void> {
@@ -86,21 +96,38 @@ async function loadOffering(): Promise<void> {
   try {
     const offerings = await rc.getOfferings();
     const cur = offerings?.current;
-    pkg = cur?.monthly ?? cur?.availablePackages?.find((p: { product?: { identifier?: string } }) => p.product?.identifier?.startsWith(PRODUCT_ID)) ?? cur?.availablePackages?.[0] ?? null;
-    emit({ price: pkg?.product?.priceString ?? null });
+    const all: { packageType?: string; product?: { identifier?: string } }[] = cur?.availablePackages ?? [];
+    pkg = cur?.monthly ?? all.find((p) => p.product?.identifier?.startsWith(PRODUCT_ID)) ?? null;
+    lifePkg = cur?.lifetime ?? all.find((p) => p.packageType === 'LIFETIME' || p.product?.identifier?.startsWith(LIFETIME_ID)) ?? null;
   } catch {
     pkg = null;
+    lifePkg = null;
   }
+  if (!lifePkg) {
+    try {
+      const { products } = await rc.getProducts({ productIdentifiers: [LIFETIME_ID], type: 'NON_SUBSCRIPTION' });
+      lifeProduct = products?.find((p: { identifier?: string }) => p.identifier?.startsWith(LIFETIME_ID)) ?? null;
+    } catch {
+      lifeProduct = null;
+    }
+  }
+  emit({ price: pkg?.product?.priceString ?? null, lifetimePrice: (lifePkg?.product ?? lifeProduct)?.priceString ?? null });
+}
+
+/** Which plans have a store price (= can be bought now). Pure, for tests. */
+export function planReady(i: Pick<BillingInfo, 'state' | 'price' | 'lifetimePrice'>, plan: Plan): boolean {
+  return i.state === 'ready' && (plan === 'monthly' ? i.price : i.lifetimePrice) !== null;
 }
 
 export type PurchaseResult = 'ok' | 'cancelled' | 'failed' | 'unavailable';
 
-export async function purchase(): Promise<PurchaseResult> {
+export async function purchase(plan: Plan = 'monthly'): Promise<PurchaseResult> {
   if (!rc) return 'unavailable';
-  if (!pkg) await loadOffering();
-  if (!pkg) return 'unavailable';
+  const have = () => (plan === 'monthly' ? pkg : lifePkg ?? lifeProduct);
+  if (!have()) await loadOffering();
+  if (!have()) return 'unavailable';
   try {
-    const res = await rc.purchasePackage({ aPackage: pkg });
+    const res = plan === 'monthly' ? await rc.purchasePackage({ aPackage: pkg }) : lifePkg ? await rc.purchasePackage({ aPackage: lifePkg }) : await rc.purchaseStoreProduct({ product: lifeProduct });
     applyCustomer(res?.customerInfo);
     return info.active ? 'ok' : 'failed';
   } catch (e) {
@@ -108,7 +135,7 @@ export async function purchase(): Promise<PurchaseResult> {
   }
 }
 
-/** Restore: 'ok' (entitlement active), 'none' (nothing to restore) or 'failed'. */
+/** Restore (monthly and lifetime alike — both grant `premium`): 'ok' (entitlement active), 'none' or 'failed'. */
 export async function restore(): Promise<'ok' | 'none' | 'failed' | 'unavailable'> {
   if (!rc) return 'unavailable';
   try {

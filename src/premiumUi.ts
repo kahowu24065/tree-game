@@ -11,7 +11,6 @@ export { APPLE_EULA_URL, PRIVACY_URL, TERMS_URL };
 
 export type PremiumMode = 'web' | 'ios' | 'android';
 
-const PRICE_FALLBACK = 'HK$8';
 const link = (href: string, label: string) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`;
 
 function monthShort(m: number): string {
@@ -67,17 +66,17 @@ function dateText(iso: string | null): string {
   }
 }
 
-/** Paywall (not a member) or member page. */
 /**
- * `notYet` (1.4.37): an app build without a store key (RevenueCat not set up yet). The full paywall is shown — e.g. for
- * the App Review screenshot — with the fallback price; Subscribe / Restore then say "not open yet" (main.ts).
+ * Paywall (not a member) or member page. 1.4.39: two plans side by side — 月費 (auto-renewing) and 永久 (one-time) —
+ * each labelled with the store's own localised price; never a hard-coded amount. A plan without a loaded price is
+ * shown by name only and says "not open yet" when tapped (main.ts), as does every plan in a build without a store
+ * key (`notYet`, 1.4.37: the full paywall is still shown, e.g. for the App Review screenshot).
  */
 export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean; extras?: boolean; notYet?: boolean }): string {
   const { mode, store, billing } = o;
   const extras = o.extras ?? PREMIUM_EXTRAS;
-  const price = billing.price ?? PRICE_FALLBACK;
   const extraPerks = extras ? `<li>${esc(tl('prem.perkSkins', { name: skinName(skinOfMonth(o.today).id) }))}</li><li>${esc(tl('prem.perkAlbum'))}</li>` : '';
-  const perks = `<ul class="prem-perks"><li>${esc(tl('prem.perkAds'))}</li>${extraPerks}</ul><p class="prem-small">${esc(tl('prem.free'))}</p>`;
+  const perks = `<ul class="prem-perks"><li>${esc(tl('prem.perkAds'))}</li>${extraPerks}<li>${esc(tl('prem.perkMore'))}</li></ul><p class="prem-small">${esc(tl('prem.free'))}</p>`;
   const head = `<p class="eyebrow">${esc(tl('prem.eyebrow'))}</p><h2>${esc(tl('prem.title'))}</h2>`;
   const album = !extras ? '' : `<div class="setting-row"><span>${esc(tl('prem.albumTitle'))}</span><button type="button" class="ghost" data-action="weather-album">${esc(tl('prem.albumOpen'))}</button></div>`;
   const back = `<button type="button" class="primary" data-action="settings">${esc(tl('prem.back'))}</button>`;
@@ -85,14 +84,19 @@ export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billin
   const manage = `<p class="prem-legal">${link(billing.manageUrl, tl('prem.manage'))}<button type="button" data-action="premium-restore">${esc(tl('prem.restore'))}</button></p>`;
   if (store.active) {
     const when = dateText(billing.expires);
-    const status = when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
+    const status = billing.lifetime ? tl('prem.lifetimeActive') : when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
     return `${head}<p class="prem-status">${esc(tl('prem.active'))}${status ? `<br><small>${esc(status)}</small>` : ''}</p>${perks}${extras ? skinsSection(store, o.today) : ''}${album}${manage}${legal(mode)}${back}`;
   }
-  const disclosure = tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid', { price });
-  const canBuy = o.notYet || (billing.state === 'ready' && billing.price !== null);
-  const state = o.notYet ? '' : billing.state === 'loading' ? tl('prem.loading') : billing.state === 'unavailable' || !canBuy ? tl('prem.unavailable') : '';
-  const buy = `<button type="button" class="primary prem-buy" data-action="premium-buy"${canBuy && !o.busy ? '' : ' aria-disabled="true"'}>${esc(tl('prem.subscribe', { price }))}</button>`;
-  return `${head}<p class="prem-lead">${esc(tl('prem.lead', { price }))}</p>${perks}${state ? `<p class="prem-small">${esc(state)}</p>` : ''}${buy}${album}${manage}<p class="prem-disclosure">${esc(disclosure)}</p>${legal(mode)}${back}`;
+  const per = billing.price ? tl('prem.perMonth', { price: billing.price }) : '';
+  const disclosure = `${esc(tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid', { per }))}<br>${esc(tl('prem.lifetimeNote'))}`;
+  const loading = !o.notYet && billing.state === 'loading';
+  const state = o.notYet ? '' : loading ? tl('prem.loading') : billing.state === 'unavailable' ? tl('prem.unavailable') : '';
+  const off = loading || o.busy ? ' aria-disabled="true"' : '';
+  // Plan name, with the store price on a second line when loaded (keeps both buttons side by side on a 320 px phone).
+  const plan = (p: 'monthly' | 'lifetime', name: string, price: string | null) =>
+    `<button type="button" class="primary prem-buy" data-action="premium-buy" data-plan="${p}"${off}>${esc(name)}${price ? `<small class="prem-price">${esc(price)}</small>` : ''}</button>`;
+  const buy = `<div class="prem-plans">${plan('monthly', tl('prem.planMonthly'), billing.price ? tl('prem.priceMonthly', { price: billing.price }) : null)}${plan('lifetime', tl('prem.planLifetime'), billing.lifetimePrice ? tl('prem.priceOnce', { price: billing.lifetimePrice }) : null)}</div>`;
+  return `${head}<p class="prem-lead">${esc(tl('prem.lead'))}</p>${perks}${state ? `<p class="prem-small">${esc(state)}</p>` : ''}${buy}${album}${manage}<p class="prem-disclosure">${disclosure}</p>${legal(mode)}${back}`;
 }
 
 /** 真實天氣紀念冊: members see every day; others see how many days are waiting. */
