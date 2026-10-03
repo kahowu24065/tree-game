@@ -366,6 +366,8 @@ const table: Record<string, string> = {
  "cwa.002": "Central Weather Administration data responded {status}",
  "cwa.003": "Cannot reach Central Weather Administration data",
  "dates.001": "{p2}, {d}/{m}",
+ "diag.clearLog": "Clear log",
+ "diag.cleared": "Save log cleared",
  "eco.001": "Tiny",
  "eco.002": "Small",
  "eco.003": "Medium",

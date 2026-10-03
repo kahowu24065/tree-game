@@ -1,2 +1,2 @@
 /** Shown in 設定. Keep in step with android/app/build.gradle versionName. */
-export const APP_VERSION = '1.4.42';
+export const APP_VERSION = '1.4.43';

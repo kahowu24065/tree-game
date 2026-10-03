@@ -1560,6 +1560,8 @@ const table: Record<string, string> = {
  "prem.listSep": "、",
  "animals.nightmoth.name": "斜紋夜蛾",
  "animals.nightmoth.epithet": "啡翼斜紋",
- "animals.nightmoth.about": "夜晚成日撲燈嘅啡色細蛾，前翅有淺色斜紋，日頭匿喺葉底。"
+ "animals.nightmoth.about": "夜晚成日撲燈嘅啡色細蛾，前翅有淺色斜紋，日頭匿喺葉底。",
+ "diag.clearLog": "清除紀錄",
+ "diag.cleared": "已清除存檔紀錄"
 };
 export default table;
