@@ -4015,6 +4015,23 @@ body.sheet-open .animal-toast.show {
 .tabs button {
   position: relative;
 }
+
+/*
+ * 1.4.35: tabs size to their label (long English ones like "Achievements" no longer touch the pill edges);
+ * font and side padding shrink a little on narrow phones (360 / 320 px).
+ */
+.tabs {
+  display: flex;
+  gap: 3px;
+}
+.tabs button {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 clamp(6px, 2.4vw, 11px);
+  white-space: nowrap;
+  font-size: clamp(11px, 3.25vw, 13.5px);
+  letter-spacing: -0.005em;
+}
 .tabs button .badge {
   position: static;
   display: inline-block;

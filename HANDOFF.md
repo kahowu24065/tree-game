@@ -100,6 +100,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.32 | 換新 `google-services.json`（Firebase 專案 sekai-tree 新增咗 Android app `app.sekaitree.game`，舊 package client 都仲喺度）：google-services plugin 自動套用，Android 伺服器推送恢復；推送伺服器唔使改；versionCode 39 |
 | 1.4.33 | 開 app 預載畫面（`#preload`，同原生 splash 一樣天藍 #BEE2F7，Android 深色 #142638；icon 拆成背景＋會搖嘅樹苗 `public/preload/*.webp`，加飄落葉）：背後 compile shader（`Scene3D.warmUp`）、解碼當時嘅音樂、等天氣，最多 5 秒，之後先開場；鏡頭彈跳修正：`render()` 唔再直接畫（只叫 `loop()`），dt 0 唔再等於「即刻到位」，只有第一格／`requestSnap()` 先 snap；單一 rAF；廣告／同意／ATT 同其餘音效床延到開場後 1 秒；日間音樂改 `day.m4a`（AAC 單聲道，尾段靜音離線剪走，`day.mp3` 後備），`night.m4a` 做 iOS 舊版後備，唔再 runtime trimSilence，音樂自己載完就播；AudioContext `interrupted` 當 `suspended` 處理，任何點擊／返回前台都會叫醒；隱藏診斷：設定 → 長按版本號；versionCode 40 |
 | 1.4.34 | iOS 冇音樂嘅真因：Capacitor iOS `WebViewAssetHandler` 對 media 副檔名（m4a／mp3／wav…）回 plain `URLResponse`（唔係 HTTPURLResponse），`fetch()` 見到 status 0 / ok=false，舊 loader 當失敗（ogg 唔喺 media 名單所以正常）；而家 `fetchBytes` 接受 status 0 而有內容，再唔得就 XHR arraybuffer；其餘 ogg 都有 `.m4a` 後備（iOS 18.4 前冇 Ogg）；預載：新入口 `src/boot.ts` 等預載畫面畫好、CSS 動畫上咗 compositor 先 `import('./main')`，第一次建場景再遲兩格；淡出用 Web Animation `finished`（唔再用固定 timer 硬拆）；淡出前先擺好開場遠景（intro 最少靜止 0.75 秒蓋住淡出）；versionCode 41 |
+| 1.4.35 | 成長日誌分頁：`.tabs` 改 flex、按內容闊度分配（`flex: 1 1 auto`），左右 padding `clamp(6px, 2.4vw, 11px)`、字 `clamp(11px, 3.25vw, 13.5px)`，320／360／390 px 四語文字兩邊都有 ≥8 px；英文 Achievements 全部改 Badges（分頁、標題、提示、玩法說明，腳本 `/workspace/.ed/i18n135.py`），其他語言冇改；versionCode 42 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -298,6 +299,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - iOS LaunchScreen 換咗同 Android 一樣嘅天藍底＋圓角 icon（ios 分支），預載畫面喺 iOS 用 `max(100vw,100vh)×0.1662` 對齊 aspect-fill 嘅 splash icon。
 
 ### 1.4.34 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。
+
+### 1.4.35 發佈（2026-10-03）
 - 見版本歷史；推送伺服器冇改。
 
 ### iOS + 會員（`ios` 分支，未發佈）
