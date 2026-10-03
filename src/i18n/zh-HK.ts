@@ -112,7 +112,7 @@ const table: Record<string, string> = {
  "ui.110": "健康",
  "ui.111": "養分",
  "ui.112": "抗風",
- "ui.113": "\n      <button type=\"button\" class=\"status-head\" data-open=\"care\"><b>樹木狀態</b>{p0}</button>\n      <p class=\"status-sub\">{p1} · {p2}{p3}</p>\n      <p class=\"status-facts\">\n        <span>樹齡 {p4} 日 = </span>\n        <span>真實樹齡 {p5} 日</span>\n        <span class=\"carbon-fact\">碳吸收量<br>約 {p6} 公斤 CO₂／年</span>\n      </p>\n      <div class=\"bars\">\n        {p7}\n        <div class=\"night-row\">{p8}</div>\n        {p9}\n        {p10}\n        {p11}\n      </div>\n      {p12}\n      {p13}{p14}",
+ "ui.113": "\n      <button type=\"button\" class=\"status-head\" data-open=\"care\"><b>樹木狀態</b>{p0}</button>\n      <p class=\"status-sub\">{p1} · {p2}{p3}</p>\n      <p class=\"status-facts\">\n        <span>樹齡 {p4} 日 = </span>\n        <span>真實樹齡 {p5}</span>\n        <span class=\"carbon-fact\">碳吸收量<br>約 {p6} CO₂／年</span>\n      </p>\n      <div class=\"bars\">\n        {p7}\n        <div class=\"night-row\">{p8}</div>\n        {p9}\n        {p10}\n        {p11}\n      </div>\n      {p12}\n      {p13}{p14}",
  "ui.114": "<button type=\"button\" class=\"dock-btn d-plant\" data-action=\"plant-isle\" style=\"grid-column:1 / -1\"><span class=\"dock-ic\">{p0}</span><span class=\"dock-label\">種一棵新樹</span><small>第二座空島</small></button>",
  "ui.115": "澆水",
  "ui.116": "已滿",
@@ -213,7 +213,7 @@ const table: Record<string, string> = {
  "ui.212": "用過喇",
  "ui.213": "有蟲，每晚 −{p0}",
  "ui.214": "預防",
- "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">今日{p1} · {p2}後結算</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}。</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\">\n      <p class=\"eyebrow\">今日小事</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">碳吸收量：約 {p19} 公斤 CO₂／年。用心照顧過 {daysCared} 日。進度只係留喺呢部機。</p>\n  ",
+ "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">今日{p1} · {p2}後結算</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}。</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\">\n      <p class=\"eyebrow\">今日小事</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">碳吸收量：約 {p19} CO₂／年。用心照顧過 {daysCared} 日。進度只係留喺呢部機。</p>\n  ",
  "ui.216": "因素",
  "ui.217": "（流失）",
  "ui.218": "（毛毛雨）",
@@ -312,7 +312,7 @@ const table: Record<string, string> = {
  "ui.311": "下一個高度里程：{p0}（{meters} 米）。",
  "ui.312": "・解鎖咗星空浮島",
  "ui.313": "養分地標：{p0}（{p1}）。",
- "ui.314": "\n    <article class=\"card\">\n      <p class=\"eyebrow\">{p0}</p>\n      <h2>{p1} · 大約係紀錄高度嘅 {pct}%</h2>\n      <p>{p3}</p>\n      <div class=\"track fat\"><div class=\"fill food\" style=\"width:{p4}%\"></div></div>\n      <p class=\"fine\">每年大約吸 {p5} 公斤 CO₂。將軍樹 {SHERMAN_M} 米（你而家係佢嘅 {p7}%），海波龍 {HYPERION_M} 米。{p9}</p>\n    </article>\n    <h3 class=\"sub\">樹齡里程碑</h3>\n    <ol class=\"miles\">{ages}{recRow}</ol>\n    <p class=\"fine\">金銀銅睇嗰日嘅高度同預計比；點計去設定 → 玩法睇。</p>\n    <h3 class=\"sub\">徽章收藏</h3>\n    {collection}\n    <h3 class=\"sub\">能力徽章</h3>\n    <ol class=\"miles\">{badges}</ol>\n    <p class=\"fine\">免死金牌 {reviveTokens} 面{p15}。{p16}</p>\n    <h3 class=\"sub\">高度里程</h3>\n    <ol class=\"miles\">{rows}</ol>\n    <button type=\"button\" class=\"texty\" data-action=\"rename\">改棵樹個名</button>\n  ",
+ "ui.314": "\n    <article class=\"card\">\n      <p class=\"eyebrow\">{p0}</p>\n      <h2>{p1} · 大約係紀錄高度嘅 {pct}%</h2>\n      <p>{p3}</p>\n      <div class=\"track fat\"><div class=\"fill food\" style=\"width:{p4}%\"></div></div>\n      <p class=\"fine\">每年大約吸 {p5} CO₂。將軍樹 {SHERMAN_M} 米（你而家係佢嘅 {p7}%），海波龍 {HYPERION_M} 米。{p9}</p>\n    </article>\n    <h3 class=\"sub\">樹齡里程碑</h3>\n    <ol class=\"miles\">{ages}{recRow}</ol>\n    <p class=\"fine\">金銀銅睇嗰日嘅高度同預計比；點計去設定 → 玩法睇。</p>\n    <h3 class=\"sub\">徽章收藏</h3>\n    {collection}\n    <h3 class=\"sub\">能力徽章</h3>\n    <ol class=\"miles\">{badges}</ol>\n    <p class=\"fine\">免死金牌 {reviveTokens} 面{p15}。{p16}</p>\n    <h3 class=\"sub\">高度里程</h3>\n    <ol class=\"miles\">{rows}</ol>\n    <button type=\"button\" class=\"texty\" data-action=\"rename\">改棵樹個名</button>\n  ",
  "ui.315": "<p>已拎：{p0}</p>",
  "ui.316": "<li class=\"{p0}\"><strong>{p1}</strong><span>已捱過 {n} {p3}</span><p>{p4}</p><p>下一個成就：{p5}</p></li>",
  "ui.317": "<li class=\"done\"><strong>{p0}</strong><span>已拎</span><p>{p1}（{p2}）· {p3} · 樹齡 {p4} 日</p></li>",
@@ -330,7 +330,7 @@ const table: Record<string, string> = {
  "ui.329": "\n    <p class=\"eyebrow\">世界之樹</p>\n    <h2>為棵樹改名</h2>\n    <p>個名之後都可以喺設定改。</p>\n    <label>樹的名字<input id=\"tree-name\" maxlength=\"12\" value=\"{p0}\" autocomplete=\"off\" /></label>\n    <button type=\"button\" class=\"primary\" data-action=\"start-game\">種低</button>\n    <button type=\"button\" class=\"texty\" data-action=\"back-species\">返回揀樹</button>",
  "ui.330": "呢棵樹攞到嘅 {kept} 個里程碑同 {wxKept} 個天氣成就會一直留喺收藏。",
  "ui.331": "未到 1個月，未有里程碑徽章。",
- "ui.332": "\n    <p class=\"eyebrow\">結算</p>\n    <h2>{p0}枯死咗</h2>\n    <p>樹齡 {p1} 日，高 {p2}（紀錄高度 {p3}%），碳吸收量約 {p4} 公斤／年。</p>\n    {got}\n    <p>{keptLine}再種一棵，樹齡由第 1 日開始。</p>\n    <p class=\"fine\">能力徽章：一級 {p7}・二級 {p8}・三級 {p9}</p>\n    <button type=\"button\" class=\"primary\" data-action=\"new-game\">再種一棵</button>",
+ "ui.332": "\n    <p class=\"eyebrow\">結算</p>\n    <h2>{p0}枯死咗</h2>\n    <p>樹齡 {p1} 日，高 {p2}（紀錄高度 {p3}%），碳吸收量約 {p4}／年。</p>\n    {got}\n    <p>{keptLine}再種一棵，樹齡由第 1 日開始。</p>\n    <p class=\"fine\">能力徽章：一級 {p7}・二級 {p8}・三級 {p9}</p>\n    <button type=\"button\" class=\"primary\" data-action=\"new-game\">再種一棵</button>",
  "ui.333": "<li><b>{p0}</b> {p1} · {p2}（紀錄 {p3}%）</li>",
  "ui.334": "攞到 {length} 個里程碑！",
  "ui.335": "{p0}超越世界紀錄！",
@@ -1499,6 +1499,11 @@ const table: Record<string, string> = {
  "animals.nightmoth.epithet": "啡翼斜紋",
  "animals.nightmoth.about": "夜晚成日撲燈嘅啡色細蛾，前翅有淺色斜紋，日頭匿喺葉底。",
  "diag.clearLog": "清除紀錄",
- "diag.cleared": "已清除存檔紀錄"
+ "diag.cleared": "已清除存檔紀錄",
+ "carbon.g": "{n} 克",
+ "carbon.kg": "{n} 公斤",
+ "age.days": "{d} 日",
+ "age.years": "{y} 年",
+ "age.yearsDays": "{y} 年 {d} 日"
 };
 export default table;

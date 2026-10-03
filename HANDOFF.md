@@ -111,6 +111,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.43 | 診斷版（用戶確認 1.4.42 喺 iPhone iOS 18.7 仍然甩動作，網頁正常）：設定版本行長按 → Diagnostics 加「存檔／讀檔紀錄」（`src/native/saveLog.ts`，最近 60 條，localStorage `diag-savelog` + 原生 Preferences 雙份，合併，殺 app 都留低）。記錄：每次存檔（觸發來源、stamp、W/N/H/R、四個動作剩餘次數、care 計數、寬限時間、原生寫入每 key 成功／失敗＋延遲）、開 app 時兩份副本嘅 stamp 同數值＋揀邊份＋原因、之後 catch-up／advanceFlow／天氣（時區）／首個 tick 嘅數值（care 有變會標 CARE CHANGED）、生命周期（appStateChange、App pause/resume、visibilitychange、pagehide、freeze）、flush 開始／完成。「清除紀錄」掣。無改遊戲邏輯；versionCode 50 |
 | 1.4.44 | 真正修好 iPhone「做完動作閂 app 再開就冇咗」：1.1 起嘅原生鏡像用 `localStorage.setItem = …` 包裝，WebKit（WKWebView）入面咁樣賦值只會儲存一個叫 "setItem" 嘅項目、唔會覆蓋方法，所以 iPhone 存檔從來冇寫入 Preferences、stamp 從未設定，開 app 時舊嘅 Preferences 副本（第一次開 app 時複製）每次都覆蓋 localStorage（1.4.43 診斷紀錄證實）。而家所有遊戲寫入經 `kvSet`／`kvRemove`（`src/native/kv.ts`）→ localStorage → 鏡像（合併、重試、stamp 最後）；開 app 只有 Preferences stamp 嚴格較新或者 localStorage 冇存檔先用 Preferences，其餘（包括兩邊都冇 stamp）保留 localStorage 並複製去 Preferences；啟動時鏡像測試寫入（診斷紀錄 `mirror ok/FAILED`）；清走殘留 "setItem"/"removeItem" 項目；appStateChange inactive 都即刻存檔＋flush；versionCode 51 |
 | 1.4.45 | 權限提示延後：新玩家揀樹種、改名、完成澆水＋施肥教學（`coach.done`，跳過都算）之後先問，次序係位置 → 推送／提醒（`src/native/permGate.ts`、`askPermissionsInOrder()`；之前只用已批准嘅權限，唔彈提示）；舊玩家（已種樹、教學完成或者冇教學）即刻放行。網頁版同樣。開場／種樹鏡頭：拉近同退後改為 ease-in-out 時間線（冇咗指數 ease-out 一開始全速衝向樹、冇咗 0.05／0.98 門檻跳格），鏡頭距離用彈簧，相機時鐘每格上限 0.1 s、卡頓損失嘅時間慢慢追返（`src/three/camEase.ts`）。動物出現聲：刺耳嘅係 `chirp.wav`（約 3 kHz 方波似嘅哨聲，滿音量，昆蟲／蝴蝶／飛蛾／螢火蟲／蝙蝠出現時播）；而家雀鳥用柔和鳥叫 `call.ogg/m4a`（晨鳥錄音 1.6 s 片段），青蛙聲細聲咗，其他動物無聲；刪咗 `chirp.wav`、`bird.wav`；versionCode 52 |
+| 1.4.46 | 碳吸收量顯示：`carbonKg()` 唔再四捨五入（之前 18 cm 銀杏 0.026 kg → 「約 0 公斤」）；`carbonParts()`／`formatCarbon()`：1 kg 以下用整數克（最少 1 克，例如「約 26 克 CO₂／年」），1 kg 起用公斤一個小數；樹木狀態卡、照顧頁、紀錄頁、分享卡四處都用（`carbon.g`／`carbon.kg`，範本冇咗單位）。真實樹齡：365 日起顯示「X 年 Y 日」（Y=0 →「X 年」），英文精簡「132D」／「1Y」／「1Y 32D」（`age.*`、`formatRealAge()`）；英文狀態卡碳一行改「about 26 g CO₂/yr」。320 px 闊螢幕上狀態卡（130 px 文字欄）實測唔會多換行；versionCode 53 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -365,4 +366,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - `permGate.ts`：`permsReady()`／`openPerms()`（`sekai-tree-perms-ready`）／`onboardingDone(started, coach)`。`location.ts`、`push.ts`、`notify.ts`、`weather.ts locate()` 喺閘門關閉時只用已批准權限。設定入面玩家自己揀「用我所在位置」或者開通知都會開閘。
 - 鏡頭：`PULL_S = 4.0`、`SETTLE_S = 2.2`，`smootherstep`／`smoothstep`；`catchUp()`（每格 ≤ 0.1 s，最多 2× 速度追，債務上限 0.6 s）；`smoothDamp` 彈簧（0.6 s）。診斷面板顯示開場鏡頭最大一格位移。
 - 聲音：`animalCue()`；測試 `test/v1445.test.ts`。
+
+### 1.4.46 發佈（2026-10-04）
+
+- `rules.ts carbonParts(kg)`（純函數）、`ui.ts formatCarbon()`／`formatRealAge()`／`realAgeParts()`；i18n 腳本 `.ed/i18n146.py`、`.ed/i18n146b.py`。
+- 測試：`test/carbon-v1446.test.ts`。
 

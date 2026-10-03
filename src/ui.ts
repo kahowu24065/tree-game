@@ -13,7 +13,7 @@ import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
 import type { EventMode } from './events';
-import { baseDailyGrowth, carbonKg, emergencyBonusText, expectedShare, pickEvent } from './rules';
+import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
@@ -536,7 +536,7 @@ export function renderChrome(view: View): void {
     const night = state.started && !state.over ? previewChip(view.preview, Boolean(state.dying), state.collapses || 0) : null;
     const emerg = state.started && !state.over ? emergencyButtons(view, 'mini') : '';
     status.classList.toggle('pop-open', Boolean(night?.pop));
-    status.innerHTML = tl('ui.113', { p0: icon('chevronRight'), p1: statusName(state.treeName), p2: esc(speciesDef(state.species).name), p3: esc(stage.name), p4: shownAge(state), p5: realAgeDays(state.heightCm, state.species), p6: carbonKg(state.heightCm, state.species), p7: statBar('H', tl('ui.110'), state.health, [50, 100], 'health', state.dying ? tl('ui.045') : ''), p8: night?.chip ?? '', p9: waterBar(state.moisture), p10: statBar('N', tl('ui.111'), state.nutrients, N_OPTIMAL, 'food', '', N_MALNOURISHED), p11: statBar('R', tl('ui.112'), state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked'), p12: state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : '', p13: emerg ? `<div class="emerg-acts">${emerg}</div>` : '', p14: night?.pop ?? '' });
+    status.innerHTML = tl('ui.113', { p0: icon('chevronRight'), p1: statusName(state.treeName), p2: esc(speciesDef(state.species).name), p3: esc(stage.name), p4: shownAge(state), p5: esc(formatRealAge(realAgeDays(state.heightCm, state.species))), p6: esc(formatCarbon(carbonKg(state.heightCm, state.species))), p7: statBar('H', tl('ui.110'), state.health, [50, 100], 'health', state.dying ? tl('ui.045') : ''), p8: night?.chip ?? '', p9: waterBar(state.moisture), p10: statBar('N', tl('ui.111'), state.nutrients, N_OPTIMAL, 'food', '', N_MALNOURISHED), p11: statBar('R', tl('ui.112'), state.resist, [60, 100], state.windUnlocked ? 'shield' : 'shield locked'), p12: state.windUnlocked ? `<p class="collapse-count ${(state.collapses || 0) >= COLLAPSE_MAX ? 'danger' : state.collapses ? 'warn' : ''}">${esc(collapseText(state))}</p>` : '', p13: emerg ? `<div class="emerg-acts">${emerg}</div>` : '', p14: night?.pop ?? '' });
   }
 
   const rail = document.getElementById('rail');
@@ -996,7 +996,7 @@ function careTab(view: View): string {
   const extras = view.todayEvents.filter((e) => e !== 'clear' && e !== view.todayEvent);
   const emerg = emergencyButtons(view, 'act');
   const soon = cd && !same ? tl('ui.204', { p0: icon('warn'), p1: esc(ev(cd.event).label), p2: esc(hoursText(cd.hours)), p3: esc(effectText(cd.event, state.windUnlocked)) }) : '';
-  return tl('ui.215', { p0: today.severe || cd ? 'warn' : '', p1: view.manual ? tl('ui.205') : '', p2: esc(hm(view.minutesToSettle)), p3: esc(today.label), p4: same && cd ? ` · ${esc(hoursText(cd.hours))}` : '', p5: esc(effectText(view.todayEvent, state.windUnlocked)), p6: extras.length ? tl('ui.207', { p0: extras.map((e) => esc(sideEventLine(e, state.windUnlocked))).join(tl('ui.206')) }) : '', soon, emerg, p9: careAdvice(view), p10: actionBtn('water', 'drop', 'blue', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.208', { used: water.used, max: water.max }) : tl('ui.waterAct', { amount: CARE.water.amount, used: water.used, max: water.max }), water.used >= water.max || state.moisture >= W_SATURATED), p11: actionBtn('drain', 'drain', 'purple', tl('ui.209'), tl('ui.210', { amount: CARE.drain.amount, used: drain.used, max: drain.max }), drain.used >= drain.max), p12: actionBtn('fertilize', 'sprout', 'green', tl('ui.099'), tl('ui.211', { amount: CARE.fertilize.amount, used: feed.used, max: feed.max }), feed.used >= feed.max), p13: actionBtn('deworm', 'bug', 'orange', tl('ui.122'), state.care.dewormed ? tl('ui.212') : state.pest.active ? tl('ui.213', { p0: pestDamageWith(state.residents.length) }) : tl('ui.214'), state.care.dewormed), p14: guardCards(view), p15: nightCard(view.preview, state.collapses || 0), p16: s ? settlementCard(s) : '', p17: esc(event.title), p18: esc(event.text), p19: carbonKg(state.heightCm, state.species), daysCared: state.daysCared });
+  return tl('ui.215', { p0: today.severe || cd ? 'warn' : '', p1: view.manual ? tl('ui.205') : '', p2: esc(hm(view.minutesToSettle)), p3: esc(today.label), p4: same && cd ? ` · ${esc(hoursText(cd.hours))}` : '', p5: esc(effectText(view.todayEvent, state.windUnlocked)), p6: extras.length ? tl('ui.207', { p0: extras.map((e) => esc(sideEventLine(e, state.windUnlocked))).join(tl('ui.206')) }) : '', soon, emerg, p9: careAdvice(view), p10: actionBtn('water', 'drop', 'blue', tl('ui.115'), state.moisture >= W_SATURATED ? tl('ui.208', { used: water.used, max: water.max }) : tl('ui.waterAct', { amount: CARE.water.amount, used: water.used, max: water.max }), water.used >= water.max || state.moisture >= W_SATURATED), p11: actionBtn('drain', 'drain', 'purple', tl('ui.209'), tl('ui.210', { amount: CARE.drain.amount, used: drain.used, max: drain.max }), drain.used >= drain.max), p12: actionBtn('fertilize', 'sprout', 'green', tl('ui.099'), tl('ui.211', { amount: CARE.fertilize.amount, used: feed.used, max: feed.max }), feed.used >= feed.max), p13: actionBtn('deworm', 'bug', 'orange', tl('ui.122'), state.care.dewormed ? tl('ui.212') : state.pest.active ? tl('ui.213', { p0: pestDamageWith(state.residents.length) }) : tl('ui.214'), state.care.dewormed), p14: guardCards(view), p15: nightCard(view.preview, state.collapses || 0), p16: s ? settlementCard(s) : '', p17: esc(event.title), p18: esc(event.text), p19: esc(formatCarbon(carbonKg(state.heightCm, state.species))), daysCared: state.daysCared });
 }
 
 export function settlementCard(s: NonNullable<GameState['lastSettlement']>): string {
@@ -1292,7 +1292,7 @@ function milestoneTab(view: View): string {
     const done = meters >= m.meters;
     return tl('ui.300', { p0: done ? 'done' : '', p1: esc(m.title), p2: m.meters >= 1 ? tl('ui.307', { meters: m.meters }) : tl('ui.308', { p0: Math.round(m.meters * 100) }), p3: esc(m.detail) });
   }).join('');
-  return tl('ui.314', { p0: esc(ageText(state)), p1: esc(formatHeight(state.heightCm)), pct, p3: beyond ? tl('ui.309', { p0: esc(sp.name), p1: R / 100 }) : tl('ui.310', { p0: R / 100, p1: esc(sp.name), maxM: sp.maxM }), p4: Math.min(100, pct).toFixed(1), p5: carbonKg(state.heightCm, state.species), SHERMAN_M, p7: esc(percentOf(meters, SHERMAN_M)), HYPERION_M, p9: next ? tl('ui.311', { p0: esc(next.title), meters: next.meters }) : '', ages, recRow, collection, badges, reviveTokens: meta.reviveTokens, p15: meta.starry ? tl('ui.312') : '', p16: meta.landmark ? tl('ui.313', { p0: esc(meta.landmark.name), p1: esc(formatHeight(meta.landmark.heightCm)) }) : '', rows });
+  return tl('ui.314', { p0: esc(ageText(state)), p1: esc(formatHeight(state.heightCm)), pct, p3: beyond ? tl('ui.309', { p0: esc(sp.name), p1: R / 100 }) : tl('ui.310', { p0: R / 100, p1: esc(sp.name), maxM: sp.maxM }), p4: Math.min(100, pct).toFixed(1), p5: esc(formatCarbon(carbonKg(state.heightCm, state.species))), SHERMAN_M, p7: esc(percentOf(meters, SHERMAN_M)), HYPERION_M, p9: next ? tl('ui.311', { p0: esc(next.title), meters: next.meters }) : '', ages, recRow, collection, badges, reviveTokens: meta.reviveTokens, p15: meta.starry ? tl('ui.312') : '', p16: meta.landmark ? tl('ui.313', { p0: esc(meta.landmark.name), p1: esc(formatHeight(meta.landmark.heightCm)) }) : '', rows });
 }
 
 /** 成就 tab: a running count per weather, and the next count that claims an achievement. */
@@ -1532,7 +1532,7 @@ export function overModal(state: GameState, meta: MetaState, lines: string[]): s
   const kept = Object.values(state.milestones ?? {}).length;
   const wxKept = Object.keys(state.wx?.awards ?? {}).length;
   const keptLine = kept || wxKept ? tl('ui.330', { kept, wxKept }) : tl('ui.331');
-  return tl('ui.332', { p0: esc(state.treeName), p1: shownAge(state), p2: esc(formatHeight(state.heightCm)), p3: recordPct(state), p4: carbonKg(state.heightCm, state.species), got, keptLine, p7: meta.badges['1'], p8: meta.badges['2'], p9: meta.badges['3'] });
+  return tl('ui.332', { p0: esc(state.treeName), p1: shownAge(state), p2: esc(formatHeight(state.heightCm)), p3: recordPct(state), p4: esc(formatCarbon(carbonKg(state.heightCm, state.species))), got, keptLine, p7: meta.badges['1'], p8: meta.badges['2'], p9: meta.badges['3'] });
 }
 
 /** v14 celebratory card for milestones just reached (same badge style as the old season card). */
@@ -1598,6 +1598,23 @@ export function settingsModal(treeName: string, notify: boolean | null = null): 
 }
 
 /** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */
+/** 1.4.46: 碳吸收量 as 「26 克」 below 1 kg, 「1.2 公斤」 from 1 kg (see carbonParts). */
+export function formatRealAge(days: number): string {
+  const p = realAgeParts(days);
+  return p.y === 0 ? tl('age.days', { d: p.d }) : p.d === 0 ? tl('age.years', { y: p.y }) : tl('age.yearsDays', { y: p.y, d: p.d });
+}
+
+/** 1.4.46: 真實樹齡 from 365 days on as years + days (365-day years, like the rest of the game). */
+export function realAgeParts(days: number): { y: number; d: number } {
+  const n = Number.isFinite(days) ? Math.max(0, Math.floor(days)) : 0;
+  return n < 365 ? { y: 0, d: n } : { y: Math.floor(n / 365), d: n % 365 };
+}
+
+export function formatCarbon(kg: number): string {
+  const p = carbonParts(kg);
+  return tl(p.unit === 'g' ? 'carbon.g' : 'carbon.kg', { n: p.n });
+}
+
 export function diagModal(text: string): string {
   return `<p class="eyebrow">Diagnostics</p><pre class="diag-pre">${esc(text)}</pre><div class="seg diag-actions"><button type="button" data-action="diag-refresh">Refresh</button><button type="button" data-action="diag-copy">Copy</button><button type="button" data-action="diag-clear-log">${esc(tl('diag.clearLog'))}</button></div><button type="button" class="primary" data-action="close-modal">OK</button>`;
 }

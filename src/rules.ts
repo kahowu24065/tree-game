@@ -210,7 +210,17 @@ export function carbonKg(heightCm: number, species?: SpeciesId | string): number
   const remaining = Math.max(0, sp.targetM - heightM);
   const grownM = remaining * (1 - Math.exp(-1 / sp.realTauYears));
   const added = storedCo2Kg(heightM + grownM, dbhCm, sp.woodDensity) - storedCo2Kg(heightM, dbhCm, sp.woodDensity);
-  return round1(Math.max(0, added));
+  // 1.4.46: unrounded — a seedling's ~0.03 kg used to show as 「約 0 公斤」; formatCarbon() does the display.
+  return Math.max(0, added);
+}
+
+/** 1.4.46 display: below 1 kg as whole grams (at least 1 g when there is any uptake), from 1 kg in kg with one decimal. */
+export function carbonParts(kg: number): { unit: 'g' | 'kg'; n: string } {
+  const v = Number.isFinite(kg) ? Math.max(0, kg) : 0;
+  if (v <= 0) return { unit: 'g', n: '0' };
+  const g = Math.max(1, Math.round(v * 1000));
+  if (g < 1000) return { unit: 'g', n: String(g) };
+  return { unit: 'kg', n: Math.max(1, round1(v)).toFixed(1) };
 }
 
 /** Deterministic 0-1 roll per date (same result on every device, testable). */
