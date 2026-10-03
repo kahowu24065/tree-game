@@ -107,6 +107,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.39 | 訂閱頁（ios 分支）：兩個並排購買掣「月費」同「永久」（一次性 non-consumable `sekai_tree_lifetime`，同樣解鎖 `premium` entitlement）；價錢全部用商店 priceString（RevenueCat offering 嘅 monthly／lifetime package，lifetime 冇 package 就 `getProducts` 攞），未載入就只顯示「月費」／「永久」，㩒落提示「訂閱暫時未開放」；拎走寫死嘅 HK$8（標題句、條款都改）；條款加「永久係一次性購買、唔會續期」；「冇廣告」下面加同樣樣式嘅「後續更新會加入更多會員福利」（`prem.perkMore`，四語）；main 只係升版本；versionCode 46 |
 | 1.4.40 | 訂閱頁（ios 分支）：加「年費」（auto-renew `sekai_tree_yearly`，同月費同一個訂閱群組，解鎖 `premium`）；三個掣 月費／年費／永久 三欄並排（320 px 都放得落，單位 `/月`、`（一次性）` 會成段落第二行）；價錢用 RevenueCat Annual package `$rc_annual`，冇就用 product id 攞；未載入只顯示名，㩒落「訂閱暫時未開放」；條款改成涵蓋月費同年費自動續期（`{per}` 列出兩個價）；恢復購買包晒三樣。main：分頁標題淨係「世界之樹」（刪 `ui.134`，之前會變「世界之樹 · 世界之樹」）；versionCode 47 |
 | 1.4.41 | 轉語言即時生效、唔再 reload（`live()` 表格原地重建＋`switchLocale`，重新 render、重開設定；遊戲狀態、3D、聲音照行）；澆水後 5 分鐘（遊戲時鐘）水分唔減（`state.pause.w`，`CARE_GRACE_MS`，閂 app 補算都計）— 原因係 `waterAdd` 四捨五入到 0.1，W 成日落喺 x.5，顯示進位後一秒就跌 1；施肥冇呢個問題（+25 唔捨入），所以 N 冇寬限；圖鑑只會解鎖當刻出現緊嘅動物（`outAt`：日頭日行性、夜晚夜行性），新增夜間第一隻動物「斜紋夜蛾」（`nightmoth`，同菜粉蝶同級）；versionCode 48 |
+| 1.4.42 | 修 iPhone「澆水／施肥／除蟲／疏水之後閂 app 再開就冇咗」：原生 Preferences 鏡像係 fire-and-forget 排隊寫，iOS 一入背景就暫停 JS，未寫完就被殺；下次開 app `planHydrate` 一律用 Preferences（舊）覆蓋 localStorage（新）。而家有寫入印 `sekai-tree-stamp`，邊個新用邊個；鏡像合併只寫最新值、印最後寫；背景（visibilitychange／App pause／pagehide）即刻 `saveNow()`＋flush。1.4.41 澆水寬限冇關係（只改流失速率，唔掂次數）；versionCode 49 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -336,6 +337,12 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - **語言即時切換**：`src/i18n/index.ts` `live(build)`／`switchLocale(l)`／`onLocaleChange(fn)`。任何 import 時用 `t()` 砌嘅模組級表格都要包 `live(() => (...))`（`/workspace/.ed/livewrap.cjs` 會自動包；`/workspace/.ed/modtl.cjs` 列出漏網）。一次過砌好嘅 DOM 用 `onLocaleChange` 重新貼字（例：animalHud）。`main.ts` `applyLocale()`：存設定 → 重建表 → `localizeStatic` → `render` → 重開設定 → 重排提示 → 重攞天氣字。
 - **澆水寬限**：`src/sim.ts` `CARE_GRACE_MS`、`graceOverlap`／`stepRates`；`applyDrift`／`simulateDrift` 要傳時間軸起點（`flow.at`），今晚預計同結算一致。`performAction(state, action, nowMs, night)`。說明頁冇加字（用戶要求）。
 - **圖鑑按日夜**：`src/data/animals.ts` `outAt()`（3D `fits()` 都用佢）；`refreshUnlocks({ night })`、`catchUp(..., night)`、`advanceVirtualDay(..., night)`，main 用 `nightNow()`（daylight < 0.45）。以前所有動物唔理日夜都會解鎖（例如夜晚開新局解鎖菜粉蝶但睇唔到）。
+
+### 1.4.42 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。網站只部署 Cloudflare Pages（gh-pages 係轉址頁，唔好覆蓋）。冇新 i18n。
+- `src/native/persist.ts`：`STAMP_KEY`、`planHydrate`（Preferences 空 → 搬 localStorage；localStorage 印較新 → 推去 Preferences；否則 Preferences → localStorage）、`installWriteThrough(storage, backend, now)` 合併寫入＋失敗重試。`src/main.ts` `saveNow()`。測試：`test/persist-v1442.test.ts`、`test/native.test.ts`。
+- iOS AdMob：GitHub secrets `ADMOB_IOS_APP_ID`（`~9261059644`）同 `ADMOB_IOS_BANNER_ID`（`/1065865690`）已設；Android 用另一套（`~4204763415`／`/4013191726`）。`ios.yml` 會檢查 Info.plist `GADApplicationIdentifier` 同 web bundle 有冇注入（build 126 起）。
+
 
 
 

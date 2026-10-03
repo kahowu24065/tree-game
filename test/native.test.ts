@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { installWriteThrough, isPersistKey, planHydrate } from '../src/native/persist';
+import { STAMP_KEY, installWriteThrough, isPersistKey, planHydrate } from '../src/native/persist';
 import { NOTIFY_IDS, planNotifications, type NotifyInput } from '../src/native/notify';
 
 class MemStorage implements Storage {
@@ -31,23 +31,30 @@ describe('native persist adapter', () => {
   it('fresh install: nothing to do', () => {
     expect(planHydrate({}, {})).toEqual({ toLocal: [], toPrefs: [] });
   });
-  it('writes through game keys in order, still updating localStorage synchronously', async () => {
+  it('1.4.42: writes through game keys coalesced (latest value only), stamp last, localStorage updated synchronously', async () => {
     const s = new MemStorage();
     const log: string[] = [];
-    const flush = installWriteThrough(s, {
-      set: async (k, v) => void log.push(`set ${k}=${v}`),
-      remove: async (k) => void log.push(`rm ${k}`),
-    });
+    let t = 1000;
+    const flush = installWriteThrough(
+      s,
+      { set: async (k, v) => void log.push(`set ${k}=${v}`), remove: async (k) => void log.push(`rm ${k}`) },
+      () => t,
+    );
     s.setItem('sekai-tree-v2', 'a');
     s.setItem('unrelated', 'b');
     s.setItem('sekai-tree-v2', 'c');
+    s.setItem('sekai-tree-meta-v1', 'm');
     s.removeItem('sekai-tree-v2');
     expect(s.getItem('unrelated')).toBe('b');
     expect(s.getItem('sekai-tree-v2')).toBeNull();
+    expect(Number(s.getItem(STAMP_KEY))).toBeGreaterThan(1000); // monotonic even with a frozen clock
     await flush();
-    expect(log).toEqual(['set sekai-tree-v2=a', 'set sekai-tree-v2=c', 'rm sekai-tree-v2']);
+    // the first value goes out at once; the rest are coalesced into one batch, stamp after the data
+    expect(log[0]).toBe('set sekai-tree-v2=a');
+    expect(log.slice(-3)).toEqual(['set sekai-tree-meta-v1=m', 'rm sekai-tree-v2', `set ${STAMP_KEY}=${s.getItem(STAMP_KEY)}`]);
+    expect(log.filter((l) => l.includes('=c'))).toEqual([]);
   });
-  it('a failing backend write does not break later writes', async () => {
+  it('a failing backend write is retried and does not block later writes', async () => {
     const s = new MemStorage();
     const log: string[] = [];
     let first = true;
@@ -59,9 +66,19 @@ describe('native persist adapter', () => {
       remove: async () => {},
     });
     s.setItem('sekai-tree-v2', '1');
+    await flush();
+    expect(log).toContain('sekai-tree-v2=1');
     s.setItem('sekai-tree-v2', '2');
     await flush();
-    expect(log).toEqual(['sekai-tree-v2=2']);
+    expect(log.filter((l) => l.startsWith('sekai-tree-v2='))).toEqual(['sekai-tree-v2=1', 'sekai-tree-v2=2']);
+  });
+  it('1.4.42: localStorage newer than Preferences (app closed before the mirror caught up) → localStorage wins', () => {
+    const plan = planHydrate({ 'sekai-tree-v2': 'OLD', [STAMP_KEY]: '100' }, { 'sekai-tree-v2': 'NEW', 'sekai-tree-grove': 'G', [STAMP_KEY]: '200' });
+    expect(plan.toLocal).toEqual([]);
+    expect(plan.toPrefs.map(([k]) => k)).toEqual(['sekai-tree-v2', 'sekai-tree-grove', STAMP_KEY]);
+    // Preferences newer (or WebView storage wiped) → Preferences wins as before
+    expect(planHydrate({ 'sekai-tree-v2': 'P', [STAMP_KEY]: '300' }, { 'sekai-tree-v2': 'L', [STAMP_KEY]: '200' }).toLocal).toEqual([['sekai-tree-v2', 'P'], [STAMP_KEY, '300']]);
+    expect(planHydrate({ 'sekai-tree-v2': 'P', [STAMP_KEY]: '300' }, {}).toLocal).toEqual([['sekai-tree-v2', 'P'], [STAMP_KEY, '300']]);
   });
 });
 
