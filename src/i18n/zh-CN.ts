@@ -366,6 +366,8 @@ const table: Record<string, string> = {
  "cwa.002": "中央气象署数据响应 {status}",
  "cwa.003": "无法连接到中央气象署数据",
  "dates.001": "{m}月{d}日（{p2}）",
+ "diag.clearLog": "清除记录",
+ "diag.cleared": "已清除存档记录",
  "eco.001": "细小",
  "eco.002": "小型",
  "eco.003": "中型",

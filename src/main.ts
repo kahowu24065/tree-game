@@ -50,7 +50,7 @@ import {
   type CatchupReport,
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
-import { canOpenSecond, clearGrove, isleAward, loadGrove, saveGrove } from './grove';
+import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, saveCoach, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
@@ -126,7 +126,9 @@ import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
 import { isNative } from './native/platform';
-import { flushPersist, hydrateNative } from './native/persist';
+import { flushPersist, hydrateInfo, hydrateNative, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
+import { createSaveLog } from './native/saveLog';
+import { careSig, stampText, sumGroveRaw, sumRaw, sumState } from './saveDiag';
 import { decodeSave, encodeSave } from './saveCode';
 import { guideModal, type GuideTab } from './guide';
 import { Share } from '@capacitor/share';
@@ -144,6 +146,63 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 // Android app: load the save from native Preferences into localStorage before anything reads it (web: no-op).
 await hydrateNative();
 
+// 1.4.43 diagnostics: persistent save / load / lifecycle log (diagnostics panel; survives a kill).
+const slog = createSaveLog();
+try {
+  slog.add(await slog.init(), 'boot');
+} catch {
+  /* diagnostics only */
+}
+{
+  const h = hydrateInfo;
+  let devTz = '?';
+  try {
+    devTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    /* old engine */
+  }
+  slog.add(
+    `LAUNCH ${APP_VERSION} ${h.native ? 'native' : 'web'} · device tz ${devTz} (UTC${-new Date().getTimezoneOffset() / 60 >= 0 ? '+' : ''}${-new Date().getTimezoneOffset() / 60}) · HK date ${formatDateInTz(new Date(), 'Asia/Hong_Kong')} · hydrate ${h.ms}ms: ${h.reason}${h.err ? ` ERROR ${h.err}` : ''} · keys prefs ${h.prefsKeys} local ${h.localKeys} · copied →local ${h.toLocal} →prefs ${h.toPrefs}`,
+    'boot',
+  );
+  if (h.native) {
+    slog.add(`  prefs copy: stamp ${stampText(h.prefs[STAMP_KEY])} · save ${sumRaw(h.prefs[SAVE_KEY])} · grove ${sumGroveRaw(h.prefs[GROVE_KEY])}`, 'boot');
+    slog.add(`  local copy: stamp ${stampText(h.local[STAMP_KEY])} · save ${sumRaw(h.local[SAVE_KEY])} · grove ${sumGroveRaw(h.local[GROVE_KEY])}`, 'boot');
+  } else {
+    slog.add(`  local: stamp ${stampText(localStorage.getItem(STAMP_KEY) ?? undefined)} · save ${sumRaw(localStorage.getItem(SAVE_KEY) ?? undefined)} · grove ${sumGroveRaw(localStorage.getItem(GROVE_KEY) ?? undefined)}`, 'boot');
+  }
+}
+observeNativeWrites((writes) => {
+  const short = (k: string) => (k === SAVE_KEY ? 'v2' : k === GROVE_KEY ? 'grove' : k === STAMP_KEY ? 'stamp' : k.replace(/^(sekai-tree|yiri-yisyu)-?/, ''));
+  const txt = writes.map((w) => `${short(w.key)}${w.bytes >= 0 ? ` ${(w.bytes / 1024).toFixed(1)}kB` : ' rm'} ${w.ok ? 'ok' : `FAIL ${w.err}`} ${w.ms}ms`).join(', ');
+  const failed = writes.some((w) => !w.ok);
+  if (failed || !slog.amend('save', `→ native[${txt}]`)) slog.add(`native write${failed ? ' FAILED' : ''}: ${txt}`, failed ? 'nwfail' : 'nw', !failed);
+});
+/** Diagnostics: wall time of the latest tap of each care action this launch. */
+const lastAct: Record<string, number> = {};
+function logState(label: string, tag = 'state', fold = false): void {
+  try {
+    slog.add(`${label} · tz ${timezone} today ${today()} · isle ${isle} · ${sumState(state)}`, tag, fold);
+  } catch {
+    /* diagnostics only */
+  }
+}
+function logSave(trigger: string): void {
+  try {
+    const acts = Object.entries(lastAct)
+      .map(([a, t]) => `${a}@${new Date(t).toTimeString().slice(0, 8)}`)
+      .join(' ');
+    const tick = trigger === 'tick';
+    slog.add(
+      `SAVE[${trigger}] stamp ${localStorage.getItem(STAMP_KEY) ?? '-'} · ${sumState(state)}${acts ? ` · last ${acts}` : ''} · local[v2,grove${tick ? '' : ',meta'}]${hydrateInfo.native ? '' : ' (web: no native)'}`,
+      tick ? 'save:tick' : 'save',
+      tick,
+    );
+  } catch {
+    /* diagnostics only */
+  }
+}
+
 let timezone = 'Asia/Hong_Kong';
 setLogClock(() => {
   const m = clockMinutes(timezone);
@@ -160,6 +219,16 @@ let home = loadedGrove.home;
 let second: GameState | null = loadedGrove.second;
 let isle: 0 | 1 = loadedGrove.isle;
 state = isle === 1 && second ? second : home;
+const bootLogUntil = Date.now() + 90_000;
+logState(`loaded (loadGame + loadGrove, migrations applied; save had ${loadGame() ? 'a tree' : 'none'})`, 'boot');
+/** Diagnostics: log a step that may change the loaded state (always shortly after launch, later only if care changed). */
+function watchStep<T>(label: string, fn: () => T): T {
+  const before = careSig(state);
+  const out = fn();
+  const after = careSig(state);
+  if (Date.now() < bootLogUntil || before !== after) logState(`${label}${before !== after ? ` CARE CHANGED (${before} → ${after})` : ''}`);
+  return out;
+}
 /** Species picker opened to plant on the empty second island, not to rename or restart. */
 let plantingSecond = false;
 let dev: DevSettings = DEV_PANEL ? loadDev() : defaultDev();
@@ -671,23 +740,34 @@ function syncGrove(): void {
  * 1.4.42: going to the background (or the page going away): bring the flow up to now, write everything and push
  * the native mirror straight away — iOS may suspend / kill the app seconds later.
  */
-function saveNow(): void {
+function saveNow(trigger = 'saveNow'): void {
   if (importing) return;
-  syncFlow(true);
+  syncFlow(true, trigger);
   syncGrove();
   saveGame(isle === 1 && second ? second : home);
   saveGrove({ isle, home, second });
   saveMeta(meta);
-  void flushPersist();
+  const t0 = Date.now();
+  if (hydrateInfo.native) slog.add(`flush start (${trigger}) · queue pending ${nativeQueue.pending}${nativeQueue.busySince ? ` busy ${Date.now() - nativeQueue.busySince}ms` : ''}`, 'flush');
+  void flushPersist().then(() => {
+    if (hydrateInfo.native) slog.add(`flush done (${trigger}) ${Date.now() - t0}ms · pending ${nativeQueue.pending}`, 'flush');
+  });
 }
-window.addEventListener('pagehide', () => saveNow());
+window.addEventListener('pagehide', (e) => {
+  slog.add(`life: pagehide persisted=${e.persisted}`, 'life');
+  saveNow('pagehide');
+});
+window.addEventListener('beforeunload', () => slog.add('life: beforeunload', 'life'));
+document.addEventListener('freeze', () => slog.add('life: freeze', 'life'));
+document.addEventListener('resume', () => slog.add('life: page resume', 'life'));
 
-function persist(): void {
+function persist(trigger = 'persist'): void {
   if (importing) return;
   syncGrove();
   saveGame(isle === 1 && second ? second : home);
   saveGrove({ isle, home, second });
   saveMeta(meta);
+  logSave(trigger);
   scheduleReminders(false);
 }
 
@@ -711,9 +791,10 @@ function arriveIsle(next: 0 | 1): void {
   else if (second) state = second;
   else state = home;
   const landed = next === 1 && grantIsle('land');
-  if (next === 0 || second) runCatchup();
+  slog.add(`island switch → ${next}`, 'isle');
+  if (next === 0 || second) runCatchup('island switch');
   else {
-    persist();
+    persist('island switch');
     render();
   }
   if (landed) toast(tl('main.018'));
@@ -926,12 +1007,12 @@ function showReport(report: CatchupReport): void {
   if (!playPendingCollapse(report, rest)) rest();
 }
 
-function runCatchup(): void {
+function runCatchup(why = 'catch-up'): void {
   reconcileClock();
-  const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow());
+  const report = watchStep(`${why}: catchUp (lastSeen ${state.lastSeenDate} → today ${today()})`, () => catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow()));
   if (state.started && !state.over && state.lastSeenDate === today()) {
     const now = virtualNow();
-    advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
+    watchStep(`${why}: advanceFlow`, () => advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() }));
   }
   if (opening) deferredReport = report;
   else showReport(report);
@@ -1046,9 +1127,16 @@ function syncWarningWater(): boolean {
 
 function applyWeather(snapshot: WeatherSnapshot): void {
   const before = today();
+  const careBefore = careSig(state);
+  const tzBefore = timezone;
   weather = snapshot;
   setLabelRegion(usesHko(snapshot) || usesSmg(snapshot) ? 'hk' : 'intl');
   timezone = snapshot.timezone || timezone;
+  if (Date.now() < bootLogUntil || timezone !== tzBefore || today() !== before)
+    slog.add(`weather ${snapshot.provider}/${snapshot.origin} tz ${tzBefore} → ${timezone} · today ${before} → ${today()}`, 'wx');
+  queueMicrotask(() => {
+    if (Date.now() < bootLogUntil || careSig(state) !== careBefore) logState(`after weather${careSig(state) !== careBefore ? ` CARE CHANGED (${careBefore} → ${careSig(state)})` : ''}`);
+  });
   if (snapshot.origin === 'live') saveWeatherCache(snapshot);
   statusLine =
     snapshot.origin === 'live'
@@ -1070,7 +1158,7 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     if (got.length) toast(tl('main.031', { p0: got.map(animalName).join(tl('ui.206')) }));
   }
   if (today() !== before) {
-    const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow());
+    const report = watchStep(`weather date change ${before} → ${today()}: catchUp`, () => catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow()));
     showReport(report);
     syncWarningWater();
     scheduleReminders(false);
@@ -1516,7 +1604,8 @@ function doAction(action: string, target: HTMLElement): void {
     // Flow first up to this moment, so the 1.4.41 grace window starts exactly at the tap.
     syncFlow();
     const result = performAction(state, action as CareAction, virtualNow(), nightNow());
-    persist();
+    if (result.ok) lastAct[action] = Date.now();
+    persist(`${action}${result.ok ? '' : ' (refused)'}`);
     render();
     toast(result.message);
     if (result.ok) target.classList.add('pop');
@@ -1594,6 +1683,12 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'diag-copy':
       void copyText(diagText()).then((ok) => toast(ok ? tl('main.049') : tl('main.050')));
+      return;
+    case 'diag-clear-log':
+      slog.clear();
+      slog.add(`log cleared · ${sumState(state)}`, 'clear');
+      updateModal(diagModal(diagText()));
+      toast(tl('diag.cleared'));
       return;
     case 'diag-refresh':
       updateModal(diagModal(diagText()));
@@ -2303,12 +2398,17 @@ let flowSavedAt = 0;
  * v1.4.17: 水分／養分／抗風力 drift with real time (健康 still settles at midnight, v1.4.18). Called every second, after the
  * catch-up on open/resume; closed-app time is caught up in 15-minute steps inside advanceFlow.
  */
-function syncFlow(force = false): void {
+let firstTickLogged = false;
+function syncFlow(force = false, trigger = 'tick'): void {
   // v1.4.18: 水分／養分／抗風力 drift; 健康 itself only changes at the midnight settlement.
   if (!state.started || state.over) return;
   if (state.lastSeenDate !== today()) {
-    runCatchup(); // midnight passed while open: settle last night first (it also starts today's flow)
+    runCatchup(`date change in ${trigger}`); // midnight passed while open: settle last night first (it also starts today's flow)
     return;
+  }
+  if (!firstTickLogged && trigger === 'tick') {
+    firstTickLogged = true;
+    queueMicrotask(() => logState('after first tick'));
   }
   const now = virtualNow();
   advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
@@ -2323,6 +2423,7 @@ function syncFlow(force = false): void {
     syncGrove();
     saveGame(isle === 1 && second ? second : home);
     saveGrove({ isle, home, second });
+    logSave(trigger === 'tick' && force ? 'tick(forced)' : trigger);
     if (changed) {
       scheduleReminders(false);
       render();
@@ -2364,14 +2465,15 @@ function frame(time: number): void {
 
 document.addEventListener('visibilitychange', () => {
   setPageAudible(!document.hidden);
+  slog.add(`life: visibilitychange ${document.visibilityState}`, 'life');
   if (document.hidden) {
-    saveNow();
+    saveNow('visibility hidden');
     scheduleReminders(true);
     return;
   }
   resetFrameClock();
   loop();
-  runCatchup();
+  runCatchup('visible');
   if (usesDeviceLocation()) {
     relocateNow();
     return;
@@ -2390,17 +2492,24 @@ resize();
 bindSheetDrag();
 if (isNative()) {
   void App.addListener('pause', () => {
-    saveNow();
+    slog.add('life: App pause', 'life');
+    saveNow('App pause');
     scheduleReminders(true);
   });
-  void App.addListener('resume', () => relocateNow());
+  void App.addListener('resume', () => {
+    slog.add('life: App resume', 'life');
+    relocateNow();
+  });
+  void App.addListener('appStateChange', ({ isActive }) => {
+    slog.add(`life: appStateChange ${isActive ? 'active' : 'inactive'}`, 'life');
+  });
   scheduleReminders(false);
   void syncPush(notifyEnabled());
 }
 const startedAtBoot = state.started;
 if (!startedAtBoot) beginSpeciesPick();
 else holdOpening();
-runCatchup();
+runCatchup('launch');
 syncNest();
 requestAnimationFrame(() =>
   requestAnimationFrame(() => {
@@ -2457,6 +2566,11 @@ function diagText(): string {
     `audio states: ${a.states.join(', ') || '-'}`,
     ...a.files.map((f) => `  ${f.id}: ${f.state}${f.file ? ` ${f.file}` : ''}${f.ms !== undefined ? ` ${f.ms} ms` : ''}${f.seconds ? ` ${f.seconds}s` : ''}${f.error ? ` — ${f.error}` : ''}`),
     `uptime ${((performance.now() - diag.bootAt) / 1000).toFixed(1)}s`,
+    `now ${new Date().toString().slice(0, 33)} · tz ${timezone} · today ${today()} · isle ${isle}`,
+    `state ${sumState(state)}`,
+    `stamp local ${stampText(localStorage.getItem(STAMP_KEY) ?? undefined)} · native queue ${hydrateInfo.native ? `${nativeQueue.busySince ? `BUSY ${Math.round((Date.now() - nativeQueue.busySince) / 1000)}s` : 'idle'} · pending ${nativeQueue.pending} · batches ${nativeQueue.batches} · failed ${nativeQueue.fails}` : 'n/a (web)'}`,
+    '--- save / load log (newest last) ---',
+    slog.text(),
   ];
   return lines.join('\n');
 }

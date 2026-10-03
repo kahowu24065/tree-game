@@ -108,6 +108,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.40 | 訂閱頁（ios 分支）：加「年費」（auto-renew `sekai_tree_yearly`，同月費同一個訂閱群組，解鎖 `premium`）；三個掣 月費／年費／永久 三欄並排（320 px 都放得落，單位 `/月`、`（一次性）` 會成段落第二行）；價錢用 RevenueCat Annual package `$rc_annual`，冇就用 product id 攞；未載入只顯示名，㩒落「訂閱暫時未開放」；條款改成涵蓋月費同年費自動續期（`{per}` 列出兩個價）；恢復購買包晒三樣。main：分頁標題淨係「世界之樹」（刪 `ui.134`，之前會變「世界之樹 · 世界之樹」）；versionCode 47 |
 | 1.4.41 | 轉語言即時生效、唔再 reload（`live()` 表格原地重建＋`switchLocale`，重新 render、重開設定；遊戲狀態、3D、聲音照行）；澆水後 5 分鐘（遊戲時鐘）水分唔減（`state.pause.w`，`CARE_GRACE_MS`，閂 app 補算都計）— 原因係 `waterAdd` 四捨五入到 0.1，W 成日落喺 x.5，顯示進位後一秒就跌 1；施肥冇呢個問題（+25 唔捨入），所以 N 冇寬限；圖鑑只會解鎖當刻出現緊嘅動物（`outAt`：日頭日行性、夜晚夜行性），新增夜間第一隻動物「斜紋夜蛾」（`nightmoth`，同菜粉蝶同級）；versionCode 48 |
 | 1.4.42 | 修 iPhone「澆水／施肥／除蟲／疏水之後閂 app 再開就冇咗」：原生 Preferences 鏡像係 fire-and-forget 排隊寫，iOS 一入背景就暫停 JS，未寫完就被殺；下次開 app `planHydrate` 一律用 Preferences（舊）覆蓋 localStorage（新）。而家有寫入印 `sekai-tree-stamp`，邊個新用邊個；鏡像合併只寫最新值、印最後寫；背景（visibilitychange／App pause／pagehide）即刻 `saveNow()`＋flush。1.4.41 澆水寬限冇關係（只改流失速率，唔掂次數）；versionCode 49 |
+| 1.4.43 | 診斷版（用戶確認 1.4.42 喺 iPhone iOS 18.7 仍然甩動作，網頁正常）：設定版本行長按 → Diagnostics 加「存檔／讀檔紀錄」（`src/native/saveLog.ts`，最近 60 條，localStorage `diag-savelog` + 原生 Preferences 雙份，合併，殺 app 都留低）。記錄：每次存檔（觸發來源、stamp、W/N/H/R、四個動作剩餘次數、care 計數、寬限時間、原生寫入每 key 成功／失敗＋延遲）、開 app 時兩份副本嘅 stamp 同數值＋揀邊份＋原因、之後 catch-up／advanceFlow／天氣（時區）／首個 tick 嘅數值（care 有變會標 CARE CHANGED）、生命周期（appStateChange、App pause/resume、visibilitychange、pagehide、freeze）、flush 開始／完成。「清除紀錄」掣。無改遊戲邏輯；versionCode 50 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -342,4 +343,11 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 見版本歷史；推送伺服器冇改。網站只部署 Cloudflare Pages（gh-pages 係轉址頁，唔好覆蓋）。冇新 i18n。
 - `src/native/persist.ts`：`STAMP_KEY`、`planHydrate`（Preferences 空 → 搬 localStorage；localStorage 印較新 → 推去 Preferences；否則 Preferences → localStorage）、`installWriteThrough(storage, backend, now)` 合併寫入＋失敗重試。`src/main.ts` `saveNow()`。測試：`test/persist-v1442.test.ts`、`test/native.test.ts`。
 - iOS AdMob：GitHub secrets `ADMOB_IOS_APP_ID`（`~9261059644`）同 `ADMOB_IOS_BANNER_ID`（`/1065865690`）已設；Android 用另一套（`~4204763415`／`/4013191726`）。`ios.yml` 會檢查 Info.plist `GADApplicationIdentifier` 同 web bundle 有冇注入（build 126 起）。
+
+### 1.4.43 發佈（2026-10-04）
+
+- 純診斷（用戶只批准加診斷）：`src/native/saveLog.ts`（環形紀錄＋雙份持久化）、`src/saveDiag.ts`（`sumState`／`sumRaw`／`careSig`）、`persist.ts` 加 `hydrateInfo`／`hydrateReason`／`observeNativeWrites`／`nativeQueue`（`installWriteThrough` 第 4 參數 `onBatch`）。
+- main：`persist(trigger)`、`saveNow(trigger)`、`syncFlow(force, trigger)`、`runCatchup(why)` 帶來源；`watchStep()` 開 app 90 秒內每步都記，之後只喺 care 變咗先記。
+- 已知：iOS 掃走 app 係 SIGKILL 暫停中嘅程序，pagehide 通常唔會觸發，只有入背景時嘅 visibilitychange／App pause；Preferences 寫入唔係 await（排隊 fire-and-forget），紀錄有每次延遲同 flush 完成時間。
+- 測試：`test/savelog-v1443.test.ts`。
 

@@ -1599,7 +1599,7 @@ export function settingsModal(treeName: string, notify: boolean | null = null): 
 
 /** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */
 export function diagModal(text: string): string {
-  return `<p class="eyebrow">Diagnostics</p><pre class="diag-pre">${esc(text)}</pre><div class="seg diag-actions"><button type="button" data-action="diag-refresh">Refresh</button><button type="button" data-action="diag-copy">Copy</button></div><button type="button" class="primary" data-action="close-modal">OK</button>`;
+  return `<p class="eyebrow">Diagnostics</p><pre class="diag-pre">${esc(text)}</pre><div class="seg diag-actions"><button type="button" data-action="diag-refresh">Refresh</button><button type="button" data-action="diag-copy">Copy</button><button type="button" data-action="diag-clear-log">${esc(tl('diag.clearLog'))}</button></div><button type="button" class="primary" data-action="close-modal">OK</button>`;
 }
 
 export function disclaimerModal(): string {

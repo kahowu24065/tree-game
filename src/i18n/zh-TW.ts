@@ -366,6 +366,8 @@ const table: Record<string, string> = {
  "cwa.002": "中央氣象署資料回應 {status}",
  "cwa.003": "無法連線到中央氣象署資料",
  "dates.001": "{m}月{d}日（{p2}）",
+ "diag.clearLog": "清除紀錄",
+ "diag.cleared": "已清除存檔紀錄",
  "eco.001": "細小",
  "eco.002": "小型",
  "eco.003": "中型",
