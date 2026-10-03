@@ -113,6 +113,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.45 | 權限提示延後：新玩家揀樹種、改名、完成澆水＋施肥教學（`coach.done`，跳過都算）之後先問，次序係位置 → 推送／提醒（`src/native/permGate.ts`、`askPermissionsInOrder()`；之前只用已批准嘅權限，唔彈提示）；舊玩家（已種樹、教學完成或者冇教學）即刻放行。網頁版同樣。開場／種樹鏡頭：拉近同退後改為 ease-in-out 時間線（冇咗指數 ease-out 一開始全速衝向樹、冇咗 0.05／0.98 門檻跳格），鏡頭距離用彈簧，相機時鐘每格上限 0.1 s、卡頓損失嘅時間慢慢追返（`src/three/camEase.ts`）。動物出現聲：刺耳嘅係 `chirp.wav`（約 3 kHz 方波似嘅哨聲，滿音量，昆蟲／蝴蝶／飛蛾／螢火蟲／蝙蝠出現時播）；而家雀鳥用柔和鳥叫 `call.ogg/m4a`（晨鳥錄音 1.6 s 片段），青蛙聲細聲咗，其他動物無聲；刪咗 `chirp.wav`、`bird.wav`；versionCode 52 |
 | 1.4.46 | 碳吸收量顯示：`carbonKg()` 唔再四捨五入（之前 18 cm 銀杏 0.026 kg → 「約 0 公斤」）；`carbonParts()`／`formatCarbon()`：1 kg 以下用整數克（最少 1 克，例如「約 26 克 CO₂／年」），1 kg 起用公斤一個小數；樹木狀態卡、照顧頁、紀錄頁、分享卡四處都用（`carbon.g`／`carbon.kg`，範本冇咗單位）。真實樹齡：365 日起顯示「X 年 Y 日」（Y=0 →「X 年」），英文精簡「132D」／「1Y」／「1Y 32D」（`age.*`、`formatRealAge()`）；英文狀態卡碳一行改「about 26 g CO₂/yr」。320 px 闊螢幕上狀態卡（130 px 文字欄）實測唔會多換行；versionCode 53 |
 | 1.4.47 | 英文樹齡單複數：「Tree age 1 days」→「1 day」（`ui.113`、`ui.298`、`ui.317`、`ui.332`、`main.017` 用 `{n, plural, one {# day} other {# days}}`，同 `ui.073` 一樣）。其他英文「N nights／days／hours」都係固定常數（≥ 3），唔使改；測試會擋住新嘅變數 + days／years 冇複數；versionCode 54 |
+| 1.4.48 | 天氣地點分組預設：保留「用我所在位置」大掣，下面分「香港／澳門／台灣」三組（每組細標題 + 兩欄）：香港（香港島，香港公園站）、九龍、新界、離島；澳門半島、氹仔、路環；台北、台中、台南、台東。`src/presets.ts`：每個預設帶 `region`（hk／mo／tw）同 HK 嘅天文台雨量分區（`rainDistrict`，中文）；`weatherRegion()` 決定用天文台／氣象局／氣象署（預設跟自己 region，GPS 跟座標，冇位置＝香港），天氣、警告、標籤地區同推送 isHK／isMO／isTW（台灣縣市）全部跟佢（`pushRegionFlags()`）。舊預設一次性搬：中環→香港，沙田／大埔／西貢／元朗→新界，東涌→離島；hk、geo、空白照舊。對話框文字講明各地來源。推送伺服器唔使改；versionCode 55 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -376,6 +377,12 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 ### 1.4.47 發佈（2026-10-04）
 
 - i18n 腳本 `.ed/i18n147.py`；測試 `test/plural-v1447.test.ts`。
+
+### 1.4.48 發佈（2026-10-04）
+
+- `src/presets.ts`（`PLACES`、`PLACE_GROUPS`、`findPlace`、`migratePlaceId`、`weatherRegion`、`pushRegionFlags`）；`ui.ts` 再 export `PLACES`；i18n 腳本 `.ed/i18n148.py`（新 key `place.*`、`place.group.*`，刪 `ui.347`–`ui.352`）；CSS `.place-groups`／`.places-head`（320px 試過：英文「New Territories」「Macau Peninsula」兩行，唔會爆出）。
+- 離島冇東涌溫度站時用最近嘅赤鱲角。台灣預設經推送伺服器 `/cwa` 試過：臺北市信義區、臺中市北區、臺南市中西區、臺東縣臺東市。
+- 測試：`test/presets-v1448.test.ts`。
 
 
 

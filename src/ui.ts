@@ -24,6 +24,7 @@ import { APP_VERSION } from './version';
 import { PRIVACY_URL, TERMS_URL } from './legal';
 import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables, live } from './i18n';
 import { localize, logTexts } from './i18n/msg';
+import { PLACES, PLACE_GROUPS } from './presets';
 
 const WEEK = live(() => ([tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')]));
 
@@ -1562,27 +1563,16 @@ export function stormModal(message: string): string {
   return tl('ui.345', { p0: esc(message) });
 }
 
-export interface PlaceOption {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-}
-
-export const PLACES: PlaceOption[] = live(() => ([
-  { id: 'hk', name: tl('ui.346'), lat: 22.3022, lon: 114.1744 },
-  { id: 'central', name: tl('ui.347'), lat: 22.2819, lon: 114.158 },
-  { id: 'shatin', name: tl('ui.348'), lat: 22.3817, lon: 114.1877 },
-  { id: 'taipo', name: tl('ui.349'), lat: 22.45, lon: 114.1686 },
-  { id: 'saikung', name: tl('ui.350'), lat: 22.3817, lon: 114.2708 },
-  { id: 'yuenlong', name: tl('ui.351'), lat: 22.4445, lon: 114.0222 },
-  { id: 'tungchung', name: tl('ui.352'), lat: 22.289, lon: 113.941 },
-]));
+export { PLACES, type PlaceOption } from './presets';
 
 export function locationModal(current: string): string {
-  const rows = PLACES.map(
-    (p) => `<button type="button" class="place ${current === p.id ? 'on' : ''}" data-place="${p.id}">${icon('pin')}<span>${esc(p.name)}</span></button>`,
-  ).join('');
+  // 1.4.48: grouped by region (香港／澳門／台灣), each group a small heading over a two-column grid.
+  const rows = PLACE_GROUPS.map((g) => {
+    const items = PLACES.filter((p) => p.region === g)
+      .map((p) => `<button type="button" class="place ${current === p.id ? 'on' : ''}" data-place="${p.id}">${icon('pin')}<span>${esc(p.name)}</span></button>`)
+      .join('');
+    return `<p class="places-head">${esc(tl(`place.group.${g}`))}</p><div class="places">${items}</div>`;
+  }).join('');
   return tl('ui.353', { p0: current === 'geo' ? 'on' : '', p1: icon('locate'), rows });
 }
 
