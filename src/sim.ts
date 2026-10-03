@@ -46,6 +46,7 @@ import {
   type WeatherTrackId,
 } from './balance';
 import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
+import { outAt } from './data/animals';
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
 import { freshNest, isNestHeightCount, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, settleNest } from './nest';
@@ -77,7 +78,7 @@ import {
 } from './rules';
 import type { Care, DayFlow, GameState, LogI18n, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
 import { formatHeight } from './util';
-import { getLocale, t as tl } from './i18n';
+import { getLocale, t as tl, live } from './i18n';
 import { parseIn } from './i18n/msg';
 
 export function freshCare(date: string): Care {
@@ -275,7 +276,7 @@ export interface WarningHit {
   dying: boolean;
 }
 
-const WARNING_NAME: Record<WarningWaterEvent, string> = { hot: tl('guide.133'), rainstorm: tl('sim.008'), blackrain: tl('sim.009'), drizzle: tl('sim.010') };
+const WARNING_NAME: Record<WarningWaterEvent, string> = live(() => ({ hot: tl('guide.133'), rainstorm: tl('sim.008'), blackrain: tl('sim.009'), drizzle: tl('sim.010') }));
 
 /** The tree dies (v14: the only way a game ends). v16: `fallSeen: false` = the death animation is still to play. */
 function killTree(state: GameState, date: string, time: string): void {
@@ -402,13 +403,33 @@ function driftStep(v: DriftVals, rates: FlowRates, f: number, sum: DriftSum): vo
   sum.r += v.r - r0;
 }
 
-/** Pure: run `ms` of drift on a copy (今晚預計). */
-function simulateDrift(v: DriftVals, rates: FlowRates, ms: number): DriftSum {
+/**
+ * 1.4.41: after 澆水, 水分 does not decay for this long (real time). waterAdd rounds to 0.1, so W often lands on x.5 —
+ * shown rounded up, then the first second of drift showed it 1 lower. (施肥 adds a whole 25 with no rounding, so 養分
+ * did not have that drop; no grace for N.)
+ */
+export const CARE_GRACE_MS = 5 * 60 * 1000;
+
+/** ms of [t0, t1] inside the grace window ending at `until`. */
+function graceOverlap(until: number | undefined, t0: number, t1: number): number {
+  if (!until || !Number.isFinite(until)) return 0;
+  return Math.max(0, Math.min(t1, until) - Math.max(t0, until - CARE_GRACE_MS));
+}
+
+/** Rates for the step [t0, t0 + dt]: W decay scaled by the part of the step outside its grace window. */
+function stepRates(rates: FlowRates, pause: GameState['pause'], t0: number | null, dt: number): FlowRates {
+  if (!pause || t0 === null || dt <= 0 || rates.w >= 0) return rates;
+  const pw = graceOverlap(pause.w, t0, t0 + dt);
+  return pw ? { ...rates, w: rates.w * (1 - pw / dt) } : rates;
+}
+
+/** Pure: run `ms` of drift on a copy (今晚預計), starting at `startMs` (null = no grace windows). */
+function simulateDrift(v: DriftVals, rates: FlowRates, ms: number, pause?: GameState['pause'], startMs: number | null = null): DriftSum {
   const sum = zeroSum();
   let done = 0;
   while (done < ms - 1e-6) {
     const dt = Math.min(FLOW_STEP_MS, ms - done);
-    driftStep(v, rates, dt / DAY_MS, sum);
+    driftStep(v, stepRates(rates, pause, startMs === null ? null : startMs + done, dt), dt / DAY_MS, sum);
     done += dt;
   }
   return sum;
@@ -427,7 +448,7 @@ function newFlow(state: GameState, date: string, at: number, elapsed: number): D
 }
 
 /** Apply `ms` of drift to the real state (steps of 15 min). */
-function applyDrift(state: GameState, events: readonly WeatherEventId[], meta: MetaState | null, ms: number): void {
+function applyDrift(state: GameState, events: readonly WeatherEventId[], meta: MetaState | null, ms: number, startMs: number): void {
   const f = state.flow!;
   const perks = perksFrom(meta);
   let done = 0;
@@ -435,7 +456,7 @@ function applyDrift(state: GameState, events: readonly WeatherEventId[], meta: M
     const dt = Math.min(FLOW_STEP_MS, ms - done);
     const v: DriftVals = { w: state.moisture, n: state.nutrients, r: state.resist };
     const sum = zeroSum();
-    driftStep(v, flowRates(state, events, perks), dt / DAY_MS, sum);
+    driftStep(v, stepRates(flowRates(state, events, perks), state.pause, startMs + done, dt), dt / DAY_MS, sum);
     state.moisture = v.w;
     state.nutrients = v.n;
     state.resist = v.r;
@@ -473,7 +494,7 @@ export function advanceFlow(state: GameState, date: string, events: readonly Wea
   }
   const f = state.flow;
   const ms = Math.min(toMs - f.at, DAY_MS - f.elapsed);
-  if (ms > 0) applyDrift(state, waterEvents(state, date, events), meta, ms);
+  if (ms > 0) applyDrift(state, waterEvents(state, date, events), meta, ms, f.at);
   f.at = Math.max(f.at, toMs);
 }
 
@@ -483,7 +504,7 @@ function completeFlowDay(state: GameState, date: string, events: readonly Weathe
   const f = state.flow ?? newFlow(state, date, nowMs, 0);
   state.flow = f;
   const rest = DAY_MS - f.elapsed;
-  if (rest > 0 && !state.over) applyDrift(state, waterEvents(state, date, events), meta, rest);
+  if (rest > 0 && !state.over) applyDrift(state, waterEvents(state, date, events), meta, rest, f.at);
   return f;
 }
 
@@ -681,7 +702,7 @@ export function planNight(state: GameState, events: readonly WeatherEventId[], p
   const restMs = flow ? Math.max(0, DAY_MS - flow.elapsed) : DAY_MS;
   const rates = flowRates(state, date === null ? events : waterEvents(state, date, events), perks);
   const v = { w: state.moisture, n: state.nutrients, r: state.resist };
-  simulateDrift(v, rates, restMs);
+  simulateDrift(v, rates, restMs, state.pause, flow ? flow.at : null);
   v.w = q6(v.w);
   v.n = q6(v.n);
   v.r = q6(v.r);
@@ -1340,7 +1361,8 @@ export function actionLimit(state: GameState, action: CareAction): { used: numbe
   return { used: state.care.dewormed ? 1 : 0, max: 1 };
 }
 
-export function performAction(state: GameState, action: CareAction): ActionResult {
+/** `nowMs`: the game clock (same as advanceFlow's) — starts the 1.4.41 W / N grace window. */
+export function performAction(state: GameState, action: CareAction, nowMs = Date.now(), night?: boolean): ActionResult {
   if (state.over) return { ok: false, message: tl('sim.109') };
   const lim = actionLimit(state, action);
   if (lim.used >= lim.max) return { ok: false, message: action === 'water' ? tl('sim.waterHour', { max: lim.max, time: nextWaterTime() }) : tl('sim.110') };
@@ -1356,6 +1378,7 @@ export function performAction(state: GameState, action: CareAction): ActionResul
     state.care.waterHour = hour;
     const before = state.moisture;
     state.moisture = waterAdd(before, CARE.water.amount);
+    state.pause = { ...state.pause, w: nowMs + CARE_GRACE_MS };
     const got = r1(state.moisture - before);
     message = state.moisture >= W_SATURATED ? tl('sim.112', { p0: Math.round(state.moisture) }) : tl('sim.113', { p0: Math.round(state.moisture) });
     reward = { text: tl('sim.114', { got }), tone: 'blue' };
@@ -1396,7 +1419,7 @@ export function performAction(state: GameState, action: CareAction): ActionResul
   addLog(state, state.care.date, message, { kind: action, title, reward });
   const rescue = checkRescue(state);
   if (rescue) message = `${message} ${rescue}`;
-  const animals = refreshUnlocks(state, { date: state.care.date });
+  const animals = refreshUnlocks(state, { date: state.care.date, night });
   if (animals.length) message = tl('sim.124', { message, p1: animals.map((id) => ANIMALS.find((a) => a.id === id)?.name ?? id).join(tl('ui.206')) });
   return { ok: true, message };
 }
@@ -1487,8 +1510,12 @@ export function visualReinforcement(resist: number, unlocked = true): Reinforcem
 
 const RAIN_EVENTS: WeatherEventId[] = ['drizzle', 'rainstorm', 'blackrain'];
 
-/** Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and tree age. */
-export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[] }): string[] {
+/**
+ * Check 圖鑑 unlocks: height, health, storms, real month, today's (or last night's) weather and tree age.
+ * 1.4.41 `night`: the time of day the player sees now — only animals that are out then can unlock (菜粉蝶 by day,
+ * 斜紋夜蛾 at night…). Omitted (tests / tools): no time-of-day check.
+ */
+export function refreshUnlocks(state: GameState, opts: { date: string; events?: WeatherEventId[]; night?: boolean }): string[] {
   const got: string[] = [];
   const meters = state.heightCm / 100;
   const evs = new Set<WeatherEventId>([...(opts.events ?? []), ...(state.dayEvents[opts.date]?.events ?? [])]);
@@ -1498,6 +1525,7 @@ export function refreshUnlocks(state: GameState, opts: { date: string; events?: 
   const month = Number(opts.date.slice(5, 7));
   for (const animal of ANIMALS) {
     if (state.animals.includes(animal.id)) continue;
+    if (opts.night !== undefined && !outAt(animal, opts.night)) continue;
     if (meters < animal.minM || state.health < animal.minHealth) continue;
     if (animal.needStorms && state.stormSurvivals < animal.needStorms) continue;
     if (animal.weather === 'hot' && !hot) continue;
@@ -1543,6 +1571,7 @@ export function catchUp(
   meta: MetaState | null,
   nowMs: number,
   msIntoToday = 0,
+  night?: boolean,
 ): CatchupReport {
   const healthBefore = state.health;
   const heightBefore = state.heightCm;
@@ -1574,7 +1603,7 @@ export function catchUp(
   let animals: string[] = [];
   if (!state.over) {
     eventText = ensureToday(state, today);
-    animals = refreshUnlocks(state, { date: today, events: [...(settlements.at(-1)?.events ?? []), ...eventsFor(today)] });
+    animals = refreshUnlocks(state, { date: today, events: [...(settlements.at(-1)?.events ?? []), ...eventsFor(today)], night });
     if (gap === 1) state.morningNote = nightNote(settlements[0]);
     else if (gap > 1) state.morningNote = tl('sim.148', { gap, p1: Math.round(healthBefore), p2: Math.round(state.health), p3: growthCm >= 0 ? '+' : '', p4: growthCm.toFixed(1) });
     if (messages.length && gap > 0) state.morningNote = `${state.morningNote ?? ''} ${messages.join(' ')}`.trim();
@@ -1588,7 +1617,7 @@ function nightNote(s: Settlement | undefined): string {
 }
 
 /** Developer: settle today now and move to tomorrow. */
-export function advanceVirtualDay(state: GameState, today: string, events: WeatherEventId[], meta: MetaState | null, nowMs: number): CatchupReport {
+export function advanceVirtualDay(state: GameState, today: string, events: WeatherEventId[], meta: MetaState | null, nowMs: number, night?: boolean): CatchupReport {
   const healthBefore = state.health;
   const heightBefore = state.heightCm;
   const res = settleDay(state, today, events, meta, nowMs);
@@ -1601,7 +1630,7 @@ export function advanceVirtualDay(state: GameState, today: string, events: Weath
   let animals: string[] = [];
   if (!state.over) {
     eventText = ensureToday(state, next);
-    animals = refreshUnlocks(state, { date: next, events: res.settlement.events });
+    animals = refreshUnlocks(state, { date: next, events: res.settlement.events, night });
     state.morningNote = `${nightNote(res.settlement)} ${res.messages.join(' ')}`.trim();
   }
   return {

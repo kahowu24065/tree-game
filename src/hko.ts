@@ -3,7 +3,7 @@
  * Sends `Access-Control-Allow-Origin: *`, so the browser can call it directly.
  */
 import type { StormKind } from './types';
-import { getLocale, t as tl } from './i18n';
+import { getLocale, t as tl, live } from './i18n';
 
 const BASE = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php';
 
@@ -70,7 +70,7 @@ export interface HkoData {
   warningsKnown?: boolean;
 }
 
-const TC_NAME: Record<string, string> = {
+const TC_NAME: Record<string, string> = live(() => ({
   TC1: tl('hko.001'),
   TC3: tl('hko.002'),
   TC8NE: tl('hko.003'),
@@ -79,9 +79,9 @@ const TC_NAME: Record<string, string> = {
   TC8SW: tl('hko.006'),
   TC9: tl('hko.007'),
   TC10: tl('hko.008'),
-};
+}));
 
-const TC_SHORT: Record<string, string> = {
+const TC_SHORT: Record<string, string> = live(() => ({
   TC1: tl('hko.009'),
   TC3: tl('hko.010'),
   TC8NE: tl('hko.011'),
@@ -90,7 +90,7 @@ const TC_SHORT: Record<string, string> = {
   TC8SW: tl('hko.014'),
   TC9: tl('hko.015'),
   TC10: tl('hko.016'),
-};
+}));
 
 /** What the warning card shows. The signal stays specific; the game grade is chosen separately. */
 export function warningDisplay(w: HkoWarning): string {
@@ -164,13 +164,13 @@ export function hkoIconToWmo(icon: number): number {
 }
 
 /** Official HKO wording for each weather icon (https://www.hko.gov.hk/tc/textonly/explain/wxicon.htm). */
-const HKO_ICON_LABELS: Record<number, string> = {
+const HKO_ICON_LABELS: Record<number, string> = live(() => ({
   50: tl('hko.030'), 51: tl('weather.004'), 52: tl('hko.031'), 53: tl('hko.032'), 54: tl('hko.033'),
   60: tl('weather.013'), 61: tl('hko.034'), 62: tl('weather.007'), 63: tl('guide.100'), 64: tl('balance.044'), 65: tl('weather.011'),
   70: tl('hko.035'), 71: tl('hko.035'), 72: tl('hko.035'), 73: tl('hko.035'), 74: tl('hko.035'), 75: tl('hko.035'), 76: tl('weather.015'), 77: tl('hko.036'),
   80: tl('hko.037'), 81: tl('hko.038'), 82: tl('hko.039'), 83: tl('habitat.022'), 84: tl('hko.040'), 85: tl('hko.041'),
   90: tl('guide.097'), 91: tl('hko.042'), 92: tl('hko.043'), 93: tl('hko.044'),
-};
+}));
 
 export function hkoIconLabel(icon: number): string {
   return HKO_ICON_LABELS[icon] ?? '';

@@ -36,10 +36,9 @@ export interface PlannedNotice {
   body: string;
 }
 
-const TITLE = tl('sim.001');
-
 /** Pure: which reminders to schedule right now. */
 export function planNotifications(i: NotifyInput): PlannedNotice[] {
+  const TITLE = tl('sim.001');
   if (!i.started || i.over) return [];
   const out: PlannedNotice[] = [];
   const settle = i.now + i.msToSettlement;

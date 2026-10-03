@@ -1,4 +1,4 @@
-import { t as tl } from '../i18n';
+import { t as tl, live } from '../i18n';
 
 /**
  * 圖鑑動物：香港／亞洲常見或有代表性嘅雀鳥、哺乳類、昆蟲、爬蟲同兩棲類。
@@ -91,7 +91,7 @@ const SPRING_SUMMER = [3, 4, 5, 6, 7, 8, 9];
 const SUMMER = [5, 6, 7, 8, 9];
 const WINTER = [10, 11, 12, 1, 2, 3, 4];
 
-export const ANIMALS: AnimalDef[] = [
+export const ANIMALS: AnimalDef[] = live(() => ([
   /* ---------- 雀鳥 ---------- */
   { id: 'whiteeye', name: tl('animals.001'), category: 'bird', motion: 'flock', group: [4, 7], epithet: tl('animals.002'), about: tl('animals.003'), minM: 1.2, minHealth: 50, real: { len: 0.11, span: 0.17 }, look: { kind: 'bird', c: ['#9fbf3a', '#e9edc8', '#a8c640', '#3a3a3a', '#86a830', '#ffffff'], size: 0.75, f: ['eyering'] } },
   { id: 'sparrow', name: tl('animals.004'), category: 'bird', motion: 'flock', group: [3, 6], epithet: tl('animals.005'), about: tl('animals.006'), minM: 0.8, minHealth: 48, real: { len: 0.14, span: 0.22 }, look: { kind: 'bird', c: ['#9b6b43', '#e9dcc4', '#7a4b2a', '#3b3b3b', '#6d4a2f', '#f4efe6'], size: 0.85, f: ['cheek'] } },
@@ -142,6 +142,8 @@ export const ANIMALS: AnimalDef[] = [
 
   /* ---------- 蝴蝶 ---------- */
   { id: 'butterfly', name: tl('animals.133'), category: 'butterfly', motion: 'flutter', group: [1, 3], epithet: tl('animals.134'), about: tl('animals.135'), minM: 0.15, minHealth: 40, real: { len: 0.025, span: 0.05 }, look: { kind: 'butterfly', c: ['#fbfbf2', '#9ccf6a', '#333333'], size: 0.8 } },
+  // 1.4.41: 菜粉蝶's night counterpart — same level, so a first night visit also meets its first animal.
+  { id: 'nightmoth', name: tl('animals.nightmoth.name'), category: 'butterfly', motion: 'flutter', group: [1, 3], epithet: tl('animals.nightmoth.epithet'), about: tl('animals.nightmoth.about'), minM: 0.15, minHealth: 40, night: true, real: { len: 0.018, span: 0.038 }, look: { kind: 'butterfly', c: ['#8a7458', '#d8c49a', '#4a3a2a', '#efe6d2'], size: 0.8, f: ['moth'] } },
   { id: 'plaintiger', name: tl('animals.136'), category: 'butterfly', motion: 'flutter', group: [2, 4], epithet: tl('animals.137'), about: tl('animals.138'), minM: 2, minHealth: 50, real: { len: 0.035, span: 0.07 }, look: { kind: 'butterfly', c: ['#f08a2a', '#1a1a1a', '#222222', '#ffffff'], size: 1 } },
   { id: 'bluebottle', name: tl('animals.139'), category: 'butterfly', motion: 'flutter', group: [1, 2], epithet: tl('animals.140'), about: tl('animals.141'), minM: 4, minHealth: 55, real: { len: 0.035, span: 0.08 }, look: { kind: 'butterfly', c: ['#1a1a1e', '#3ac0d8', '#222222'], size: 1.05, f: ['tails'] } },
   { id: 'birdwing', name: tl('animals.142'), category: 'butterfly', motion: 'flutter', group: [1, 1], epithet: tl('animals.143'), about: tl('animals.144'), minM: 18, minHealth: 75, months: SPRING_SUMMER, real: { len: 0.06, span: 0.15 }, look: { kind: 'butterfly', c: ['#141414', '#f2c81a', '#1a1a1a'], size: 1.7 } },
@@ -168,20 +170,29 @@ export const ANIMALS: AnimalDef[] = [
   { id: 'toad', name: tl('animals.187'), category: 'amphibian', motion: 'hop', group: [1, 3], epithet: tl('animals.188'), about: tl('animals.189'), minM: 2, minHealth: 52, weather: 'rain', real: { len: 0.08 }, look: { kind: 'frog', c: ['#8a6a42', '#c8a878', '#2a2018'], size: 0.8, f: ['warty'] } },
   { id: 'newt', name: tl('animals.190'), category: 'amphibian', motion: 'crawl', group: [1, 2], epithet: tl('animals.191'), about: tl('animals.192'), minM: 3, minHealth: 58, weather: 'rain', spot: 'ground', real: { len: 0.13 }, look: { kind: 'lizard', c: ['#3a2e28', '#e8702a', '#2a221e'], size: 0.8, f: ['newt'] } },
   { id: 'treefrog', name: tl('animals.193'), category: 'amphibian', motion: 'hop', group: [1, 3], epithet: tl('animals.194'), about: tl('animals.195'), minM: 5, minHealth: 60, weather: 'rain', night: true, real: { len: 0.02 }, look: { kind: 'frog', c: ['#a8905a', '#d8c898', '#5a4a30'], size: 0.5 } },
-];
+]));
+
+/**
+ * 1.4.41: is this animal out (shown in the scene) at this time of day? Day animals by day, `night` ones (and fireflies)
+ * at night; the owl in its hollow and the robin at its nest are there either way. The 圖鑑 only unlocks what is out.
+ */
+export function outAt(def: Pick<AnimalDef, 'night' | 'motion'>, night: boolean): boolean {
+  if (def.motion === 'hollow' || def.motion === 'nest') return true;
+  return night ? Boolean(def.night) || def.motion === 'glow' : !def.night;
+}
 
 export function animalById(id: string): AnimalDef | undefined {
   return ANIMALS.find((a) => a.id === id);
 }
 
-export const CATEGORY_LABEL: Record<AnimalCategory, string> = {
+export const CATEGORY_LABEL: Record<AnimalCategory, string> = live(() => ({
   bird: tl('main.032'),
   mammal: tl('animals.196'),
   butterfly: tl('animals.197'),
   insect: tl('animals.198'),
   reptile: tl('animals.199'),
   amphibian: tl('animals.200'),
-};
+}));
 
 export const CATEGORY_ORDER: AnimalCategory[] = ['bird', 'mammal', 'butterfly', 'insect', 'reptile', 'amphibian'];
 

@@ -1,5 +1,5 @@
 import type { AnimalDef } from './animals';
-import { t as tl } from '../i18n';
+import { t as tl, live } from '../i18n';
 
 /**
  * How much wildlife a tree of each growth stage can hold. A 幼苗 gets one small visitor group;
@@ -38,7 +38,7 @@ export function flocky(a: AnimalDef): boolean {
   return false;
 }
 
-export const SIZE_LABEL = [tl('eco.001'), tl('eco.002'), tl('eco.003'), tl('eco.004')] as const;
+export const SIZE_LABEL = live(() => ([tl('eco.001'), tl('eco.002'), tl('eco.003'), tl('eco.004')] as const));
 
 export function stageCap(stage: number): StageCap {
   return STAGE_CAPS[Math.max(0, Math.min(4, Math.round(stage)))]!;

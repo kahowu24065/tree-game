@@ -1557,6 +1557,9 @@ const table: Record<string, string> = {
  "prem.planYearly": "年費",
  "prem.priceYearly": "{price}/年",
  "prem.perList": "（{list}）",
- "prem.listSep": "、"
+ "prem.listSep": "、",
+ "animals.nightmoth.name": "斜紋夜蛾",
+ "animals.nightmoth.epithet": "啡翼斜紋",
+ "animals.nightmoth.about": "夜晚成日撲燈嘅啡色細蛾，前翅有淺色斜紋，日頭匿喺葉底。"
 };
 export default table;

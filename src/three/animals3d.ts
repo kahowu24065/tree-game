@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BLOCK, NAV_CELL, WATER, type WalkNav } from './walkNav';
-import { ANIMALS, animalById, type AnimalDef, type Look } from '../data/animals';
+import { ANIMALS, animalById, outAt, type AnimalDef, type Look } from '../data/animals';
 import { allowedAt, flocky, groupSize, MIN_GROUP, rotateDelay, SIZE_LABEL, stageCap } from '../data/eco';
 import { MotionHints, newTrail, stepTrail, type TrailState } from './motionHints';
 import { clamp } from '../util';
@@ -1637,9 +1637,8 @@ export class Animals3D {
   }
 
   private fits(def: AnimalDef): boolean {
-    if (this.weak && !['butterfly', 'sparrow'].includes(def.id)) return false;
-    if (def.motion === 'hollow' || def.motion === 'nest') return true;
-    return this.night ? Boolean(def.night) || def.motion === 'glow' : !def.night;
+    if (this.weak && !['butterfly', 'nightmoth', 'sparrow'].includes(def.id)) return false;
+    return outAt(def, this.night);
   }
 
   private visibleCrews(): Crew[] {

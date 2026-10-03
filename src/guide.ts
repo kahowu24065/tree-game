@@ -74,15 +74,15 @@ import { SPECIES, STAGE_NAMES, STAGE_SHARES } from './data/species';
 import { emergencyName, eventLabel, labelRegion, regionalize, weatherTrackCopy } from './labels';
 import { emergencyBonus } from './rules';
 import { eventTableHtml } from './ui';
-import { t as tl } from './i18n';
+import { t as tl, live } from './i18n';
 
 export type GuideTab = 'play' | 'calc' | 'weather' | 'push';
-export const GUIDE_TABS: { id: GuideTab; label: string }[] = [
+export const GUIDE_TABS: { id: GuideTab; label: string }[] = live(() => ([
   { id: 'play', label: tl('guide.001') },
   { id: 'calc', label: tl('guide.002') },
   { id: 'weather', label: tl('guide.003') },
   { id: 'push', label: tl('guide.004') },
-];
+]));
 
 const p = (html: string) => `<p>${html}</p>`;
 const h = (text: string) => `<h3>${text}</h3>`;

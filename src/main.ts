@@ -137,7 +137,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
-import { LOCALES, getLocale, saveLocale, t as tl, tName, type Locale } from './i18n';
+import { LOCALES, getLocale, saveLocale, switchLocale, t as tl, tName, type Locale } from './i18n';
 
 const isLocaleId = (x: string): x is Locale => (LOCALES as readonly string[]).includes(x);
 
@@ -574,6 +574,11 @@ function beginCoach(): void {
   saveCoach(coach);
 }
 
+/** 1.4.41: the scene's day / night (same threshold as the 3D animals), for 圖鑑 unlocks. */
+function nightNow(): boolean {
+  return sceneInput().daylight < 0.45;
+}
+
 function render(): void {
   const input = sceneInput();
   const v = view(input);
@@ -1002,7 +1007,7 @@ function showReport(report: CatchupReport): void {
 
 function runCatchup(): void {
   reconcileClock();
-  const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
+  const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow());
   if (state.started && !state.over && state.lastSeenDate === today()) {
     const now = virtualNow();
     advanceFlow(state, today(), eventsFor(today()), meta, now, { dayStartMs: now - msIntoToday() });
@@ -1141,11 +1146,11 @@ function applyWeather(snapshot: WeatherSnapshot): void {
     if (fresh.length && state.started && !manual() && !watered) toast(tl('main.043', { p0: warningSource(snapshot) || tl('main.042'), p1: fresh.map((e) => eventLabel(e)).join(tl('ui.206')) }));
   }
   if (state.started && !state.over) {
-    const got = refreshUnlocks(state, { date: today(), events: todayEvents() });
+    const got = refreshUnlocks(state, { date: today(), events: todayEvents(), night: nightNow() });
     if (got.length) toast(tl('main.031', { p0: got.map(animalName).join(tl('ui.206')) }));
   }
   if (today() !== before) {
-    const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday());
+    const report = catchUp(state, today(), eventsFor, meta, virtualNow(), msIntoToday(), nightNow());
     showReport(report);
     syncWarningWater();
     scheduleReminders(false);
@@ -1588,7 +1593,9 @@ function doAction(action: string, target: HTMLElement): void {
     return;
   }
   if (action === 'water' || action === 'fertilize' || action === 'deworm' || action === 'drain') {
-    const result = performAction(state, action as CareAction);
+    // Flow first up to this moment, so the 1.4.41 grace window starts exactly at the tap.
+    syncFlow();
+    const result = performAction(state, action as CareAction, virtualNow(), nightNow());
     persist();
     render();
     toast(result.message);
@@ -1882,15 +1889,26 @@ function wakeIsleBar(): void {
   bar.addEventListener('focusout', () => rest(900));
 }
 
-// v1.4.19 language picker (設定): save, tell the push server, then reload so every table is rebuilt in the new language.
+// Language picker (設定). 1.4.41: applied in place — no reload. The import-time tables are rebuilt in the new language
+// (switchLocale), then every visible surface re-renders; game state, the 3D scene and audio keep running.
 document.addEventListener('change', (event) => {
   const sel = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>('select[data-lang-select]');
   if (!sel || !isLocaleId(sel.value) || sel.value === getLocale()) return;
-  saveLocale(sel.value);
-  persist();
-  // After the reload the next push-state report carries the new locale to the server.
-  location.reload();
+  applyLocale(sel.value);
 });
+
+function applyLocale(l: Locale): void {
+  saveLocale(l);
+  switchLocale(l);
+  localizeStatic();
+  persist();
+  render();
+  // Settings is where the picker lives: reopen it in the new language (keeps the modal, no flicker of the game).
+  doAction('settings', document.body);
+  // Local reminders + push-server state carry the new language; weather text (HKO / SMG wording) is re-fetched in it.
+  scheduleReminders(false);
+  void refreshWeather();
+}
 
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
@@ -2118,14 +2136,14 @@ if (DEV_PANEL) {
     countdown,
     advanceDay: () => {
       if (state.over) return;
-      const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow());
+      const report = advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow(), nightNow());
       showReport(report);
       syncWarningWater();
     },
     advanceDays: (n) => {
       if (state.over) return;
       const all: CatchupReport[] = [];
-      for (let i = 0; i < n && !state.over; i++) all.push(advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow()));
+      for (let i = 0; i < n && !state.over; i++) all.push(advanceVirtualDay(state, today(), eventsFor(today()), meta, virtualNow(), nightNow()));
       const last = all[all.length - 1];
       if (!last) return;
       showReport({ ...last, daysPassed: all.length, messages: all.flatMap((r) => r.messages), animals: all.flatMap((r) => r.animals), settlements: all.flatMap((r) => r.settlements), milestones: all.flatMap((r) => r.milestones) });
@@ -2158,7 +2176,7 @@ if (DEV_PANEL) {
       state.resist = 0;
       state.collapses = fatal ? 2 : Math.min(state.collapses || 0, 1);
       closeModal();
-      const report = advanceVirtualDay(state, today(), ['typhoon8'], meta, virtualNow());
+      const report = advanceVirtualDay(state, today(), ['typhoon8'], meta, virtualNow(), nightNow());
       showReport(report);
     },
     replayCollapse: () => {

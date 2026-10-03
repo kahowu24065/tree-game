@@ -1,8 +1,8 @@
 /**
  * Lightweight i18n: one string table per locale, `t(key, params)` with `{name}` placeholders and an ICU-lite plural
  * form `{n, plural, one {# night} other {# nights}}`. zh-HK (colloquial written Cantonese) is the source table; the
- * others fall back to it key by key. The locale is fixed at start-up (data tables are built at import time), so a
- * change from 設定 saves the choice and reloads the page.
+ * others fall back to it key by key. Tables built at import time are registered with `live()`, so a change from 設定
+ * rebuilds them in place (`switchLocale`) and re-renders — no reload (1.4.41).
  */
 import en from './en';
 import zhCN from './zh-CN';
@@ -164,4 +164,40 @@ export function tName<T extends string | null | undefined>(name: T): T {
 
 export function tables(): Readonly<Record<Locale, Record<string, string>>> {
   return TABLES;
+}
+
+/**
+ * 1.4.41: tables built at import time with `t()` (species, events, labels…) are registered here, so a language change
+ * can rebuild them **in place** — same objects/arrays, new strings — and the app re-renders without a reload.
+ */
+const liveTables: { target: object; build: () => object }[] = [];
+
+export function live<T extends object>(build: () => T): T {
+  const target = build();
+  liveTables.push({ target, build });
+  return target;
+}
+
+function refill(target: Record<string, unknown>, fresh: Record<string, unknown>): void {
+  if (Array.isArray(target) && Array.isArray(fresh) && target.length !== fresh.length) target.length = fresh.length;
+  for (const k of Object.keys(fresh)) {
+    const a = target[k];
+    const b = fresh[k];
+    if (a && b && typeof a === 'object' && typeof b === 'object' && !(a instanceof RegExp)) refill(a as Record<string, unknown>, b as Record<string, unknown>);
+    else target[k] = b;
+  }
+}
+
+const localeListeners: (() => void)[] = [];
+
+/** DOM built once (e.g. the animal HUD) re-labels itself here after a language change. */
+export function onLocaleChange(fn: () => void): void {
+  localeListeners.push(fn);
+}
+
+/** Switch the active table and rebuild every live table in the new language (no storage write; see saveLocale). */
+export function switchLocale(l: Locale): void {
+  useLocale(l);
+  for (const { target, build } of liveTables) refill(target as Record<string, unknown>, build() as Record<string, unknown>);
+  for (const fn of localeListeners) fn();
 }
