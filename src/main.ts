@@ -2406,8 +2406,10 @@ function syncFlow(force = false): void {
 
 /** One rAF chain only (visibility changes used to be able to start a second one, drawing twice per frame). */
 let rafId = 0;
+/** 1.4.34: the first (heavy) scene build waits until the preload icon has painted and its animation runs. */
+let loopHeld = true;
 function loop(): void {
-  if (!rafId && !document.hidden) rafId = requestAnimationFrame(frame);
+  if (!loopHeld && !rafId && !document.hidden) rafId = requestAnimationFrame(frame);
 }
 
 function frame(time: number): void {
@@ -2471,7 +2473,12 @@ if (!startedAtBoot) beginSpeciesPick();
 else holdOpening();
 runCatchup();
 syncNest();
-loop();
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    loopHeld = false;
+    loop();
+  }),
+);
 if (usesDeviceLocation()) {
   if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);
   relocateNow();
@@ -2493,7 +2500,7 @@ async function preloadThenOpen(): Promise<void> {
     {
       name: 'scene',
       run: async () => {
-        await frames(2);
+        await frames(4);
         if (!scene3d) return 'flat';
         return `${await scene3d.warmUp()} ms compile`;
       },
@@ -2501,9 +2508,11 @@ async function preloadThenOpen(): Promise<void> {
     { name: 'music', run: () => preloadAudio(sceneInput().daylight < 0.45).then(() => audioDiag().files.map((f) => `${f.id}:${f.state}`).join(' ')) },
     { name: 'weather', run: () => (weatherJob ?? Promise.resolve()).then(() => weather.origin) },
   ]);
-  await hidePreload();
+  // 1.4.34: put the camera on the opening vista first, so the fade reveals the shot the glide starts from
+  // (the hold phase of the intro covers the fade), instead of fading to one view and cutting to another.
   if (startedAtBoot && state.started && opening) beginOpening();
   else if (!startedAtBoot) window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
+  await hidePreload();
 }
 void preloadThenOpen();
 
