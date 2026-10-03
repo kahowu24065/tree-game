@@ -1,5 +1,6 @@
 import { registerPlugin } from '@capacitor/core';
 import { isNative, platformName } from './platform';
+import { permsReady } from './permGate';
 
 interface TreeBannerPlugin {
   setVisible(options: { visible: boolean }): Promise<void>;
@@ -58,7 +59,8 @@ async function iosBanner(on: boolean): Promise<void> {
  * prompt (NSUserTrackingUsageDescription). Refusing either still shows (non-personalised) ads. Members skip it.
  */
 async function gatherConsent(): Promise<void> {
-  if (consentStarted || !isNative() || premium) return;
+  // 1.4.45: no consent / ATT prompt before onboarding is over (retryConsent() runs it after the other prompts).
+  if (consentStarted || !isNative() || premium || !permsReady()) return;
   consentStarted = true;
   try {
     const { AdMob, AdmobConsentStatus } = await import('@capacitor-community/admob');
@@ -81,6 +83,11 @@ export function syncBanner(visible: boolean): void {
   want = visible;
   if (visible) void gatherConsent();
   apply();
+}
+
+/** 1.4.45: onboarding just finished — run the consent / ATT step now if the banner is wanted. */
+export function retryConsent(): void {
+  if (want) void gatherConsent();
 }
 
 /** Members: no banner, no slot. */

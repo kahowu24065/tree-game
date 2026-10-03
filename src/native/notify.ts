@@ -1,6 +1,7 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isNative } from './platform';
 import { t as tl } from '../i18n';
+import { permsReady } from './permGate';
 
 export const NOTIFY_KEY = 'sekai-tree-notify';
 const HOUR = 3600_000;
@@ -85,6 +86,11 @@ export function notifyEnabled(): boolean {
 
 let permission: Promise<boolean> | null = null;
 function ensurePermission(): Promise<boolean> {
+  // 1.4.45: before onboarding is over, schedule only if already granted — never prompt (and don't cache).
+  if (!permsReady())
+    return LocalNotifications.checkPermissions()
+      .then((p) => p.display === 'granted')
+      .catch(() => false);
   permission ??= (async () => {
     try {
       let p = await LocalNotifications.checkPermissions();

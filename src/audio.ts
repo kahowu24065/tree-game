@@ -23,9 +23,11 @@ export const AUDIO_FILES: Record<string, string | string[]> = {
   storm: ['storm.ogg', 'storm.m4a'],
   pluck: ['pluck.ogg', 'pluck.m4a'],
   switch: ['switch.ogg', 'switch.m4a'],
-  bird: 'bird.wav',
+  // 1.4.45: a soft natural bird call (1.6 s from the morning-birds recording, 2–4 kHz, faded) replaces the bright
+  // bird.wav; the shrill chirp.wav (a 3 kHz square-ish whistle at full scale) that played when an insect / butterfly
+  // / moth / firefly / bat appeared is gone.
+  call: ['call.ogg', 'call.m4a'],
   frog: 'frog.wav',
-  chirp: 'chirp.wav',
 };
 
 export function soundEnabled(): boolean {
@@ -177,7 +179,7 @@ function loadOne(id: string): Promise<void> {
   return job;
 }
 
-const CLIPS = ['switch', 'pluck', 'bird', 'frog', 'chirp'];
+const CLIPS = ['switch', 'pluck', 'call', 'frog'];
 const BEDS = ['day', 'night', 'birds', 'crickets', 'rain', 'storm'];
 
 function musicId(): string {
@@ -433,10 +435,19 @@ export function playAnimal(category: AnimalCategory, motion: Motion): void {
   const now = performance.now();
   if (now - animalAt < 2200) return;
   animalAt = now;
-  if (category === 'amphibian') shot('frog', 0.55);
-  else if (category === 'insect' || category === 'butterfly' || motion === 'glow' || motion === 'bat') shot('chirp', 0.4);
-  else if (category === 'bird') shot('bird', 0.5);
-  else shot('pluck', 0.35);
+  const cue = animalCue(category, motion);
+  if (cue) shot(cue.id, cue.vol);
+}
+
+/**
+ * 1.4.45: what (if anything) plays when an animal first shows up. Birds: a soft call; frogs: their low croak, quieter.
+ * Insects, butterflies, moths, fireflies, bats and ground animals: silence (no fitting soft asset; nothing shrill).
+ */
+export function animalCue(category: AnimalCategory, motion: Motion): { id: string; vol: number } | null {
+  if (motion === 'bat' || motion === 'glow') return null;
+  if (category === 'bird') return { id: 'call', vol: 0.7 };
+  if (category === 'amphibian') return { id: 'frog', vol: 0.3 };
+  return null;
 }
 
 /** Short confirmation when a milestone or weather achievement card opens. */

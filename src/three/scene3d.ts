@@ -19,6 +19,11 @@ import { CareFx, type CareFxKind } from './careFx';
 import { Campfire3D } from './campfire3d';
 import { Mulch3D } from './mulch3d';
 import { campfireNightK, campfireRadiusUnits, campfireSpot, mulchRadii, type CampfireSpot } from '../campfire';
+import { catchUp, smoothDamp, smoothstep, smootherstep } from './camEase';
+
+/** 1.4.45 planting shot: vista → soil, and back out to the normal view (seconds). */
+const PULL_S = 4.0;
+const SETTLE_S = 2.2;
 
 export type Quality = 'low' | 'high';
 
@@ -89,6 +94,16 @@ export class Scene3D {
   /** Opening glide: zoom at the moment the hold ends, and seconds spent easing to the normal distance. */
   private introFrom = 1;
   private introGlide = -1;
+  /** 1.4.45 planting-shot timelines and camera clock (see camEase.ts). */
+  private pullT = -1;
+  private pullFrom = 1;
+  private readonly panFrom = new THREE.Vector3();
+  private settleT = -1;
+  private settleFrom = 1;
+  private camLag = 0;
+  private camDt = 0;
+  private camVel = 0;
+  private camYVel = 0;
   private onSeed: (() => void) | null = null;
   private clouds: { mesh: THREE.Mesh; r: number; a: number; y: number; speed: number; low: boolean }[] = [];
   private cloudMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, transparent: true, opacity: 0.94, emissive: '#ffffff', emissiveIntensity: 0.35 });
@@ -1032,6 +1047,8 @@ export class Scene3D {
     }
     this.seedPhase = 'pull';
     this.seedT = 0;
+    this.pullT = -1;
+    this.settleT = -1;
     this.onSeed = done;
     this.zoomGoal = this.groundZoom;
   }
@@ -1062,6 +1079,35 @@ export class Scene3D {
   /** 1.4.33: the next draw puts every eased camera value straight on its goal (first frame / explicit reset). */
   requestSnap(): void {
     this.snapNext = true;
+  }
+
+  /** 1.4.45 diagnostics: per-frame camera steps during the planting / opening shots (largest step = a jump). */
+  private camTrail: { t: number; raw: number; dt: number; phase: string; step: number; dist: number }[] = [];
+  private camPrev = new THREE.Vector3(Number.NaN, 0, 0);
+  private traceCam(raw: number, dt: number): void {
+    const phase = this.seedPhase;
+    const p = this.camera.position;
+    const step = Number.isFinite(this.camPrev.x) ? p.distanceTo(this.camPrev) : 0;
+    this.camPrev.copy(p);
+    if (!phase || phase === 'far') return;
+    this.camTrail.push({ t: this.lastTime, raw: Math.round(raw * 1000), dt: Math.round(dt * 1000), phase, step, dist: p.length() });
+    if (this.camTrail.length > 2000) this.camTrail.shift();
+  }
+  camTrace(): { t: number; raw: number; dt: number; phase: string; step: number; dist: number }[] {
+    return this.camTrail;
+  }
+  /** Largest camera step per frame relative to the camera's distance (≈ how far one frame jumped), for diagnostics. */
+  camJump(): { frames: number; maxRel: number; at: string } {
+    let maxRel = 0;
+    let at = '-';
+    for (const f of this.camTrail) {
+      const rel = f.step / Math.max(0.01, f.dist);
+      if (rel > maxRel) {
+        maxRel = rel;
+        at = `${f.phase} raw ${f.raw}ms`;
+      }
+    }
+    return { frames: this.camTrail.length, maxRel, at };
   }
 
   /** True while the opening glide runs (main.ts defers ads and big sounds until it is over). */
@@ -1710,6 +1756,16 @@ export class Scene3D {
     // A timestamp that does not move forward is "no time passed", never "snap" (1.4.33).
     const dt = clamp(raw, 0, 0.1);
     this.lastTime = Math.max(this.lastTime, t);
+    // 1.4.45: camera clock for the planting / opening shots — capped per frame, lost time repaid smoothly.
+    const shot = this.seedPhase !== null && this.seedPhase !== 'far';
+    if (shot && !this.snapNow) {
+      const c = catchUp(raw, this.camLag);
+      this.camLag = c.lag;
+      this.camDt = c.dt;
+    } else {
+      this.camLag = 0;
+      this.camDt = dt;
+    }
     this.ensureTree(input, t);
     this.ensureHabitat(input);
     this.layoutFarIsles(input, t);
@@ -1883,8 +1939,26 @@ export class Scene3D {
     const want = Math.max(R / Math.sin(vHalf) * (portrait ? 1.3 : 1.18), R / Math.sin(hHalf) * (portrait ? 1.12 : 1.05));
     const wantY = H * 0.47 + (portrait ? H * 0.02 : 0);
     const k = 1 - Math.exp(-dt * 1.6);
-    this.camDist += (want - this.camDist) * (this.snapNow ? 1 : k);
-    this.camTargetY += (wantY - this.camTargetY) * (this.snapNow ? 1 : k);
+    const cdt = this.camDt;
+    if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro') {
+      // 1.4.45: a spring (no full-speed start when the goal jumps, e.g. the seedling appearing).
+      if (this.snapNow) {
+        this.camDist = want;
+        this.camTargetY = wantY;
+        this.camVel = this.camYVel = 0;
+      } else {
+        const d = smoothDamp(this.camDist, want, this.camVel, 0.6, cdt);
+        const y = smoothDamp(this.camTargetY, wantY, this.camYVel, 0.6, cdt);
+        this.camDist = d.value;
+        this.camVel = d.vel;
+        this.camTargetY = y.value;
+        this.camYVel = y.vel;
+      }
+    } else {
+      this.camVel = this.camYVel = 0;
+      this.camDist += (want - this.camDist) * (this.snapNow ? 1 : k);
+      this.camTargetY += (wantY - this.camTargetY) * (this.snapNow ? 1 : k);
+    }
     // Zoom / pan ease toward the player's goal; the overview recentres itself.
     // The planting shot uses a much slower glide, then hands the camera back.
     const ez = this.snapNow ? 1 : 1 - Math.exp(-dt * 9);
@@ -1892,18 +1966,25 @@ export class Scene3D {
       this.zoomGoal = this.farZoom();
       this.zoom = this.zoomGoal;
     } else if (this.seedPhase === 'pull') {
-      const slow = this.snapNow ? 1 : 1 - Math.exp(-dt * 0.85);
-      this.zoom += (this.groundZoom - this.zoom) * slow;
-      this.zoomGoal = this.zoom;
-      this.panGoal.multiplyScalar(1 - slow);
-      if (this.zoom <= this.groundZoom + 0.05) {
+      // 1.4.45: ease-in-out from the vista to the soil (was an exponential ease-out: full speed on frame one).
+      if (this.pullT < 0) {
+        this.pullT = 0;
+        this.pullFrom = this.zoom;
+        this.panFrom.copy(this.panOff);
+      }
+      this.pullT += this.snapNow ? PULL_S : cdt;
+      const s = smootherstep(this.pullT / PULL_S);
+      this.zoom = this.zoomGoal = this.pullFrom + (this.groundZoom - this.pullFrom) * s;
+      this.panGoal.copy(this.panFrom).multiplyScalar(1 - s);
+      if (this.pullT >= PULL_S) {
         this.zoom = this.zoomGoal = this.groundZoom;
+        this.pullT = -1;
         this.seedPhase = 'sprout';
         this.seedT = 0;
       }
     } else if (this.seedPhase === 'intro') {
       // Hold the planting vista until the tree's own framing has settled, then glide straight to the normal distance.
-      this.seedT += dt;
+      this.seedT += cdt;
       const framed = Math.abs(this.camDist - want) < Math.max(0.4, want * 0.04);
       // 1.4.34: at least 0.75 s still, which covers the preload screen's fade.
       const hold = this.seedT < 1.3 && (this.seedT < 0.75 || !framed);
@@ -1916,7 +1997,7 @@ export class Scene3D {
           this.introGlide = 0;
           this.introFrom = this.zoom;
         }
-        this.introGlide += dt;
+        this.introGlide += cdt;
         const u = Math.min(1, this.introGlide / 4.8);
         const s = u * u * (3 - 2 * u);
         this.zoom = this.zoomGoal = this.introFrom + (1 - this.introFrom) * s;
@@ -1929,10 +2010,15 @@ export class Scene3D {
         }
       }
     } else if (this.seedPhase === 'settle') {
-      const back = this.snapNow ? 1 : 1 - Math.exp(-dt * 1.6);
-      this.zoom += (1 - this.zoom) * back;
-      this.zoomGoal = this.zoom;
-      if (this.zoom >= 0.98) {
+      // 1.4.45: ease-in-out back to the normal distance; lands exactly on 1 (no 2 % snap at the end).
+      if (this.settleT < 0) {
+        this.settleT = 0;
+        this.settleFrom = this.zoom;
+      }
+      this.settleT += this.snapNow ? SETTLE_S : cdt;
+      this.zoom = this.zoomGoal = this.settleFrom + (1 - this.settleFrom) * smoothstep(this.settleT / SETTLE_S);
+      if (this.settleT >= SETTLE_S) {
+        this.settleT = -1;
         this.zoom = this.zoomGoal = 1;
         this.seedPhase = null;
         const done = this.onSeed;
@@ -1943,7 +2029,8 @@ export class Scene3D {
       if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
       this.zoom += (this.zoomGoal - this.zoom) * ez;
     }
-    this.panOff.lerp(this.panGoal, this.seedPhase === 'pull' ? (this.snapNow ? 1 : 1 - Math.exp(-dt * 1.05)) : ez);
+    if (this.seedPhase === 'pull') this.panOff.copy(this.panGoal);
+    else this.panOff.lerp(this.panGoal, ez);
     const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
     const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro';
     if (handsOff && !planting && performance.now() - this.lastDrag > IDLE_MS) {
@@ -2032,6 +2119,7 @@ export class Scene3D {
       if (this.camera.position.y < gy) this.camera.position.y = gy;
     }
     this.camera.lookAt(target);
+    this.traceCam(raw, dt);
     if (this.shake > 0.001 && !input.reducedMotion) {
       // v16 snap / impact shake: a small jitter of the camera position (the view direction stays).
       const a = this.shake * Math.max(0.02, H * 0.012);

@@ -4,6 +4,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { isNative, platformName } from './platform';
 import { getLocale, t as tl } from '../i18n';
 import { kvSet, kvRemove } from './kv';
+import { permsReady } from './permGate';
 
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
 export const PUSH_SERVER = 'https://158-101-140-210.sslip.io';
@@ -108,7 +109,8 @@ export async function syncPush(enabled: boolean): Promise<void> {
       return;
     }
     let perm = await PushNotifications.checkPermissions();
-    if (perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') perm = await PushNotifications.requestPermissions();
+    // 1.4.45: no prompt before onboarding is over (asked right after it, after location).
+    if ((perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') && permsReady()) perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
     // Channels are Android-only (the call rejects on iOS and would skip register()).
     if (platformName() === 'android') await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
