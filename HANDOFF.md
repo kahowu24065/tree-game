@@ -104,6 +104,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.36 | 存咗嘅文字跟而家語言：成長日誌每行除咗原文，加存訊息 key＋參數（`LogEntry.i18n`，`src/i18n/msg.ts`），顯示時用而家語言重砌；寫入時靠 `t()` 最近輸出追蹤（`traceOf`）攞準 key，舊存檔逐行對四語範本反向配對（`migrateLogI18n`，要砌返一模一樣先算），配唔到就照原文顯示；早晨小結（`morningNote`）、結算水分標籤都跟語言；`labels.001` 拆 個／場 兩條（英文冇量詞）；健康日曆記號識英文；禁止頁面縮放（viewport `maximum-scale=1, user-scalable=no`、body `touch-action: manipulation`、iOS `gesturestart`／`dblclick` preventDefault），UI 唔可以長按揀字／彈 callout（輸入框、存檔碼、診斷文字除外），3D 小島雙指縮放照舊；versionCode 43 |
 | 1.4.37 | 法律頁：重寫 `public/privacy.html`／`public/terms.html`（繁體中文書面語＋英文，生效 2026-10-03，按實際行為：位置、推送伺服器資料、天氣 API、本機存檔、AdMob＋UMP＋ATT、RevenueCat 訂閱 HK$8／月、Apple EULA、兒童、刪除資料，聯絡 akar.554426@gmail.com），GitHub Pages 上線；設定底部改為 免責聲明／私隱權政策／使用條款（後兩個直接開網頁，`src/legal.ts`），刪咗 App 內舊私隱簡介（`ui.357`）；ios 分支：冇 RC_IOS_KEY 都顯示完整訂閱頁，撳訂閱／恢復購買會提示「暫時未開放」；versionCode 44 |
 | 1.4.38 | 網站搬去 Cloudflare Pages：https://sekai-tree.pages.dev/（project `sekai-tree`），App 內私隱權政策／使用條款連結（設定、訂閱頁，`src/legal.ts`）改用 `https://sekai-tree.pages.dev/privacy`、`/terms`；新增 `scripts/deploy-pages.sh`；gh-pages 照舊部署；versionCode 45 |
+| 1.4.39 | 訂閱頁（ios 分支）：兩個並排購買掣「月費」同「永久」（一次性 non-consumable `sekai_tree_lifetime`，同樣解鎖 `premium` entitlement）；價錢全部用商店 priceString（RevenueCat offering 嘅 monthly／lifetime package，lifetime 冇 package 就 `getProducts` 攞），未載入就只顯示「月費」／「永久」，㩒落提示「訂閱暫時未開放」；拎走寫死嘅 HK$8（標題句、條款都改）；條款加「永久係一次性購買、唔會續期」；「冇廣告」下面加同樣樣式嘅「後續更新會加入更多會員福利」（`prem.perkMore`，四語）；main 只係升版本；versionCode 46 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -317,6 +318,11 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 舊網址轉址（2026-10-03）
 - `kahowu24065.github.io/tree-game/` 改為轉址去 https://sekai-tree.pages.dev/（gh-pages d580ec5，源檔 `site-redirect/`）；之後發佈只部署 Cloudflare Pages。
+
+### 1.4.39 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。網站只部署 Cloudflare Pages（gh-pages 係轉址頁，唔好覆蓋）。i18n 腳本 `/workspace/.ed/i18n139ios.py`（ios；新 key `prem.perkMore／planMonthly／planLifetime／priceMonthly／priceOnce／perMonth／lifetimeNote／lifetimeActive`，刪 `prem.subscribe`；`prem.disclosure*` 參數由 `{price}` 改做 `{per}`）。
+- 程式（ios）：`src/premium.ts` `LIFETIME_ID`／`Plan`；`src/native/billing.ts` `BillingInfo.lifetimePrice／lifetime`、`planReady()`、`purchase(plan)`（monthly＝`purchasePackage`；lifetime＝lifetime package，否則 `purchaseStoreProduct`）；恢復購買照用 `restorePurchases`（兩樣都包）。
+- **要用戶手動做**：App Store Connect 開 non-consumable `sekai_tree_lifetime`（價錢、zh-Hant／英文名同描述、審核截圖），RevenueCat 加產品、掛 `premium` entitlement、default offering 加 Lifetime package（`$rc_lifetime`）。未做之前「永久」掣只顯示名、㩒落話未開放。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
