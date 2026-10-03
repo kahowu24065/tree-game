@@ -1,3 +1,4 @@
+import type { MsgSeq } from './i18n/msg';
 import type { MilestoneId, MilestoneTier, PrepId, WeatherAchievementId, WeatherEventId, WeatherTrackId } from './balance';
 import type { SpeciesId } from './data/species';
 
@@ -65,6 +66,19 @@ export interface LogEntry {
   kind?: LogKind;
   title?: string;
   reward?: LogReward;
+  /**
+   * 1.4.36: the same texts as messages (key + params), so the line is shown in whatever language is current.
+   * Missing on lines nobody could match (shown as written) — `text`/`title`/`reward.text` always stay as written.
+   */
+  i18n?: LogI18n;
+}
+
+export interface LogI18n {
+  /** Language the line was written in. */
+  lang: string;
+  text?: MsgSeq;
+  title?: MsgSeq;
+  reward?: MsgSeq;
 }
 
 /** Full breakdown of one nightly settlement (shown in the log and the developer panel). */

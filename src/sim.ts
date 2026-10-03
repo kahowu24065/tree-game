@@ -75,9 +75,10 @@ import {
   wTier,
   type NightWater,
 } from './rules';
-import type { Care, DayFlow, GameState, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
+import type { Care, DayFlow, GameState, LogI18n, LogKind, LogReward, MetaState, MilestoneAward, Reinforcement, Settlement, WeatherAward, WeatherProgress } from './types';
 import { formatHeight } from './util';
-import { t as tl } from './i18n';
+import { getLocale, t as tl } from './i18n';
+import { parseIn } from './i18n/msg';
 
 export function freshCare(date: string): Care {
   return { date, water: 0, drain: 0, fertilize: 0, dewormed: false, preps: { stakes: false, ropes: false, prune: false }, credited: false, heatWater: false, rainDrain: false, warmCover: false };
@@ -97,8 +98,20 @@ export interface LogMeta {
   time?: string;
 }
 
+/** 1.4.36: message form of a new log line's texts (written in the current language). */
+export function logI18n(text: string, title?: string, reward?: string, lang = getLocale()): LogI18n | undefined {
+  const out: LogI18n = { lang };
+  const a = parseIn(text, lang);
+  if (a) out.text = a;
+  const b = title ? parseIn(title, lang) : null;
+  if (b) out.title = b;
+  const c = reward ? parseIn(reward, lang) : null;
+  if (c) out.reward = c;
+  return a || b || c ? out : undefined;
+}
+
 export function addLog(state: GameState, date: string, text: string, meta: LogMeta = {}): void {
-  state.log.unshift({ date, text, time: meta.time ?? logClock(), kind: meta.kind, title: meta.title, reward: meta.reward });
+  state.log.unshift({ date, text, time: meta.time ?? logClock(), kind: meta.kind, title: meta.title, reward: meta.reward, i18n: logI18n(text, meta.title, meta.reward?.text) });
   if (state.log.length > 120) state.log.length = 120;
 }
 

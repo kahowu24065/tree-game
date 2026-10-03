@@ -47,6 +47,33 @@ body {
   overscroll-behavior: none;
 }
 
+/*
+ * 1.4.36: an app, not a page — no double-tap / pinch zoom of the UI (with the viewport meta and the gesture guard
+ * in boot.ts) and no stray text selection or long-press callout. The 3D island (#scene, touch-action: none) keeps
+ * its own pinch / drag camera. Text fields and the diagnostics readout stay selectable.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input,
+textarea,
+select,
+[contenteditable],
+.save-code,
+.diag-pre,
+.diag-pre * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 button {
   font: inherit;
   color: inherit;

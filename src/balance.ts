@@ -185,12 +185,12 @@ export const RECORD_MILESTONE = { id: 'record' as const, label: tl('balance.033'
  */
 export const WX_AWARD_STEPS = [1, 5, 10, 20, 50, 100] as const;
 export const WX_TRACKS = [
-  { id: 'storm', unit: tl('balance.034'), name: tl('balance.035'), detail: tl('balance.036') },
-  { id: 't8', unit: tl('balance.034'), name: tl('balance.037'), intlName: tl('balance.038'), detail: tl('balance.039'), intlDetail: tl('balance.040') },
-  { id: 'black', unit: tl('balance.041'), name: tl('guide.139'), intlName: tl('balance.042'), detail: tl('balance.043') },
-  { id: 'rain', unit: tl('balance.041'), name: tl('balance.012'), intlName: tl('balance.044'), detail: tl('balance.045') },
-  { id: 'heat', unit: tl('balance.034'), name: tl('guide.133'), intlName: tl('balance.046'), detail: tl('balance.047'), intlDetail: tl('balance.048') },
-  { id: 'cold', unit: tl('balance.034'), name: tl('balance.010'), detail: tl('balance.049') },
+  { id: 'storm', unit: tl('balance.034'), unitKey: 'balance.034', name: tl('balance.035'), detail: tl('balance.036') },
+  { id: 't8', unit: tl('balance.034'), unitKey: 'balance.034', name: tl('balance.037'), intlName: tl('balance.038'), detail: tl('balance.039'), intlDetail: tl('balance.040') },
+  { id: 'black', unit: tl('balance.041'), unitKey: 'balance.041', name: tl('guide.139'), intlName: tl('balance.042'), detail: tl('balance.043') },
+  { id: 'rain', unit: tl('balance.041'), unitKey: 'balance.041', name: tl('balance.012'), intlName: tl('balance.044'), detail: tl('balance.045') },
+  { id: 'heat', unit: tl('balance.034'), unitKey: 'balance.034', name: tl('guide.133'), intlName: tl('balance.046'), detail: tl('balance.047'), intlDetail: tl('balance.048') },
+  { id: 'cold', unit: tl('balance.034'), unitKey: 'balance.034', name: tl('balance.010'), detail: tl('balance.049') },
 ] as const;
 export type WeatherTrackId = (typeof WX_TRACKS)[number]['id'];
 /** `storm:5` — the track and the count it was claimed at. */

@@ -63,6 +63,17 @@ export function useLocale(l: Locale): void {
 }
 useLocale(current);
 
+/** 1.4.36: run `fn` with another table active (no storage / document change), e.g. to verify a stored message. */
+export function withLocale<T>(l: Locale, fn: () => T): T {
+  const was = current;
+  current = l;
+  try {
+    return fn();
+  } finally {
+    current = was;
+  }
+}
+
 /** Save the player's choice. The caller reloads so every table is rebuilt in the new language. */
 export function saveLocale(l: Locale): void {
   try {
@@ -122,10 +133,27 @@ export function has(key: string, l: Locale = current): boolean {
   return key in TABLES[l];
 }
 
+/**
+ * 1.4.36: which key + params produced a recent short string (so a log line can be stored as its message even
+ * when two keys happen to read the same, e.g. English "Cold"). Bounded; long HTML is not kept.
+ */
+const TRACE_MAX = 3000;
+const TRACE_MAX_LEN = 400;
+const traced = new Map<string, { k: string; p?: Params }>();
+export function traceOf(s: string, l: Locale = current): { k: string; p?: Params } | undefined {
+  return traced.get(`${l}\u0000${s}`);
+}
+
 export function t(key: string, params?: Params): string {
   const text = TABLES[current][key] ?? zhHK[key] ?? key;
-  return format(text, params);
+  const out = format(text, params);
+  if (out.length <= TRACE_MAX_LEN) {
+    if (traced.size >= TRACE_MAX) traced.clear();
+    traced.set(`${current}\u0000${out}`, { k: key, p: params });
+  }
+  return out;
 }
+
 
 /** A runtime name from an official feed (station, district) shown in the player's language when the table knows it. */
 export function tName<T extends string | null | undefined>(name: T): T {

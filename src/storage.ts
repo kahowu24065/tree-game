@@ -3,9 +3,10 @@ import { daysBetween } from './dates';
 import { START } from './balance';
 import type { GameState } from './types';
 import type { WeatherSnapshot } from './weather';
-import { addLog, checkMilestones, migrateWx, RULES_VERSION, windStageCm } from './sim';
+import { addLog, checkMilestones, logI18n, migrateWx, RULES_VERSION, windStageCm } from './sim';
 import { formatHeight } from './util';
-import { t as tl } from './i18n';
+import { getLocale, t as tl } from './i18n';
+import { parseAny } from './i18n/msg';
 
 /** Fields of saves made before v14 (seasons). */
 type LegacySave = GameState & { season?: string; completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean } };
@@ -162,6 +163,28 @@ export function loadGame(): GameState | null {
   }
 }
 
+/**
+ * 1.4.36: log lines from before 1.4.36 are text only, in the language of the day they were written. Recover their
+ * message form (matched against all four languages) so they follow the current language; lines that match
+ * nothing keep showing as written. Returns how many lines were looked at / given a message form.
+ */
+export function migrateLogI18n(data: Pick<GameState, 'log'>): { total: number; migrated: number } {
+  let total = 0;
+  let migrated = 0;
+  for (const e of data.log ?? []) {
+    if (!e || typeof e.text !== 'string' || e.i18n) continue;
+    total++;
+    const got = parseAny(e.text);
+    const lang = got?.lang ?? getLocale();
+    const i18n = logI18n(e.text, typeof e.title === 'string' ? e.title : undefined, typeof e.reward?.text === 'string' ? e.reward.text : undefined, lang);
+    if (i18n) {
+      e.i18n = i18n;
+      migrated++;
+    }
+  }
+  return { total, migrated };
+}
+
 /** Parse and migrate a `sekai-tree-v2` save (pure, testable). */
 export function parseSave(raw: string): GameState | null {
   try {
@@ -185,6 +208,7 @@ export function parseSave(raw: string): GameState | null {
     migrateV14(data);
     migrateV16(data);
     migrateWx(data);
+    migrateLogI18n(data);
     data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '' };
     if (data.nest) {
       data.nest.laidOn ??= '';
