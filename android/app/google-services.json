@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:290976036599:android:32650be440ded70a2385f2",
+        "android_client_info": {
+          "package_name": "app.sekaitree.game"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0hn_YRXUgLD9xb1ycWJ9iJVakpsn31WU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:290976036599:android:302532ea6a0b74062385f2",
         "android_client_info": {
           "package_name": "io.github.kahowu24065.treegame"
