@@ -118,3 +118,21 @@ describe('paywall', () => {
     }
   });
 });
+
+describe('1.4.37 paywall before the store is set up (no RevenueCat key)', () => {
+  it.each(LOCALES)('%s: full iOS paywall with HK$8 fallback, enabled Subscribe, restore / manage / disclosure / EULA + privacy, no "store unavailable" line', (loc) => {
+    useLocale(loc);
+    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ state: 'unavailable', price: null }), today: '2026-10-03', notYet: true });
+    for (const s of ['data-action="premium-buy"', 'data-action="premium-restore"', 'apps.apple.com/account/subscriptions', APPLE_EULA_URL, PRIVACY_URL]) expect(html).toContain(s);
+    expect(html).toContain(t('prem.lead', { price: 'HK$8' }));
+    expect(html).toContain(t('prem.perkAds'));
+    expect(html).not.toContain('aria-disabled');
+    expect(html).not.toContain(t('prem.unavailable'));
+    expect(t('prem.notYet')).not.toBe('prem.notYet');
+    useLocale('zh-HK');
+  });
+  it('web keeps "subscribe in the app"', () => {
+    const html = premiumModal({ mode: 'web', store: emptyPremium(), billing: billing({ state: 'unavailable', price: null }), today: '2026-10-03', notYet: false });
+    expect(html).not.toContain('premium-buy');
+  });
+});

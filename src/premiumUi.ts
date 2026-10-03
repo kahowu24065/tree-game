@@ -6,10 +6,8 @@ import { PREMIUM_EXTRAS, SKINS, diaryByMonth, skinName, skinOfMonth, type Premiu
 import { esc, formatHeight } from './util';
 import type { BillingInfo } from './native/billing';
 
-export const PRIVACY_URL = 'https://kahowu24065.github.io/tree-game/privacy.html';
-export const TERMS_URL = 'https://kahowu24065.github.io/tree-game/terms.html';
-/** Apple's standard licence (EULA) — the subscription's Terms of Use on iOS. */
-export const APPLE_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+import { APPLE_EULA_URL, PRIVACY_URL, TERMS_URL } from './legal';
+export { APPLE_EULA_URL, PRIVACY_URL, TERMS_URL };
 
 export type PremiumMode = 'web' | 'ios' | 'android';
 
@@ -53,7 +51,9 @@ function skinsSection(p: PremiumStore, today: string): string {
 
 function legal(mode: PremiumMode): string {
   const terms = mode === 'ios' ? APPLE_EULA_URL : TERMS_URL;
-  return `<p class="prem-legal">${link(terms, tl('prem.terms'))}${link(PRIVACY_URL, tl('prem.privacy'))}</p>`;
+  // iOS: Apple's standard EULA is the subscription's Terms of Use (named as such for App Review).
+  const label = mode === 'ios' ? `${tl('prem.terms')} (EULA)` : tl('prem.terms');
+  return `<p class="prem-legal">${link(terms, label)}${link(PRIVACY_URL, tl('prem.privacy'))}</p>`;
 }
 
 function dateText(iso: string | null): string {
@@ -68,7 +68,11 @@ function dateText(iso: string | null): string {
 }
 
 /** Paywall (not a member) or member page. */
-export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean; extras?: boolean }): string {
+/**
+ * `notYet` (1.4.37): an app build without a store key (RevenueCat not set up yet). The full paywall is shown — e.g. for
+ * the App Review screenshot — with the fallback price; Subscribe / Restore then say "not open yet" (main.ts).
+ */
+export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean; extras?: boolean; notYet?: boolean }): string {
   const { mode, store, billing } = o;
   const extras = o.extras ?? PREMIUM_EXTRAS;
   const price = billing.price ?? PRICE_FALLBACK;
@@ -84,9 +88,9 @@ export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billin
     const status = when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
     return `${head}<p class="prem-status">${esc(tl('prem.active'))}${status ? `<br><small>${esc(status)}</small>` : ''}</p>${perks}${extras ? skinsSection(store, o.today) : ''}${album}${manage}${legal(mode)}${back}`;
   }
-  const disclosure = tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid');
-  const canBuy = billing.state === 'ready' && billing.price !== null;
-  const state = billing.state === 'loading' ? tl('prem.loading') : billing.state === 'unavailable' || !canBuy ? tl('prem.unavailable') : '';
+  const disclosure = tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid', { price });
+  const canBuy = o.notYet || (billing.state === 'ready' && billing.price !== null);
+  const state = o.notYet ? '' : billing.state === 'loading' ? tl('prem.loading') : billing.state === 'unavailable' || !canBuy ? tl('prem.unavailable') : '';
   const buy = `<button type="button" class="primary prem-buy" data-action="premium-buy"${canBuy && !o.busy ? '' : ' aria-disabled="true"'}>${esc(tl('prem.subscribe', { price }))}</button>`;
   return `${head}<p class="prem-lead">${esc(tl('prem.lead', { price }))}</p>${perks}${state ? `<p class="prem-small">${esc(state)}</p>` : ''}${buy}${album}${manage}<p class="prem-disclosure">${esc(disclosure)}</p>${legal(mode)}${back}`;
 }

@@ -1,41 +1,128 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>World Tree (世界之樹) — Privacy Policy</title>
-<style>body{font:16px/1.6 system-ui,-apple-system,sans-serif;max-width:720px;margin:24px auto;padding:0 18px;color:#243026}h1{font-size:22px}h2{font-size:18px;margin-top:28px}small{color:#7d877f}</style>
+<title>世界之樹 World Tree — 私隱權政策 Privacy Policy</title>
+<style>
+body{font:16px/1.65 system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;max-width:760px;margin:24px auto;padding:0 18px 48px;color:#243026}
+h1{font-size:23px;margin-bottom:4px}h2{font-size:19px;margin-top:34px;border-bottom:1px solid #dfe6df;padding-bottom:4px}h3{font-size:16px;margin:22px 0 4px}
+small,.meta{color:#6f7a71}a{color:#2f6f3a}ul{padding-left:22px}li{margin:3px 0}nav a{margin-right:14px}
+</style>
 </head>
 <body>
-<h1>World Tree (世界之樹) — Privacy Policy</h1>
-<p><small>Last updated: 2026-10-01 · Contact: https://github.com/kahowu24065/tree-game/issues</small></p>
+<h1>世界之樹 World Tree — 私隱權政策 / Privacy Policy</h1>
+<p class="meta">生效日期 Effective date：2026-10-03 · 聯絡 Contact：<a href="mailto:kahowu24065@gmail.com">kahowu24065@gmail.com</a></p>
+<nav><a href="#zh">繁體中文</a><a href="#en">English</a><a href="terms.html">使用條款 Terms of Use</a></nav>
 
+<section id="zh" lang="zh-Hant">
+<h2>繁體中文</h2>
+<p>本政策說明「世界之樹」（iOS、Android 應用程式及網頁版，下稱「本應用」）會處理哪些資料、用途為何，以及你可以如何控制。本應用不設帳戶，不要求你提供姓名、電郵或電話號碼，我們亦不會出售你的個人資料。</p>
+
+<h3>1. 位置</h3>
+<ul>
+<li>本應用只請求<b>大約位置</b>（Android 為「大概位置」；iOS 為「使用 App 期間」），用於顯示當地天氣、天氣警告及地名。你可以拒絕或隨時在系統設定關閉；拒絕時會改用香港天氣，或使用你在應用內手動選擇的地點。</li>
+<li>查詢天氣時，坐標會直接傳送至 Open-Meteo（天氣預報，約小數點後 4 位）及 BigDataCloud（地名，約小數點後 4 位）。香港天文台及澳門地球物理暨氣象局的資料以整份公開資料下載，不會傳送你的位置。</li>
+<li>查詢香港、澳門以外地區（例如台灣、日本、美國、加拿大、歐洲）的官方警告時，坐標會四捨五入至小數點後 3 位（約 100 米）傳送至我們的推送伺服器，伺服器只用作即時回答，不會把該坐標連同任何識別碼儲存。伺服器再以概略地區向相關官方機構（例如中央氣象署、日本氣象廳及環境省、美國國家氣象局、加拿大環境及氣候變化部、MeteoAlarm）查詢公開警告。</li>
+<li>最近一次位置及天氣結果只儲存在你的裝置上，以便離線時使用。</li>
+</ul>
+
+<h3>2. 提醒通知（推送）</h3>
+<p>只有在你於「設定」開啟提醒通知時才會使用。開啟後，以下資料會傳送至我們位於 Oracle Cloud 的推送伺服器，並與推送權杖一併儲存：</p>
+<ul>
+<li>由 Google Firebase Cloud Messaging（FCM）發出的推送權杖（iOS 經 Apple 推送通知服務），平台、應用版本及應用語言；</li>
+<li>四捨五入至約 0.5 度及約 0.1 度（約 11 公里）的概略位置、時區，是否位於香港／澳門／台灣，及（在台灣時）縣市及鄉鎮名稱；</li>
+<li>簡單遊戲狀態：日期、當日已完成哪些應急行動、樹木是否健在或瀕危、抗風力數值。</li>
+</ul>
+<p>這些資料只用於判斷應向你發送哪一種天氣警告及通知內容。關閉提醒通知會即時從伺服器刪除權杖及相關資料；若刪除應用程式，權杖會失效，並於下一次推送時被自動移除。伺服器會暫時於記憶體使用 IP 位址作流量限制，不會作其他用途。</p>
+
+<h3>3. 遊戲資料</h3>
+<p>樹木、成長日誌、圖鑑、設定等全部儲存在你的裝置上（瀏覽器 localStorage／應用程式偏好設定），不會上傳。「匯出存檔」產生的存檔碼只會在你自行複製或分享時離開裝置。刪除應用程式或清除網站資料即會刪除這些資料。</p>
+
+<h3>4. 廣告（Google AdMob）</h3>
+<ul>
+<li>免費版的 iOS 及 Android 應用程式底部會顯示 Google AdMob 橫幅廣告；網頁版不顯示廣告；訂閱會員不顯示廣告。</li>
+<li>Google 可能收集裝置識別碼（例如 iOS 的廣告識別碼 IDFA、Android 的廣告 ID）、IP 位址、概略位置、裝置資料及廣告互動資料，用作投放、量度廣告及防止詐騙。詳情請參閱 <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">Google 如何使用合作夥伴網站或應用程式的資料</a>。</li>
+<li>於歐洲經濟區、英國等地區，會先顯示 Google 使用者同意聲明（UMP）表格。於 iOS，會先以 App Tracking Transparency 詢問你是否允許追蹤；如你拒絕，則不會取用 IDFA，只會顯示非個人化廣告。你可以隨時在系統設定更改。</li>
+</ul>
+
+<h3>5. 訂閱（世界之樹會員）</h3>
+<ul>
+<li>「世界之樹會員」為每月自動續期訂閱（香港為 HK$8／月，其他地區以商店顯示價格為準），唯一權益為移除廣告；照顧樹木、天氣警告及所有玩法均免費。</li>
+<li>付款由 Apple App Store 或 Google Play 處理，我們不會收到你的信用卡或付款資料。我們使用 RevenueCat 核實訂閱狀態；RevenueCat 會收到一個隨機產生的匿名用戶編號、購買記錄及收據、裝置及應用基本資料，詳見 <a href="https://www.revenuecat.com/privacy/" target="_blank" rel="noopener">RevenueCat 私隱政策</a>。</li>
+<li>你可以在 Apple ID（App Store 帳戶）或 Google Play 的訂閱設定管理或取消訂閱。</li>
+</ul>
+
+<h3>6. 第三方服務</h3>
+<p>Open-Meteo、BigDataCloud、香港天文台、澳門地球物理暨氣象局、Google（Firebase Cloud Messaging、AdMob、使用者同意聲明）、Apple（推送通知、App Store）、RevenueCat、Oracle Cloud（推送伺服器主機）及 GitHub Pages（網頁版主機，可能記錄存取日誌）。各服務按其私隱政策處理資料。</p>
+
+<h3>7. 兒童</h3>
+<p>本應用適合一般觀眾，並非專為 13 歲以下兒童設計。我們不會刻意收集兒童的個人資料；如你認為兒童透過本應用向我們提供了個人資料，請聯絡我們刪除。</p>
+
+<h3>8. 你的選擇及刪除資料</h3>
+<ul>
+<li>位置、通知及追蹤權限可隨時在系統設定更改。</li>
+<li>關閉提醒通知即刪除推送伺服器上的資料；刪除應用程式即刪除裝置上的遊戲資料。</li>
+<li>如需查詢、取用或刪除與你相關的資料（包括經 RevenueCat 的訂閱記錄），請電郵至 <a href="mailto:kahowu24065@gmail.com">kahowu24065@gmail.com</a>，並說明你使用的裝置及平台，以便我們辨識。</li>
+</ul>
+
+<h3>9. 政策更新</h3>
+<p>如本政策有重大修改，我們會更新本頁及生效日期。</p>
+</section>
+
+<section id="en" lang="en">
 <h2>English</h2>
-<p><b>Location.</b> Your approximate location is used only to fetch local weather and warnings and to show the place name. If you refuse, Hong Kong weather is used.</p>
-<p><b>Notifications.</b> If you turn on reminders, a push token and your location rounded to 0.5° are sent to our push server to decide which weather warnings to send. Turning reminders off deletes the token from the server.</p>
-<p><b>Ads.</b> The free app shows a banner ad from Google AdMob, which may use the advertising identifier and device data to show and measure ads. On iOS you are asked first (App Tracking Transparency); if you decline, ads are not personalised. In some regions Google's consent form is shown. Members see no ads.</p>
-<p><b>Subscription.</b> Purchases are handled by the App Store or Google Play. We use RevenueCat to check the subscription; it receives an anonymous app user ID and purchase receipts, never your card details.</p>
-<p><b>Game data.</b> Your tree is stored on your device only. We do not sell personal data.</p>
+<p>This policy explains what data World Tree (世界之樹; the iOS and Android apps and the web version, “the app”) handles, why, and how you can control it. The app has no accounts and never asks for your name, email or phone number. We do not sell personal data.</p>
 
-<h2>繁體中文（香港）</h2>
-<p><b>位置：</b>只用嚟查當地天氣同警告、顯示地名；拒絕定位就用香港天氣。</p>
-<p><b>通知：</b>開咗提醒通知，會把推送權杖同四捨五入到 0.5 度嘅位置送去推送伺服器，用嚟決定發邊種天氣警告；關咗就會喺伺服器刪除。</p>
-<p><b>廣告：</b>免費版會顯示 Google AdMob 橫幅廣告，可能用廣告識別碼同裝置資料顯示同量度廣告。iOS 會先問你准唔准追蹤；拒絕就只顯示非個人化廣告。部分地區會顯示 Google 同意表格。會員冇廣告。</p>
-<p><b>訂閱：</b>由 App Store／Google Play 處理付款；我哋用 RevenueCat 核對訂閱，佢只會收到匿名用戶編號同購買收據，唔會收到你嘅信用卡資料。</p>
-<p><b>遊戲資料：</b>你棵樹只會儲存喺你部機。我哋唔會出售個人資料。</p>
+<h3>1. Location</h3>
+<ul>
+<li>The app asks only for <b>approximate location</b> (Android “approximate”; iOS “While Using the App”) to show local weather, weather warnings and the place name. You can decline or turn it off at any time in system settings; the app then uses Hong Kong weather or a place you choose in the app.</li>
+<li>For weather, coordinates are sent directly to Open-Meteo (forecasts, about 4 decimal places) and BigDataCloud (place name, about 4 decimal places). Hong Kong Observatory and Macao Meteorological and Geophysical Bureau data are downloaded as whole public feeds; your location is not sent to them.</li>
+<li>To look up official warnings outside Hong Kong and Macau (for example Taiwan, Japan, the US, Canada and Europe), coordinates rounded to 3 decimal places (about 100 m) are sent to our push server, which uses them only to answer the request and does not store them with any identifier. The server queries public warnings from the relevant agencies (such as Taiwan’s Central Weather Administration, the Japan Meteorological Agency and Ministry of the Environment, the US National Weather Service, Environment and Climate Change Canada and MeteoAlarm) by approximate area.</li>
+<li>Your latest location and weather results are kept only on your device for offline use.</li>
+</ul>
 
-<h2>繁體中文（台灣）</h2>
-<p><b>位置：</b>僅用於查詢當地天氣與警報、顯示地名；拒絕定位則使用香港天氣。</p>
-<p><b>通知：</b>開啟提醒通知後，推播權杖與四捨五入至 0.5 度的位置會傳送到推播伺服器，用來決定發送哪種天氣警報；關閉後會從伺服器刪除。</p>
-<p><b>廣告：</b>免費版會顯示 Google AdMob 橫幅廣告，可能使用廣告識別碼與裝置資料來顯示與衡量廣告。iOS 會先詢問是否允許追蹤；拒絕則只顯示非個人化廣告。部分地區會顯示 Google 同意表單。會員無廣告。</p>
-<p><b>訂閱：</b>付款由 App Store／Google Play 處理；我們使用 RevenueCat 核對訂閱，它只會收到匿名使用者編號與購買收據，不會收到你的信用卡資料。</p>
-<p><b>遊戲資料：</b>你的樹只儲存在你的裝置上。我們不會出售個人資料。</p>
+<h3>2. Reminder notifications (push)</h3>
+<p>Used only if you turn on reminders in Settings. Then the following is sent to our push server (hosted on Oracle Cloud) and stored with your push token:</p>
+<ul>
+<li>the push token issued by Google Firebase Cloud Messaging (FCM; on iOS via Apple Push Notification service), platform, app version and app language;</li>
+<li>approximate location rounded to about 0.5° and about 0.1° (about 11 km), time zone, whether you are in Hong Kong / Macau / Taiwan, and (in Taiwan) the county and township name;</li>
+<li>simple game state: the date, which emergency actions you did today, whether the tree is alive or dying, and its wind-resistance value.</li>
+</ul>
+<p>This is used only to decide which weather warnings to send you and what the notification says. Turning reminders off deletes the token and this data from the server immediately; if you delete the app, the token stops working and is removed automatically on the next push. The server uses IP addresses briefly in memory for rate limiting only.</p>
 
-<h2>简体中文</h2>
-<p><b>位置：</b>仅用于查询当地天气和预警、显示地名；拒绝定位则使用香港天气。</p>
-<p><b>通知：</b>开启提醒通知后，推送令牌和四舍五入到 0.5 度的位置会发送到推送服务器，用来决定发送哪种天气预警；关闭后会从服务器删除。</p>
-<p><b>广告：</b>免费版会显示 Google AdMob 横幅广告，可能使用广告标识符和设备数据来显示和衡量广告。iOS 会先询问是否允许跟踪；拒绝则只显示非个性化广告。部分地区会显示 Google 同意表单。会员无广告。</p>
-<p><b>订阅：</b>付款由 App Store/Google Play 处理；我们使用 RevenueCat 核对订阅，它只会收到匿名用户编号和购买收据，不会收到你的银行卡信息。</p>
-<p><b>游戏数据：</b>你的树只保存在你的设备上。我们不会出售个人数据。</p>
+<h3>3. Game data</h3>
+<p>Your tree, growth log, field guide and settings are stored on your device only (browser localStorage / app preferences) and are not uploaded. A save code from “Export save” leaves the device only if you copy or share it yourself. Deleting the app or clearing site data deletes this data.</p>
+
+<h3>4. Ads (Google AdMob)</h3>
+<ul>
+<li>The free iOS and Android apps show a Google AdMob banner at the bottom. The web version shows no ads, and members see no ads.</li>
+<li>Google may collect device identifiers (such as the iOS advertising identifier IDFA or the Android advertising ID), IP address, approximate location, device information and ad interaction data to serve and measure ads and prevent fraud. See <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">How Google uses information from sites or apps that use its services</a>.</li>
+<li>In the EEA, the UK and some other regions, Google’s consent form (User Messaging Platform) is shown first. On iOS, App Tracking Transparency asks whether you allow tracking; if you decline, the IDFA is not used and only non-personalised ads are shown. You can change this at any time in system settings.</li>
+</ul>
+
+<h3>5. Subscription (World Tree Premium)</h3>
+<ul>
+<li>World Tree Premium is a monthly auto-renewing subscription (HK$8/month in Hong Kong; the store shows the local price elsewhere). Its only benefit is removing ads; tree care, weather warnings and all gameplay are free.</li>
+<li>Payment is handled by the Apple App Store or Google Play; we never receive your card or payment details. We use RevenueCat to verify the subscription; RevenueCat receives a randomly generated anonymous user ID, purchase history and receipts, and basic device and app information. See the <a href="https://www.revenuecat.com/privacy/" target="_blank" rel="noopener">RevenueCat privacy policy</a>.</li>
+<li>You can manage or cancel the subscription in your Apple ID (App Store account) or Google Play subscription settings.</li>
+</ul>
+
+<h3>6. Third-party services</h3>
+<p>Open-Meteo, BigDataCloud, Hong Kong Observatory, Macao Meteorological and Geophysical Bureau, Google (Firebase Cloud Messaging, AdMob, User Messaging Platform), Apple (push notifications, App Store), RevenueCat, Oracle Cloud (push server hosting) and GitHub Pages (web version hosting, which may keep access logs). Each handles data under its own privacy policy.</p>
+
+<h3>7. Children</h3>
+<p>The app is for a general audience and is not directed at children under 13. We do not knowingly collect children’s personal information; if you believe a child has given us personal information through the app, contact us and we will delete it.</p>
+
+<h3>8. Your choices and data deletion</h3>
+<ul>
+<li>Location, notification and tracking permissions can be changed at any time in system settings.</li>
+<li>Turning reminders off deletes the data on the push server; deleting the app deletes the game data on your device.</li>
+<li>To ask about, access or delete data related to you (including subscription records held through RevenueCat), email <a href="mailto:kahowu24065@gmail.com">kahowu24065@gmail.com</a>, and tell us which device and platform you use so we can identify it.</li>
+</ul>
+
+<h3>9. Changes</h3>
+<p>If we change this policy materially, we will update this page and its effective date.</p>
+</section>
 </body>
 </html>

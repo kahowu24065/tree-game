@@ -77,7 +77,6 @@ import {
   setThumbnailer,
   settingsModal,
   disclaimerModal,
-  privacyModal,
   exportSaveModal,
   importSaveModal,
   startModal,
@@ -681,7 +680,7 @@ function modalOpen(): boolean {
 
 function showPremium(kind: 'paywall' | 'album' = 'paywall', update = false): void {
   premiumOpen = kind;
-  const html = '<span data-prem hidden></span>' + (kind === 'album' ? weatherAlbumModal(premium, premium.active) : premiumModal({ mode: premiumMode(), store: premium, billing: billingInfo(), today: today(), busy: buying }));
+  const html = '<span data-prem hidden></span>' + (kind === 'album' ? weatherAlbumModal(premium, premium.active) : premiumModal({ mode: premiumMode(), store: premium, billing: billingInfo(), today: today(), busy: buying, notYet: storeNotYet() }));
   if (update) updateModal(html);
   else openModal(html);
 }
@@ -709,7 +708,14 @@ if (billingSupported()) {
   });
 }
 
+/** 1.4.37: app build without a RevenueCat key — the paywall is shown, buying / restoring is "not open yet". */
+const storeNotYet = (): boolean => isNative() && !billingSupported();
+
 async function buyPremium(): Promise<void> {
+  if (storeNotYet()) {
+    toast(tl('prem.notYet'));
+    return;
+  }
   if (buying) return;
   buying = true;
   showPremium('paywall', true);
@@ -725,6 +731,10 @@ async function buyPremium(): Promise<void> {
 }
 
 async function restorePremium(): Promise<void> {
+  if (storeNotYet()) {
+    toast(tl('prem.notYet'));
+    return;
+  }
   const res = await restore();
   if (res === 'ok') applyPremium(true);
   toast(tl(res === 'ok' ? 'prem.restored' : res === 'none' ? 'prem.none' : res === 'unavailable' ? 'prem.unavailable' : 'prem.failed'));
@@ -1699,9 +1709,6 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'disclaimer':
       openModal(disclaimerModal());
-      return;
-    case 'privacy':
-      openModal(privacyModal());
       return;
     case 'weather':
       openWeather();
