@@ -1225,7 +1225,6 @@ const table: Record<string, string> = {
  "ui.131": "<button type=\"button\" class=\"nc-pager\" data-action=\"note-next\" aria-label=\"下一张（{p0}/{length}）\">{p0}/{length}{p4}</button>",
  "ui.132": "<article class=\"glass note-card stack {cls}{p1}\" data-note=\"{key}\">\n          <div class=\"nc-head\"><button type=\"button\" class=\"nc-title\" data-action=\"note-toggle\" aria-expanded=\"{noteOpen}\" aria-controls=\"nc-body\"><b>{title}</b>{p5}</button>{p6}</div>\n          <p class=\"nc-body\" id=\"nc-body\"{p7}>{body}</p>\n          <div class=\"note-btns\">{btns}</div>\n        </article>",
  "ui.133": "{treeName}，{p1}，高 {p2}",
- "ui.134": "{treeName} · 世界之树",
  "ui.135": "抗风力 {p0}",
  "ui.136": "青年树前没有影响",
  "ui.137": "可以酷热浇水",

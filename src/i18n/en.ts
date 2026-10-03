@@ -1244,7 +1244,6 @@ const table: Record<string, string> = {
  "ui.131": "<button type=\"button\" class=\"nc-pager\" data-action=\"note-next\" aria-label=\"Next ({p0}/{length})\">{p0}/{length}{p4}</button>",
  "ui.132": "<article class=\"glass note-card stack {cls}{p1}\" data-note=\"{key}\">\n          <div class=\"nc-head\"><button type=\"button\" class=\"nc-title\" data-action=\"note-toggle\" aria-expanded=\"{noteOpen}\" aria-controls=\"nc-body\"><b>{title}</b>{p5}</button>{p6}</div>\n          <p class=\"nc-body\" id=\"nc-body\"{p7}>{body}</p>\n          <div class=\"note-btns\">{btns}</div>\n        </article>",
  "ui.133": "{treeName}, {p1}, {p2} tall",
- "ui.134": "{treeName} · World Tree",
  "ui.135": "Wind resistance {p0}",
  "ui.136": "No effect before young tree",
  "ui.137": "Heat watering available",
