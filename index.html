@@ -8,18 +8,35 @@
     <meta name="theme-color" content="#8fcbf0" />
     <meta name="description" content="一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。" />
     <title>世界之樹</title>
-    <style>html.preplant .hud,html.preplant #dev-root,html.preplant .ad-banner{opacity:0;pointer-events:none}</style>
+    <style>html.preplant .hud,html.preplant #dev-root,html.preplant .ad-banner{opacity:0;pointer-events:none}html.preloading,html.preloading body{background:#bee2f7}#preload{z-index:10000;background:#bee2f7;place-items:center;transition:opacity .45s;display:grid;position:fixed;inset:0}#preload.out{opacity:0;pointer-events:none}@media (prefers-color-scheme:dark){html.plat-android.preloading,html.plat-android.preloading body,html.plat-android #preload{background:#142638}}.pl-stage{--s:min(36vw, 36vh);width:var(--s);height:var(--s);position:relative}html.plat-ios .pl-stage{--s:calc(max(100vw, 100vh) * .1662)}.pl-card{background:#8fd0ef;border-radius:20%;animation:3.4s ease-in-out infinite alternate pl-breathe;position:absolute;inset:0;overflow:hidden}.pl-card img{width:100%;height:100%;display:block;position:absolute;inset:0}.pl-tree{transform-origin:49.2% 70.2%;animation:3.2s cubic-bezier(.37,0,.63,1) -1.6s infinite alternate pl-sway}.pl-leaf{left:calc(var(--x) * var(--s));top:calc(var(--y) * var(--s));width:calc(var(--s) * .09);height:calc(var(--s) * .065);opacity:0;animation:pl-drift var(--t,4.6s) linear var(--d) infinite;position:absolute}.pl-leaf b{clip-path:polygon(0 52%,38% 0,100% 42%,60% 100%);background:linear-gradient(135deg,#a6dc55 0 50%,#5fa83b 50% 100%);width:100%;height:100%;animation:1.3s ease-in-out infinite alternate pl-flutter;display:block}.pl-leaf:nth-child(odd) b{background:linear-gradient(135deg,#7cc444 0 50%,#3f8f34 50% 100%);animation-duration:1.05s}@keyframes pl-sway{0%{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}@keyframes pl-breathe{0%{transform:scale(1)}to{transform:scale(1.018)}}@keyframes pl-flutter{0%{transform:rotate(-28deg)scaleX(1)}to{transform:rotate(36deg)scaleX(.55)}}@keyframes pl-drift{0%{opacity:0;transform:translate(0)}12%{opacity:1}80%{opacity:1}to{opacity:0;transform:translate(calc(var(--dx) * var(--s)), calc(var(--dy) * var(--s)))}}@media (prefers-reduced-motion:reduce){.pl-card,.pl-tree,.pl-leaf,.pl-leaf b{animation:none}}</style>
     <script>
       try {
-        document.documentElement.classList.add('preplant');
+        var root = document.documentElement;
+        root.classList.add('preplant', 'preloading');
+        var cap = window.Capacitor;
+        var plat = cap && cap.getPlatform ? cap.getPlatform() : 'web';
+        root.classList.add('plat-' + plat);
       } catch (e) {}
     </script>
-    <script type="module" crossorigin src="./assets/index-Dl73yIL2.js"></script>
+    <script type="module" crossorigin src="./assets/index-CkmobrxN.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/dist-HTnr3vf7.js">
-    <link rel="modulepreload" crossorigin href="./assets/ui-DVe0sGPF.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-Bd5tFBNy.css">
+    <link rel="modulepreload" crossorigin href="./assets/ui-DXXfVyN3.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-BxfE4hIv.css">
   </head>
   <body>
+    <div id="preload" aria-hidden="true">
+      <div class="pl-stage">
+        <div class="pl-card">
+          <img src="./preload/bg.webp" alt="" decoding="sync" />
+          <img class="pl-tree" src="./preload/tree.webp" alt="" decoding="sync" />
+        </div>
+        <i class="pl-leaf" style="--x: 0.58; --y: 0.2; --dx: 0.75; --dy: 0.95; --d: 0.2s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.33; --y: 0.36; --dx: -0.7; --dy: 0.85; --d: 1.3s; --t: 5.2s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.66; --y: 0.4; --dx: 0.55; --dy: 0.7; --d: 2.4s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.45; --y: 0.12; --dx: -0.45; --dy: 1.05; --d: 3.1s; --t: 5.6s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.6; --y: 0.52; --dx: 0.9; --dy: 0.5; --d: 0.9s; --t: 4.2s"><b></b></i>
+      </div>
+    </div>
     <canvas id="scene" aria-label="今日的樹同天空"></canvas>
     <div id="app" class="hud">
       <div class="left-col">
