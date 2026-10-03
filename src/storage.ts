@@ -7,6 +7,7 @@ import { addLog, checkMilestones, logI18n, migrateWx, RULES_VERSION, windStageCm
 import { formatHeight } from './util';
 import { getLocale, t as tl } from './i18n';
 import { parseAny } from './i18n/msg';
+import { kvSet, kvRemove } from './native/kv';
 
 /** Fields of saves made before v14 (seasons). */
 type LegacySave = GameState & { season?: string; completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean } };
@@ -222,14 +223,14 @@ export function parseSave(raw: string): GameState | null {
 
 export function saveGame(state: GameState): void {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    kvSet(SAVE_KEY, JSON.stringify(state));
   } catch {
     /* private mode or full storage: the session still plays */
   }
 }
 
 export function clearGame(): void {
-  localStorage.removeItem(SAVE_KEY);
+  kvRemove(SAVE_KEY);
 }
 
 export function loadWeatherCache(): WeatherSnapshot | null {
@@ -246,7 +247,7 @@ export function loadWeatherCache(): WeatherSnapshot | null {
 
 export function saveWeatherCache(snapshot: WeatherSnapshot): void {
   try {
-    localStorage.setItem(WEATHER_KEY, JSON.stringify(snapshot));
+    kvSet(WEATHER_KEY, JSON.stringify(snapshot));
   } catch {
     /* ignore quota */
   }

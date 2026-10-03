@@ -1,6 +1,7 @@
 /** Reverse geocoding via BigDataCloud's free client-side endpoint (CORS-enabled, no key). Cached per ~1 km. */
 import { timeoutSignal } from './hko';
 import { t as tl } from './i18n';
+import { kvSet } from './native/kv';
 
 const KEY = 'yiri-yisyu-place-names';
 
@@ -53,7 +54,7 @@ export async function reverseGeocode(lat: number, lon: number): Promise<PlaceNam
       const keys = Object.keys(cache);
       if (keys.length > 20) delete cache[keys[0]!];
       cache[key] = place;
-      localStorage.setItem(KEY, JSON.stringify(cache));
+      kvSet(KEY, JSON.stringify(cache));
     }
     return place;
   } catch {

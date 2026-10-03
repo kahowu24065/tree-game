@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { STAMP_KEY, installWriteThrough, planHydrate } from '../src/native/persist';
+import { STAMP_KEY, createMirror, planHydrate } from '../src/native/persist';
+import { kvSet, setKvMirror, setKvStore } from '../src/native/kv';
 import { actionLimit, advanceFlow, createGame, performAction } from '../src/sim';
 import { parseSave } from '../src/storage';
 import type { GameState } from '../src/types';
@@ -39,12 +40,13 @@ describe('1.4.42 actions survive close / reopen on native', () => {
     local.setItem(STAMP_KEY, '1');
     Object.assign(prefs, obj(local));
     // The mirror stalls (as when iOS suspends / kills the app right after the taps).
-    installWriteThrough(local, { set: () => new Promise(() => {}), remove: () => new Promise(() => {}) }, () => T0);
+    setKvStore(local);
+    setKvMirror(createMirror(local, { set: () => new Promise(() => {}), remove: () => new Promise(() => {}) }, () => T0));
     const s = parseSave(local.getItem(SAVE)!)!;
     advanceFlow(s, D, [], null, T0, { dayStartMs: new Date(2026, 9, 3).getTime() });
     for (const a of ['water', 'fertilize', 'deworm', 'drain'] as const) {
       expect(performAction(s, a, T0).ok, a).toBe(true);
-      local.setItem(SAVE, JSON.stringify(s));
+      kvSet(SAVE, JSON.stringify(s));
     }
     // Reopen: hydrate must keep the newer localStorage save, not restore the old Preferences copy.
     const plan = planHydrate(prefs, obj(local));

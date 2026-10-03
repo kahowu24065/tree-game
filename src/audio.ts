@@ -7,6 +7,7 @@
  */
 import type { AnimalCategory, Motion } from './data/animals';
 import type { WeatherEventId } from './balance';
+import { kvSet } from './native/kv';
 
 const KEY = 'sekai-tree-sound';
 const FADE = 2.5;
@@ -401,7 +402,7 @@ export function syncAmbience(night: boolean, events: WeatherEventId[]): void {
 
 export function setSoundEnabled(on: boolean): void {
   try {
-    localStorage.setItem(KEY, on ? '1' : '0');
+    kvSet(KEY, on ? '1' : '0');
   } catch {
     /* private mode */
   }

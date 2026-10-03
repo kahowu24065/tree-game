@@ -126,7 +126,7 @@ import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
 import { isNative } from './native/platform';
-import { flushPersist, hydrateInfo, hydrateNative, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
+import { flushPersist, hydrateInfo, hydrateNative, mirrorProbe, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
 import { createSaveLog } from './native/saveLog';
 import { careSig, stampText, sumGroveRaw, sumRaw, sumState } from './saveDiag';
 import { decodeSave, encodeSave } from './saveCode';
@@ -137,6 +137,7 @@ import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
 import { LOCALES, getLocale, saveLocale, switchLocale, t as tl, tName, type Locale } from './i18n';
+import { kvSet } from './native/kv';
 
 const isLocaleId = (x: string): x is Locale => (LOCALES as readonly string[]).includes(x);
 
@@ -162,9 +163,10 @@ try {
     /* old engine */
   }
   slog.add(
-    `LAUNCH ${APP_VERSION} ${h.native ? 'native' : 'web'} · device tz ${devTz} (UTC${-new Date().getTimezoneOffset() / 60 >= 0 ? '+' : ''}${-new Date().getTimezoneOffset() / 60}) · HK date ${formatDateInTz(new Date(), 'Asia/Hong_Kong')} · hydrate ${h.ms}ms: ${h.reason}${h.err ? ` ERROR ${h.err}` : ''} · keys prefs ${h.prefsKeys} local ${h.localKeys} · copied →local ${h.toLocal} →prefs ${h.toPrefs}`,
+    `LAUNCH ${APP_VERSION} ${h.native ? 'native' : 'web'} · device tz ${devTz} (UTC${-new Date().getTimezoneOffset() / 60 >= 0 ? '+' : ''}${-new Date().getTimezoneOffset() / 60}) · HK date ${formatDateInTz(new Date(), 'Asia/Hong_Kong')} · hydrate ${h.ms}ms: ${h.reason}${h.err ? ` ERROR ${h.err}` : ''} · keys prefs ${h.prefsKeys} local ${h.localKeys} · copied →local ${h.toLocal} →prefs ${h.toPrefs}${h.stray?.length ? ` · removed stray items ${h.stray.join(',')}` : ''}`,
     'boot',
   );
+  if (h.native) void mirrorProbe.then((r) => slog.add(`mirror ${r}`, 'boot'));
   if (h.native) {
     slog.add(`  prefs copy: stamp ${stampText(h.prefs[STAMP_KEY])} · save ${sumRaw(h.prefs[SAVE_KEY])} · grove ${sumGroveRaw(h.prefs[GROVE_KEY])}`, 'boot');
     slog.add(`  local copy: stamp ${stampText(h.local[STAMP_KEY])} · save ${sumRaw(h.local[SAVE_KEY])} · grove ${sumGroveRaw(h.local[GROVE_KEY])}`, 'boot');
@@ -194,7 +196,7 @@ function logSave(trigger: string): void {
       .join(' ');
     const tick = trigger === 'tick';
     slog.add(
-      `SAVE[${trigger}] stamp ${localStorage.getItem(STAMP_KEY) ?? '-'} · ${sumState(state)}${acts ? ` · last ${acts}` : ''} · local[v2,grove${tick ? '' : ',meta'}]${hydrateInfo.native ? '' : ' (web: no native)'}`,
+      `SAVE[${trigger}] stamp ${localStorage.getItem(STAMP_KEY) ?? '-'} · ${sumState(state)}${acts ? ` · last ${acts}` : ''} · local[v2,grove${tick ? '' : ',meta'}]${hydrateInfo.native ? ` · native queued ${nativeQueue.pending}` : ' (web: no native)'}`,
       tick ? 'save:tick' : 'save',
       tick,
     );
@@ -722,8 +724,8 @@ async function importSave(): Promise<void> {
   if (!window.confirm(tl('main.017', { p0: s.treeName || tl('main.015'), when, p2: shownAge(s), height, p4: s.over ? tl('main.016') : '' }))) return;
   importing = true;
   clearGrove();
-  localStorage.setItem(SAVE_KEY, JSON.stringify(s));
-  if (res.payload.meta) localStorage.setItem(META_KEY, JSON.stringify(res.payload.meta));
+  kvSet(SAVE_KEY, JSON.stringify(s));
+  if (res.payload.meta) kvSet(META_KEY, JSON.stringify(res.payload.meta));
   await flushPersist();
   location.reload();
 }
@@ -1669,7 +1671,7 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'locate':
       placeChoice = 'geo';
-      localStorage.setItem(PLACE_KEY, placeChoice);
+      kvSet(PLACE_KEY, placeChoice);
       void refreshWeather(true);
       return;
     case 'rename':
@@ -1971,7 +1973,7 @@ document.addEventListener('click', (event) => {
   }
   if (target.dataset.place) {
     placeChoice = target.dataset.place;
-    localStorage.setItem(PLACE_KEY, placeChoice);
+    kvSet(PLACE_KEY, placeChoice);
     closeModal();
     const name = PLACES.find((p) => p.id === placeChoice)?.name ?? tl('main.051');
     toast(tl('main.052', { name }));
@@ -1984,7 +1986,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {
-    localStorage.setItem(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
+    kvSet(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
     scheduleReminders(false);
     void syncPush(target.dataset.notify === 'on');
     const row = target.closest('.seg');
@@ -1996,7 +1998,7 @@ document.addEventListener('click', (event) => {
   }
   if (target.dataset.quality === 'low' || target.dataset.quality === 'high') {
     quality = target.dataset.quality;
-    localStorage.setItem(QUALITY_KEY, quality);
+    kvSet(QUALITY_KEY, quality);
     scene3d?.setQuality(quality);
     return;
   }
@@ -2339,7 +2341,7 @@ function syncViewButton(): void {
   if (!scene3d) return;
   if (!hintShown && plantingShow === null && state.started && !state.over && document.getElementById('modal')?.hidden) {
     hintShown = true;
-    localStorage.setItem('sekai-tree-zoom-hint', '1');
+    kvSet('sekai-tree-zoom-hint', '1');
     const hint = document.getElementById('zoom-hint');
     if (hint) {
       hint.hidden = false;
@@ -2502,6 +2504,8 @@ if (isNative()) {
   });
   void App.addListener('appStateChange', ({ isActive }) => {
     slog.add(`life: appStateChange ${isActive ? 'active' : 'inactive'}`, 'life');
+    // 1.4.44: on iPhone this is the only event before a swipe-kill from the app switcher.
+    if (!isActive) saveNow('appStateChange inactive');
   });
   scheduleReminders(false);
   void syncPush(notifyEnabled());

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSaveLog, formatLog, mergeLogs, parseLog, pushEntry, SAVELOG_MAX, type LogEntry } from '../src/native/saveLog';
-import { hydrateReason, installWriteThrough, STAMP_KEY, type NativeWrite } from '../src/native/persist';
+import { hydrateReason, createMirror, STAMP_KEY, type NativeWrite } from '../src/native/persist';
 import { sumRaw, sumState } from '../src/saveDiag';
 import { createGame } from '../src/sim';
 
@@ -86,7 +86,7 @@ describe('1.4.43 save log', () => {
     } as unknown as Storage;
     const seen: NativeWrite[][] = [];
     let fail = true;
-    const flush = installWriteThrough(
+    const mirror = createMirror(
       storage,
       {
         set: async (k) => {
@@ -101,16 +101,18 @@ describe('1.4.43 save log', () => {
       (w) => seen.push(w),
     );
     storage.setItem('sekai-tree-v2', '{"a":1}');
-    await flush();
+    mirror.set('sekai-tree-v2', '{"a":1}');
+    await mirror.flush();
     expect(seen[0]!.find((w) => w.key === 'sekai-tree-v2')!.ok).toBe(false);
     expect(seen.flat().some((w) => w.key === 'sekai-tree-v2' && w.ok)).toBe(true);
     expect(seen.flat().every((w) => typeof w.ms === 'number')).toBe(true);
   });
 
   it('explains the hydrate choice', () => {
-    expect(hydrateReason({}, { 'sekai-tree-v2': 'x' })).toMatch(/migrate/);
+    expect(hydrateReason({}, { 'sekai-tree-v2': 'x' })).toMatch(/prefs-empty/);
     expect(hydrateReason({ 'sekai-tree-v2': 'x', [STAMP_KEY]: '1' }, { 'sekai-tree-v2': 'y', [STAMP_KEY]: '2' })).toMatch(/local-newer/);
-    expect(hydrateReason({ 'sekai-tree-v2': 'x', [STAMP_KEY]: '2' }, { 'sekai-tree-v2': 'y', [STAMP_KEY]: '2' })).toMatch(/prefs/);
+    expect(hydrateReason({ 'sekai-tree-v2': 'x', [STAMP_KEY]: '2' }, { 'sekai-tree-v2': 'y', [STAMP_KEY]: '2' })).toMatch(/stamps-equal.*keep-local/);
+    expect(hydrateReason({ 'sekai-tree-v2': 'x', [STAMP_KEY]: '3' }, { 'sekai-tree-v2': 'y', [STAMP_KEY]: '2' })).toMatch(/prefs-newer/);
   });
 
   it('summarises a tree and a raw save', () => {
