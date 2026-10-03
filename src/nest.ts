@@ -1,7 +1,7 @@
 /** Bird eggs. Pure state changes; the night log is written by the settlement. */
 import { ANIMALS, animalById } from './data/animals';
 import type { GameState, NestState } from './types';
-import { t as tl } from './i18n';
+import { t as tl, live } from './i18n';
 
 export const NEST_HATCH_MS = 6 * 3600_000;
 /** A struggling tree does not get a clutch. */
@@ -79,12 +79,12 @@ export function tickNest(state: GameState, now: number, date: string): { laid: b
 export const NEST_BUILDS = ['windmill', 'statue', 'house', 'pavilion'] as const;
 export type NestBuildKind = (typeof NEST_BUILDS)[number];
 
-export const NEST_BUILD_LABEL: Record<NestBuildKind, string> = {
+export const NEST_BUILD_LABEL: Record<NestBuildKind, string> = live(() => ({
   windmill: tl('nest.002'),
   statue: tl('nest.003'),
   house: tl('nest.004'),
   pavilion: tl('nest.005'),
-};
+}));
 
 /** 第 1 粒，同之後第 10、20、30… 粒。 */
 export function isNestBuildCount(n: number): boolean {

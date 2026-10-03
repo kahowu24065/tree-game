@@ -22,10 +22,10 @@ import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
 import { PRIVACY_URL, TERMS_URL } from './legal';
-import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables } from './i18n';
+import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables, live } from './i18n';
 import { localize, logTexts } from './i18n/msg';
 
-const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
+const WEEK = live(() => ([tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')]));
 
 export interface View {
   state: GameState;
@@ -765,7 +765,7 @@ function dockBtn(tone: string, attr: string, ic: IconName, label: string, sub: s
 
 /* ---------- Growth log bottom sheet ---------- */
 
-const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }> = {
+const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }> = live(() => ({
   plant: { icon: 'sprout', tone: 'green', title: tl('ui.166') },
   water: { icon: 'drop', tone: 'blue', title: tl('ui.167') },
   fertilize: { icon: 'leaf', tone: 'green', title: tl('ui.168') },
@@ -785,7 +785,7 @@ const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }
   emergency: { icon: 'drop', tone: 'blue', title: tl('ui.180') },
   collapse: { icon: 'warn', tone: 'red', title: tl('ui.181') },
   unlock: { icon: 'shield', tone: 'orange', title: tl('ui.182') },
-};
+}));
 
 let sheetKey = '';
 
@@ -1569,7 +1569,7 @@ export interface PlaceOption {
   lon: number;
 }
 
-export const PLACES: PlaceOption[] = [
+export const PLACES: PlaceOption[] = live(() => ([
   { id: 'hk', name: tl('ui.346'), lat: 22.3022, lon: 114.1744 },
   { id: 'central', name: tl('ui.347'), lat: 22.2819, lon: 114.158 },
   { id: 'shatin', name: tl('ui.348'), lat: 22.3817, lon: 114.1877 },
@@ -1577,7 +1577,7 @@ export const PLACES: PlaceOption[] = [
   { id: 'saikung', name: tl('ui.350'), lat: 22.3817, lon: 114.2708 },
   { id: 'yuenlong', name: tl('ui.351'), lat: 22.4445, lon: 114.0222 },
   { id: 'tungchung', name: tl('ui.352'), lat: 22.289, lon: 113.941 },
-];
+]));
 
 export function locationModal(current: string): string {
   const rows = PLACES.map(

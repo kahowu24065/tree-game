@@ -5,7 +5,7 @@ import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeou
 import type { CurrentWeather, DayCond, ForecastDay, LocationSource, StormKind } from './types';
 import { isNative } from './native/platform';
 import { nativePosition } from './native/location';
-import { t as tl } from './i18n';
+import { t as tl, live } from './i18n';
 import type { OfficialAlerts } from './alerts';
 
 export const HK_LAT = 22.3022;
@@ -136,12 +136,12 @@ export function weatherLabel(code: number): string {
  * v1.4.15 night wording for the live condition line. HKO icons 50–54 (used by HKO, SMG and CWA readings) and the
  * Open-Meteo 「間有陽光」 speak of sunshine; after dark the art is already a moon, so the text follows it.
  */
-const NIGHT_WORDS: [RegExp, string][] = [
+const NIGHT_WORDS: [RegExp, string][] = live(() => ([
   [/^陽光充沛/, tl('weather.002')],
   [/^間有陽光/, tl('weather.014')],
   [/^短暫陽光/, tl('weather.015')],
   [/^陽光/, tl('weather.002')],
-];
+]));
 export function nightLabel(label: string, night: boolean): string {
   if (!night || !label) return label;
   for (const [re, word] of NIGHT_WORDS) if (re.test(label)) return label.replace(re, word);

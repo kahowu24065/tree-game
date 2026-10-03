@@ -1,5 +1,5 @@
-import { t as tl } from './i18n';
-const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
+import { t as tl, live } from './i18n';
+const WEEK = live(() => ([tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')]));
 
 export function formatDateInTz(date: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {

@@ -2,7 +2,7 @@ import type { GameState, LogReward } from './types';
 import { clamp, hashString } from './util';
 
 import { STAGE_NAMES, STAGE_SHARES } from './data/species';
-import { t as tl } from './i18n';
+import { t as tl, live } from './i18n';
 export { ANIMALS, animalById, type AnimalDef } from './data/animals';
 
 export interface StageDef {
@@ -64,7 +64,7 @@ export interface Milestone {
   detail: string;
 }
 
-export const MILESTONES: Milestone[] = [
+export const MILESTONES: Milestone[] = live(() => ([
   { meters: 0.5, title: tl('content.001'), detail: tl('content.002') },
   { meters: 1.7, title: tl('content.003'), detail: tl('content.004') },
   { meters: 5, title: tl('content.005'), detail: tl('content.006') },
@@ -72,7 +72,7 @@ export const MILESTONES: Milestone[] = [
   { meters: 44, title: tl('content.009'), detail: tl('content.010') },
   { meters: SHERMAN_M, title: tl('content.011'), detail: tl('content.012') },
   { meters: HYPERION_M, title: tl('content.013'), detail: tl('content.014') },
-];
+]));
 
 export interface DailyEvent {
   id: string;
@@ -82,7 +82,7 @@ export interface DailyEvent {
   apply: (state: GameState) => void;
 }
 
-export const EVENTS: DailyEvent[] = [
+export const EVENTS: DailyEvent[] = live(() => ([
   {
     id: 'mist',
     chip: { text: tl('content.015'), tone: 'blue' },
@@ -168,7 +168,7 @@ export const EVENTS: DailyEvent[] = [
     text: tl('content.042'),
     apply: () => {},
   },
-];
+]));
 
 export function eventForDate(date: string): DailyEvent {
   const idx = hashString(date) % EVENTS.length;

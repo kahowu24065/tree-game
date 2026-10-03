@@ -1494,6 +1494,9 @@ const table: Record<string, string> = {
  "isle.aria0": "島嶼：第一座島。喺呢條橫條向左掃去第二座空島。",
  "isle.aria1": "島嶼：第二座空島。喺呢條橫條向右掃返第一座島。",
  "isle.ariaLocked": "島嶼：第一座島。打破世界紀錄之後，喺呢條橫條向左掃去第二座空島。",
- "labels.001b": "捱過 {count} 場{name}"
+ "labels.001b": "捱過 {count} 場{name}",
+ "animals.nightmoth.name": "斜紋夜蛾",
+ "animals.nightmoth.epithet": "啡翼斜紋",
+ "animals.nightmoth.about": "夜晚成日撲燈嘅啡色細蛾，前翅有淺色斜紋，日頭匿喺葉底。"
 };
 export default table;

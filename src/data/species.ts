@@ -1,4 +1,4 @@
-import { t as tl } from '../i18n';
+import { t as tl, live } from '../i18n';
 /**
  * 9 tree species. Each has its own 紀錄高度 R = its real-world record height rounded to the nearest 10 m (see
  * `targetM`); v14 growth approaches R (no seasons). Records checked 2026-09 against the sources listed.
@@ -37,11 +37,11 @@ export interface SpeciesDef {
   dbhAt10m: number;
 }
 
-export const STAGE_NAMES = [tl('species.001'), tl('species.002'), tl('species.003'), tl('species.004'), tl('species.005')] as const;
+export const STAGE_NAMES = live(() => ([tl('species.001'), tl('species.002'), tl('species.003'), tl('species.004'), tl('species.005')] as const));
 /** Stage thresholds as a share of the species' 紀錄高度 R. */
 export const STAGE_SHARES = [0, 0.025, 0.1, 0.4, 0.85] as const;
 
-export const SPECIES: SpeciesDef[] = [
+export const SPECIES: SpeciesDef[] = live(() => ([
   {
     id: 'camphor',
     name: tl('species.006'),
@@ -195,7 +195,7 @@ export const SPECIES: SpeciesDef[] = [
     woodDensity: 0.48,
     dbhAt10m: 15,
   },
-];
+]));
 
 export function speciesDef(id: SpeciesId | string | undefined): SpeciesDef {
   return SPECIES.find((s) => s.id === id) ?? SPECIES[0]!;

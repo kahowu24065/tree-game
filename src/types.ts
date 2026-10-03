@@ -212,6 +212,12 @@ export interface GameState {
    * Sums: w/n/r = drift applied today.
    */
   flow?: DayFlow;
+  /**
+   * 1.4.41: 澆水 grace — until `w` (ms, same clock as `flow.at`) 水分 does not decay, so the value just topped up
+   * does not tick down straight away. Set to action time + CARE_GRACE_MS; measured on the timeline, so closed-app
+   * catch-up honours it too.
+   */
+  pause?: { w?: number };
   /** Starting 養分 bonus this tree got from a previous tree's 養分地標. */
   legacyBonus: number;
   /** v13: 風災／加固／倒塌 switched on — set the first time the tree reaches 青年樹, never cleared. */

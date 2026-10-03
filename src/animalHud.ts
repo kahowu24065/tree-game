@@ -2,7 +2,7 @@ import type { AnimalArrival, AnimalMarker } from './three/animals3d';
 import type { AnimalCategory, LookKind, Motion } from './data/animals';
 import { playAnimal } from './audio';
 import { esc } from './util';
-import { t as tl } from './i18n';
+import { t as tl, live, onLocaleChange } from './i18n';
 
 /**
  * v9 animal HUD: overview markers for animals too small to see, a 「一群…飛咗嚟」 arrival toast, and a
@@ -70,7 +70,7 @@ export function animalIcon(category: AnimalCategory, kind: LookKind): string {
   }
 }
 
-const VERB: Record<Motion, string> = {
+const VERB: Record<Motion, string> = live(() => ({
   perch: tl('animalHud.001'),
   flock: tl('animalHud.001'),
   soar: tl('animalHud.002'),
@@ -85,7 +85,7 @@ const VERB: Record<Motion, string> = {
   glow: tl('animalHud.008'),
   nest: tl('animalHud.009'),
   hollow: tl('animalHud.010'),
-};
+}));
 
 function quantity(count: number): string {
   if (count >= 3) return tl('animalHud.011');
@@ -152,6 +152,13 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
   let rectT = -1e9;
   let listT = -1e9;
   let listKey = '';
+  onLocaleChange(() => {
+    listBtn.setAttribute('aria-label', tl('animalHud.016'));
+    panel.setAttribute('aria-label', tl('animalHud.016'));
+    listKey = '';
+    listT = -1e9;
+    for (const el of els.values()) delete el.dataset.html;
+  });
 
   // ---- arrival toast queue ----
   let pending: AnimalArrival[] = [];
