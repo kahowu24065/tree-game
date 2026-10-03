@@ -667,6 +667,21 @@ function syncGrove(): void {
   else second = state;
 }
 
+/**
+ * 1.4.42: going to the background (or the page going away): bring the flow up to now, write everything and push
+ * the native mirror straight away — iOS may suspend / kill the app seconds later.
+ */
+function saveNow(): void {
+  if (importing) return;
+  syncFlow(true);
+  syncGrove();
+  saveGame(isle === 1 && second ? second : home);
+  saveGrove({ isle, home, second });
+  saveMeta(meta);
+  void flushPersist();
+}
+window.addEventListener('pagehide', () => saveNow());
+
 function persist(): void {
   if (importing) return;
   syncGrove();
@@ -2350,7 +2365,7 @@ function frame(time: number): void {
 document.addEventListener('visibilitychange', () => {
   setPageAudible(!document.hidden);
   if (document.hidden) {
-    syncFlow(true);
+    saveNow();
     scheduleReminders(true);
     return;
   }
@@ -2374,7 +2389,10 @@ resize();
 
 bindSheetDrag();
 if (isNative()) {
-  void App.addListener('pause', () => scheduleReminders(true));
+  void App.addListener('pause', () => {
+    saveNow();
+    scheduleReminders(true);
+  });
   void App.addListener('resume', () => relocateNow());
   scheduleReminders(false);
   void syncPush(notifyEnabled());
