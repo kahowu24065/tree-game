@@ -103,6 +103,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.35 | 成長日誌分頁：`.tabs` 改 flex、按內容闊度分配（`flex: 1 1 auto`），左右 padding `clamp(6px, 2.4vw, 11px)`、字 `clamp(11px, 3.25vw, 13.5px)`，320／360／390 px 四語文字兩邊都有 ≥8 px；英文 Achievements 全部改 Badges（分頁、標題、提示、玩法說明，腳本 `/workspace/.ed/i18n135.py`），其他語言冇改；versionCode 42 |
 | 1.4.36 | 存咗嘅文字跟而家語言：成長日誌每行除咗原文，加存訊息 key＋參數（`LogEntry.i18n`，`src/i18n/msg.ts`），顯示時用而家語言重砌；寫入時靠 `t()` 最近輸出追蹤（`traceOf`）攞準 key，舊存檔逐行對四語範本反向配對（`migrateLogI18n`，要砌返一模一樣先算），配唔到就照原文顯示；早晨小結（`morningNote`）、結算水分標籤都跟語言；`labels.001` 拆 個／場 兩條（英文冇量詞）；健康日曆記號識英文；禁止頁面縮放（viewport `maximum-scale=1, user-scalable=no`、body `touch-action: manipulation`、iOS `gesturestart`／`dblclick` preventDefault），UI 唔可以長按揀字／彈 callout（輸入框、存檔碼、診斷文字除外），3D 小島雙指縮放照舊；versionCode 43 |
 | 1.4.37 | 法律頁：重寫 `public/privacy.html`／`public/terms.html`（繁體中文書面語＋英文，生效 2026-10-03，按實際行為：位置、推送伺服器資料、天氣 API、本機存檔、AdMob＋UMP＋ATT、RevenueCat 訂閱 HK$8／月、Apple EULA、兒童、刪除資料，聯絡 akar.554426@gmail.com），GitHub Pages 上線；設定底部改為 免責聲明／私隱權政策／使用條款（後兩個直接開網頁，`src/legal.ts`），刪咗 App 內舊私隱簡介（`ui.357`）；ios 分支：冇 RC_IOS_KEY 都顯示完整訂閱頁，撳訂閱／恢復購買會提示「暫時未開放」；versionCode 44 |
+| 1.4.38 | 網站搬去 Cloudflare Pages：https://sekai-tree.pages.dev/（project `sekai-tree`），App 內私隱權政策／使用條款連結（設定、訂閱頁，`src/legal.ts`）改用 `https://sekai-tree.pages.dev/privacy`、`/terms`；新增 `scripts/deploy-pages.sh`；gh-pages 照舊部署；versionCode 45 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -146,7 +147,12 @@ Windows 用 `gradlew.bat`。亦可以喺 Android Studio 開 `android/`，Build �
 
 ---
 
-## 4. 網站（gh-pages）
+## 4. 網站（Cloudflare Pages ＋ gh-pages）
+
+- 1.4.38 起主網址：**https://sekai-tree.pages.dev/**（Cloudflare Pages project `sekai-tree`，direct upload；私隱權政策 `/privacy`、使用條款 `/terms`，`.html` 會 308 轉去冇副檔名嘅網址）。App 內連結喺 `src/legal.ts`。
+- 每次發佈：`npm run build` 之後跑 `scripts/deploy-pages.sh`（要 env `CLOUDFLARE_API_TOKEN`，唔好印出嚟；account ID 由 token 自動查；wrangler 4 要 Node ≥22，box 上喺 `/workspace/tools/node-v22.20.0-linux-x64`、`/workspace/tools/wrangler`），然後照舊 deploy gh-pages。
+- `kahowu24065.github.io/tree-game/` 暫時保留（用戶決定幾時停；可以考慮喺 gh-pages 放轉址頁去 pages.dev）。
+- 推送伺服器 CORS 係 `*`，pages.dev 唔使改。
 
 - `gh-pages` branch 根目錄放 `dist/` 嘅內容，**一定要保留 `.nojekyll`**。
 - 用 `npm run build`（有開發者面板，網站一直係咁）。
@@ -314,3 +320,6 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 見版本歷史；推送伺服器冇改。i18n 改動腳本 `/workspace/.ed/i18n137.py`（main）、`/workspace/.ed/i18n137ios.py`（ios：`prem.notYet`）。
 - App Store Connect 私隱問卷答案、商店文案：`/workspace/tree-game-shots/asc-privacy-answers.md`。
 - 私隱政策寫明 `/alerts`、`/cwa` 查詢會送約 100 米（小數 3 位）坐標去推送伺服器（唔儲存）；如果改精度要同步改政策。
+
+### 1.4.38 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改（CORS `*`）。網站兩邊都部署：Cloudflare Pages（`scripts/deploy-pages.sh`）＋ gh-pages。
