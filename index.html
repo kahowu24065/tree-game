@@ -12,14 +12,59 @@
       html.preplant .hud,
       html.preplant #dev-root,
       html.preplant .ad-banner { opacity: 0; pointer-events: none; }
+      /* 1.4.33 preload screen: same sky blue as the native splash (Android drawable/splash, iOS LaunchScreen). */
+      html.preloading, html.preloading body { background: #bee2f7; }
+      #preload { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; background: #bee2f7; transition: opacity 0.45s ease; }
+      #preload.out { opacity: 0; pointer-events: none; }
+      @media (prefers-color-scheme: dark) {
+        html.plat-android.preloading, html.plat-android.preloading body, html.plat-android #preload { background: #142638; }
+      }
+      /* Same size as the splash icon: 36% of the short side (Android); iOS fills the screen with a square image. */
+      .pl-stage { --s: min(36vw, 36vh); position: relative; width: var(--s); height: var(--s); }
+      html.plat-ios .pl-stage { --s: calc(max(100vw, 100vh) * 0.1662); }
+      .pl-card { position: absolute; inset: 0; border-radius: 20%; overflow: hidden; background: #8fd0ef; animation: pl-breathe 3.4s ease-in-out infinite alternate; }
+      .pl-card img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .pl-tree { transform-origin: 49.2% 70.2%; animation: pl-sway 3.2s cubic-bezier(0.37, 0, 0.63, 1) -1.6s infinite alternate; }
+      .pl-leaf { position: absolute; left: calc(var(--x) * var(--s)); top: calc(var(--y) * var(--s)); width: calc(var(--s) * 0.09); height: calc(var(--s) * 0.065); opacity: 0; animation: pl-drift var(--t, 4.6s) linear var(--d) infinite; }
+      .pl-leaf b { display: block; width: 100%; height: 100%; background: linear-gradient(135deg, #a6dc55 0 50%, #5fa83b 50% 100%); clip-path: polygon(0 52%, 38% 0, 100% 42%, 60% 100%); animation: pl-flutter 1.3s ease-in-out infinite alternate; }
+      .pl-leaf:nth-child(odd) b { background: linear-gradient(135deg, #7cc444 0 50%, #3f8f34 50% 100%); animation-duration: 1.05s; }
+      @keyframes pl-sway { from { transform: rotate(-1.6deg); } to { transform: rotate(1.6deg); } }
+      @keyframes pl-breathe { from { transform: scale(1); } to { transform: scale(1.018); } }
+      @keyframes pl-flutter { from { transform: rotate(-28deg) scaleX(1); } to { transform: rotate(36deg) scaleX(0.55); } }
+      @keyframes pl-drift {
+        0% { opacity: 0; transform: translate(0, 0); }
+        12% { opacity: 1; }
+        80% { opacity: 1; }
+        100% { opacity: 0; transform: translate(calc(var(--dx) * var(--s)), calc(var(--dy) * var(--s))); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pl-card, .pl-tree, .pl-leaf, .pl-leaf b { animation: none; }
+      }
     </style>
     <script>
       try {
-        document.documentElement.classList.add('preplant');
+        var root = document.documentElement;
+        root.classList.add('preplant', 'preloading');
+        var cap = window.Capacitor;
+        var plat = cap && cap.getPlatform ? cap.getPlatform() : 'web';
+        root.classList.add('plat-' + plat);
       } catch (e) {}
     </script>
   </head>
   <body>
+    <div id="preload" aria-hidden="true">
+      <div class="pl-stage">
+        <div class="pl-card">
+          <img src="./preload/bg.webp" alt="" decoding="sync" />
+          <img class="pl-tree" src="./preload/tree.webp" alt="" decoding="sync" />
+        </div>
+        <i class="pl-leaf" style="--x: 0.58; --y: 0.2; --dx: 0.75; --dy: 0.95; --d: 0.2s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.33; --y: 0.36; --dx: -0.7; --dy: 0.85; --d: 1.3s; --t: 5.2s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.66; --y: 0.4; --dx: 0.55; --dy: 0.7; --d: 2.4s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.45; --y: 0.12; --dx: -0.45; --dy: 1.05; --d: 3.1s; --t: 5.6s"><b></b></i>
+        <i class="pl-leaf" style="--x: 0.6; --y: 0.52; --dx: 0.9; --dy: 0.5; --d: 0.9s; --t: 4.2s"><b></b></i>
+      </div>
+    </div>
     <canvas id="scene" aria-label="今日的樹同天空"></canvas>
     <div id="app" class="hud">
       <div class="left-col">

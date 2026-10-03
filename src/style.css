@@ -2009,6 +2009,31 @@ body.sheet-open .sheet-backdrop {
 
 .set-ver {
   margin-top: 4px;
+  /* 1.4.33: long-press opens the hidden diagnostics readout. */
+  padding: 6px 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.diag-pre {
+  margin: 8px 0 12px;
+  max-height: 55vh;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(20, 30, 24, 0.06);
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.diag-actions {
+  justify-content: center;
+  margin-bottom: 10px;
 }
 
 .set-ver + .primary {

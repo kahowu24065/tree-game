@@ -106,6 +106,11 @@ export class Scene3D {
   private camDist = 10;
   private camTargetY = 0.4;
   private lastTime = 0;
+  /** 1.4.33: eased camera values jump straight to their goal only on the first frame or after requestSnap(). */
+  private snapNext = true;
+  private snapNow = false;
+  /** 1.4.33 diagnostics: draws whose timestamp did not move forward (they now change nothing). */
+  zeroDtFrames = 0;
   private flash = 0;
   private nextFlash = 0;
   private dragAz = 0;
@@ -1050,6 +1055,50 @@ export class Scene3D {
     this.introGlide = -1;
     this.onSeed = done;
     this.zoom = this.zoomGoal = this.farZoom();
+    // Start the glide from the settled framing, not from wherever the eased camera happened to be.
+    this.requestSnap();
+  }
+
+  /** 1.4.33: the next draw puts every eased camera value straight on its goal (first frame / explicit reset). */
+  requestSnap(): void {
+    this.snapNext = true;
+  }
+
+  /** True while the opening glide runs (main.ts defers ads and big sounds until it is over). */
+  introRunning(): boolean {
+    return this.seedPhase === 'intro';
+  }
+
+  /**
+   * 1.4.33 preload: compile every material in the scene now (async where the browser supports parallel compile),
+   * so the opening glide does not stall on first use. Returns the time taken in ms.
+   */
+  async warmUp(): Promise<number> {
+    const started = performance.now();
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch {
+      try {
+        this.renderer.compile(this.scene, this.camera);
+      } catch {
+        /* a failed warm-up only means the first frames compile as they go */
+      }
+    }
+    return Math.round(performance.now() - started);
+  }
+
+  /** 1.4.33 diagnostics: renderer facts for the hidden readout. */
+  renderDiag(): { pixelRatio: number; width: number; height: number; quality: string; programs: number; calls: number; tris: number } {
+    const info = this.renderer.info;
+    return {
+      pixelRatio: this.renderer.getPixelRatio(),
+      width: this.width,
+      height: this.height,
+      quality: this.quality,
+      programs: info.programs?.length ?? 0,
+      calls: info.render.calls,
+      tris: info.render.triangles,
+    };
   }
 
   /** Zoom by `factor` (<1 = closer), keeping the point under (x, y) fixed on screen. */
@@ -1187,12 +1236,12 @@ export class Scene3D {
    */
   private applyNestPeek(on: boolean, dt: number, near: 'follow' | 'zoom' | null = null, dist = 1): void {
     const goal = on ? 1 : 0;
-    const k = dt === 0 ? 1 : 1 - Math.exp(-dt * 4);
+    const k = this.snapNow ? 1 : 1 - Math.exp(-dt * 4);
     this.nestPeek += (goal - this.nestPeek) * k;
     if (Math.abs(this.nestPeek - goal) < 0.001) this.nestPeek = goal;
     peekUniform.uPeek.value = this.nestPeek;
     const nearGoal = near ? 1 : 0;
-    this.nearFade += (nearGoal - this.nearFade) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 5));
+    this.nearFade += (nearGoal - this.nearFade) * (this.snapNow ? 1 : 1 - Math.exp(-dt * 5));
     if (Math.abs(this.nearFade - nearGoal) < 0.001) this.nearFade = nearGoal;
     peekUniform.uNear.value = this.nearFade;
     // v1.4.25: following → everything up to just past the animal (in front of it and beside it) is ~40% opaque;
@@ -1654,8 +1703,13 @@ export class Scene3D {
 
   draw(input: SceneInput, timeMs: number): void {
     const t = timeMs / 1000;
-    const dt = clamp(t - this.lastTime, 0, 0.1);
-    this.lastTime = t;
+    const raw = t - this.lastTime;
+    this.snapNow = this.snapNext;
+    this.snapNext = false;
+    if (raw <= 0 && !this.snapNow) this.zeroDtFrames++;
+    // A timestamp that does not move forward is "no time passed", never "snap" (1.4.33).
+    const dt = clamp(raw, 0, 0.1);
+    this.lastTime = Math.max(this.lastTime, t);
     this.ensureTree(input, t);
     this.ensureHabitat(input);
     this.layoutFarIsles(input, t);
@@ -1747,7 +1801,7 @@ export class Scene3D {
     const stageR = this.habitat?.radius ?? ISLAND_R;
     // v8: the island is scaled exactly like the tree model, so tree : island keeps the v6 proportions.
     const kGoal = islandScaleFor(tree.metricScale);
-    this.islandK += (kGoal - this.islandK) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 2));
+    this.islandK += (kGoal - this.islandK) * (this.snapNow ? 1 : 1 - Math.exp(-dt * 2));
     if (Math.abs(this.islandK - kGoal) < 0.002) this.islandK = kGoal;
     const K = this.islandK;
     this.island.group.scale.setScalar(K);
@@ -1829,17 +1883,16 @@ export class Scene3D {
     const want = Math.max(R / Math.sin(vHalf) * (portrait ? 1.3 : 1.18), R / Math.sin(hHalf) * (portrait ? 1.12 : 1.05));
     const wantY = H * 0.47 + (portrait ? H * 0.02 : 0);
     const k = 1 - Math.exp(-dt * 1.6);
-    if (this.camDist === 10 && this.lastTime < 0.2) this.camDist = want;
-    this.camDist += (want - this.camDist) * (dt === 0 ? 1 : k);
-    this.camTargetY += (wantY - this.camTargetY) * (dt === 0 ? 1 : k);
+    this.camDist += (want - this.camDist) * (this.snapNow ? 1 : k);
+    this.camTargetY += (wantY - this.camTargetY) * (this.snapNow ? 1 : k);
     // Zoom / pan ease toward the player's goal; the overview recentres itself.
     // The planting shot uses a much slower glide, then hands the camera back.
-    const ez = dt === 0 ? 1 : 1 - Math.exp(-dt * 9);
+    const ez = this.snapNow ? 1 : 1 - Math.exp(-dt * 9);
     if (this.seedPhase === 'far') {
       this.zoomGoal = this.farZoom();
       this.zoom = this.zoomGoal;
     } else if (this.seedPhase === 'pull') {
-      const slow = dt === 0 ? 1 : 1 - Math.exp(-dt * 0.85);
+      const slow = this.snapNow ? 1 : 1 - Math.exp(-dt * 0.85);
       this.zoom += (this.groundZoom - this.zoom) * slow;
       this.zoomGoal = this.zoom;
       this.panGoal.multiplyScalar(1 - slow);
@@ -1875,7 +1928,7 @@ export class Scene3D {
         }
       }
     } else if (this.seedPhase === 'settle') {
-      const back = dt === 0 ? 1 : 1 - Math.exp(-dt * 1.6);
+      const back = this.snapNow ? 1 : 1 - Math.exp(-dt * 1.6);
       this.zoom += (1 - this.zoom) * back;
       this.zoomGoal = this.zoom;
       if (this.zoom >= 0.98) {
@@ -1889,7 +1942,7 @@ export class Scene3D {
       if (!this.isZoomed() && !this.pinch) this.panGoal.multiplyScalar(1 - Math.min(1, dt * 3));
       this.zoom += (this.zoomGoal - this.zoom) * ez;
     }
-    this.panOff.lerp(this.panGoal, this.seedPhase === 'pull' ? (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.05)) : ez);
+    this.panOff.lerp(this.panGoal, this.seedPhase === 'pull' ? (this.snapNow ? 1 : 1 - Math.exp(-dt * 1.05)) : ez);
     const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
     const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro';
     if (handsOff && !planting && performance.now() - this.lastDrag > IDLE_MS) {
@@ -1898,7 +1951,7 @@ export class Scene3D {
     }
     const az = BASE_AZIMUTH + this.dragAz + this.idleAz + Math.sin(t * 0.05) * 0.03 * motion;
     const fxGoal = this.fall && !this.fall.reduced ? 1 : 0;
-    this.fxCam += (fxGoal - this.fxCam) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.8));
+    this.fxCam += (fxGoal - this.fxCam) * (this.snapNow ? 1 : 1 - Math.exp(-dt * 1.8));
     const el = ELEVATION + this.dragEl - this.fxCam * 0.3;
     const target = new THREE.Vector3(0, this.camTargetY, 0).add(this.panOff);
     let dist = this.camDist * this.zoom * (1 + this.fxCam * 0.12);
@@ -1916,14 +1969,14 @@ export class Scene3D {
       if (same && this.followOn) this.followPos.add(this.focusDelta.subVectors(focus.pos, this.lastFocusPos));
       this.lastFocusPos.copy(focus.pos);
       this.lastFocusRef = this.followRef ?? this.follow;
-      this.followPos.lerp(focus.pos, dt === 0 ? 1 : 1 - Math.exp(-dt * (chase ? 5 : 7)));
+      this.followPos.lerp(focus.pos, this.snapNow ? 1 : 1 - Math.exp(-dt * (chase ? 5 : 7)));
       target.copy(this.followPos);
       target.y += focus.size * (chase ? 0.12 : 0.3);
       dist = Math.max(0.22, focus.size * (chase ? 5.5 : 4.2)) * this.followZoom;
     }
     this.followOn = Boolean(focus);
     // Follow-cam looks from lower down so animals are seen in profile (chase: just above and behind).
-    this.lift += (this.liftGoal - this.lift) * (dt === 0 ? 1 : 1 - Math.exp(-dt * 1.5));
+    this.lift += (this.liftGoal - this.lift) * (this.snapNow ? 1 : 1 - Math.exp(-dt * 1.5));
     const camEl = focus ? clamp((chase ? 0.2 : Math.min(el, 0.38)) + this.followOrbitEl + this.lift, -0.25, 1.25) : el;
     let camAz = az;
     if (focus) {

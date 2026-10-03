@@ -98,6 +98,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.30 | 島嶼列改成冇字嘅細橫條（`#isle-bar`，role=slider，兩粒點顯示位置，第二座未解鎖係空心點）：只係喺條橫條度向左掃去第二座、向右掃返第一座（≥24px，場景唔會轉島）；未解鎖掃會彈一彈＋toast；鍵盤 ←／→ 都得；平時半透明，掂住變實，放手 1.6 秒後淡返，成長日誌打開時收埋；只用 aria-label（`isle.aria0/aria1/ariaLocked`）；四語說明改做「喺成長日誌上面條橫條掃」；versionCode 37 |
 | 1.4.31 | 新 app ID：Android applicationId／namespace 同 iOS bundle ID 由 `io.github.kahowu24065.treegame` 改做 `app.sekaitree.game`（Java 搬去 `app/sekaitree/game/`）；係另一個 app，要卸舊裝新，存檔用 設定 → 匯出／匯入存檔 搬；`google-services.json` 只有舊 package 嘅 client 時唔套用 google-services plugin（build 照過），`TreePushPlugin.available()` 話 JS 知冇 Firebase，就唔叫 register／unregister（否則會 crash），伺服器推送暫停，本機提醒照常；Apple 已登記 `app.sekaitree.game`（Push＋IAP），舊 bundle ID 已刪；versionCode 38 |
 | 1.4.32 | 換新 `google-services.json`（Firebase 專案 sekai-tree 新增咗 Android app `app.sekaitree.game`，舊 package client 都仲喺度）：google-services plugin 自動套用，Android 伺服器推送恢復；推送伺服器唔使改；versionCode 39 |
+| 1.4.33 | 開 app 預載畫面（`#preload`，同原生 splash 一樣天藍 #BEE2F7，Android 深色 #142638；icon 拆成背景＋會搖嘅樹苗 `public/preload/*.webp`，加飄落葉）：背後 compile shader（`Scene3D.warmUp`）、解碼當時嘅音樂、等天氣，最多 5 秒，之後先開場；鏡頭彈跳修正：`render()` 唔再直接畫（只叫 `loop()`），dt 0 唔再等於「即刻到位」，只有第一格／`requestSnap()` 先 snap；單一 rAF；廣告／同意／ATT 同其餘音效床延到開場後 1 秒；日間音樂改 `day.m4a`（AAC 單聲道，尾段靜音離線剪走，`day.mp3` 後備），`night.m4a` 做 iOS 舊版後備，唔再 runtime trimSilence，音樂自己載完就播；AudioContext `interrupted` 當 `suspended` 處理，任何點擊／返回前台都會叫醒；隱藏診斷：設定 → 長按版本號；versionCode 40 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -290,6 +291,10 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.32 發佈（2026-10-03）
 - 見版本歷史；推送伺服器冇改。開咗通知嘅用戶升級後開 app 時會自動登記 FCM 權杖。
+
+### 1.4.33 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。診斷（`src/diag.ts`）：設定入面長按「版本」嗰行 0.7 秒 → AudioContext 狀態、每個音效檔解碼結果、zero-dt 次數、最長一格、開場同預載時間；可以 Copy。
+- iOS LaunchScreen 換咗同 Android 一樣嘅天藍底＋圓角 icon（ios 分支），預載畫面喺 iOS 用 `max(100vw,100vh)×0.1662` 對齊 aspect-fill 嘅 splash icon。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。

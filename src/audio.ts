@@ -11,9 +11,10 @@ import type { WeatherEventId } from './balance';
 const KEY = 'sekai-tree-sound';
 const FADE = 2.5;
 
-const FILES: Record<string, string> = {
-  day: 'day.mp3',
-  night: 'night.ogg',
+/** First file that decodes wins (1.4.33: AAC first for the day piece, which iOS decodes in hardware). */
+const FILES: Record<string, string | string[]> = {
+  day: ['day.m4a', 'day.mp3'],
+  night: ['night.ogg', 'night.m4a'],
   birds: 'birds.ogg',
   crickets: 'crickets.mp3',
   rain: 'rain.ogg',
@@ -46,6 +47,8 @@ let animalAt = 0;
 let quietTimer = 0;
 let live = false;
 let loading: Promise<void> | null = null;
+/** 1.4.33: beds other than the current music wait until shortly after the opening (releaseAudioExtras). */
+let extras = false;
 const buffers = new Map<string, AudioBuffer>();
 const loops = new Map<string, GainNode>();
 let want = { night: false, events: [] as WeatherEventId[] };
@@ -80,6 +83,7 @@ function ensure(): AudioContext | null {
       sfx = ac.createGain();
       sfx.gain.value = 0.7;
       sfx.connect(master);
+      watchState(ac);
     } catch {
       ac = null;
       return null;
@@ -96,56 +100,82 @@ function ramp(param: AudioParam, value: number, seconds: number): void {
   param.linearRampToValueAtTime(value, t + seconds);
 }
 
-async function loadOne(id: string): Promise<void> {
-  if (buffers.has(id)) return;
-  const ctx = ac;
-  const file = FILES[id];
-  if (!ctx || !file) return;
-  try {
-    const res = await fetch(fileUrl(file));
-    if (!res.ok) return;
-    const raw = await res.arrayBuffer();
-    buffers.set(id, await ctx.decodeAudioData(raw));
-  } catch {
-    /* missing or undecodable file stays silent */
-  }
+/** 1.4.33 diagnostics: what each sound did (shown in the hidden readout, long-press the version in 設定). */
+export type AudioFileDiag = { id: string; state: 'loading' | 'ok' | 'fail'; file?: string; ms?: number; seconds?: number; error?: string };
+const fileDiag = new Map<string, AudioFileDiag>();
+const stateLog: string[] = [];
+const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+function stamp(): string {
+  return ((performance.now() - t0) / 1000).toFixed(1) + 's';
 }
 
+const pendingLoads = new Map<string, Promise<void>>();
+
+function loadOne(id: string): Promise<void> {
+  if (buffers.has(id)) return Promise.resolve();
+  const running = pendingLoads.get(id);
+  if (running) return running;
+  const ctx = ac;
+  const spec = FILES[id];
+  if (!ctx || !spec) return Promise.resolve();
+  const files = Array.isArray(spec) ? spec : [spec];
+  const job = (async () => {
+    const started = performance.now();
+    fileDiag.set(id, { id, state: 'loading' });
+    const errors: string[] = [];
+    for (const file of files) {
+      try {
+        const res = await fetch(fileUrl(file));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const raw = await res.arrayBuffer();
+        const buf = await ctx.decodeAudioData(raw);
+        buffers.set(id, buf);
+        fileDiag.set(id, { id, state: 'ok', file, ms: Math.round(performance.now() - started), seconds: Math.round(buf.duration * 10) / 10 });
+        // A bed that arrives late joins the mix on its own; it never waits for the others.
+        if (wants()) applyMix(true);
+        return;
+      } catch (error) {
+        const msg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        errors.push(`${file}: ${msg}`);
+        console.warn('[audio] could not load', file, error);
+      }
+    }
+    fileDiag.set(id, { id, state: 'fail', ms: Math.round(performance.now() - started), error: errors.join(' | ') });
+  })().finally(() => pendingLoads.delete(id));
+  pendingLoads.set(id, job);
+  return job;
+}
+
+const CLIPS = ['switch', 'pluck', 'bird', 'frog', 'chirp'];
+const BEDS = ['day', 'night', 'birds', 'crickets', 'rain', 'storm'];
+
+function musicId(): string {
+  return want.night ? 'night' : 'day';
+}
+
+/** The current music first, then the small clips; the other beds only once extras are released. */
 function loadAll(): Promise<void> {
   if (!loading) {
-    const clips = ['switch', 'pluck', 'bird', 'frog', 'chirp'];
-    const beds = ['day', 'night', 'birds', 'crickets', 'rain', 'storm'];
-    loading = Promise.all(clips.map(loadOne)).then(() => {
-      void Promise.all(beds.map(loadOne)).then(() => {
-        if (wants()) applyMix(true);
-      });
-    });
+    loading = loadOne(musicId()).then(() => Promise.all(CLIPS.map(loadOne))).then(() => undefined);
   }
+  if (extras) for (const id of BEDS) void loadOne(id);
   return loading;
 }
 
-/** Drop only the digital silence at each end, so the loop point is not a quiet gap. */
-function trimSilence(buf: AudioBuffer): AudioBuffer {
-  if (!ac) return buf;
-  const data = buf.getChannelData(0);
-  const win = Math.floor(buf.sampleRate * 0.03);
-  const cap = Math.floor(buf.sampleRate * 2.5);
-  const loud = (at: number) => {
-    let m = 0;
-    const n = Math.min(data.length, at + win);
-    for (let i = at; i < n; i++) m = Math.max(m, Math.abs(data[i]));
-    return m;
+function watchState(ctx: AudioContext): void {
+  const note = () => {
+    stateLog.push(`${stamp()} ${ctx.state}`);
+    if (stateLog.length > 12) stateLog.shift();
   };
-  let start = 0;
-  while (start < cap && loud(start) < 0.0015) start += win;
-  let end = data.length;
-  while (end > data.length - cap && loud(end - win) < 0.0015) end -= win;
-  if (end - start < buf.sampleRate || (start === 0 && end === data.length)) return buf;
-  const out = ac.createBuffer(buf.numberOfChannels, end - start, buf.sampleRate);
-  for (let c = 0; c < buf.numberOfChannels; c++) {
-    out.getChannelData(c).set(buf.getChannelData(c).subarray(start, end));
-  }
-  return out;
+  note();
+  ctx.addEventListener?.('statechange', note);
+}
+
+/** Start an AudioContext that is not running ('suspended', or WebKit's 'interrupted'). Never waits long. */
+function wake(ctx: AudioContext): Promise<void> {
+  if (ctx.state === 'running' || ctx.state === 'closed') return Promise.resolve();
+  const resumed = ctx.resume().catch(() => undefined);
+  return Promise.race([resumed, new Promise<void>((r) => window.setTimeout(r, 400))]);
 }
 
 /**
@@ -154,7 +184,8 @@ function trimSilence(buf: AudioBuffer): AudioBuffer {
  */
 function startSeamless(raw: AudioBuffer, bus: GainNode): void {
   if (!ac) return;
-  const buf = trimSilence(raw);
+  // 1.4.33: the trailing silence is cut in the file itself (no runtime copy of the whole piece).
+  const buf = raw;
   const fade = Math.min(8, buf.duration * 0.15);
   const step = buf.duration - fade;
   let nextAt = ac.currentTime;
@@ -257,7 +288,7 @@ function refresh(): void {
   }
   if (quietTimer) window.clearTimeout(quietTimer);
   quietTimer = 0;
-  if (ctx.state === 'suspended') void ctx.resume();
+  if (ctx.state !== 'running') void wake(ctx);
   if (!live) {
     live = true;
     ramp(master.gain, 0.9, 0.6);
@@ -269,13 +300,7 @@ async function resume(): Promise<boolean> {
   const ctx = ensure();
   if (!ctx) return false;
   unlocked = true;
-  if (ctx.state === 'suspended') {
-    try {
-      await ctx.resume();
-    } catch {
-      return false;
-    }
-  }
+  await wake(ctx);
   refresh();
   await loadAll();
   refresh();
@@ -294,6 +319,43 @@ function shot(id: string, vol = 0.55): void {
   src.start();
 }
 
+/**
+ * 1.4.33 preload screen: create the context and decode the music for the time of day (plus the small clips),
+ * so the opening starts with music. Resolves when done or failed. No-op when sound is off.
+ */
+export function preloadAudio(night: boolean): Promise<void> {
+  want = { ...want, night };
+  if (!ensure()) return Promise.resolve();
+  return loadAll();
+}
+
+/** 1.4.33: load the remaining beds (weather, animals, the other music) — called ~1 s after the opening. */
+export function releaseAudioExtras(): void {
+  if (extras) return;
+  extras = true;
+  if (ac) void loadAll();
+}
+
+/** 1.4.33: any tap / key restarts a context that iOS suspended or interrupted. */
+export function kickAudio(): void {
+  if (!ac || !unlocked || !wants() || ac.state === 'running') return;
+  void wake(ac).then(() => refresh());
+}
+
+export function audioDiag(): { state: string; sampleRate: number; currentTime: number; unlocked: boolean; sound: boolean; extras: boolean; states: string[]; files: AudioFileDiag[]; music: string } {
+  return {
+    state: ac ? ac.state : 'none',
+    sampleRate: ac?.sampleRate ?? 0,
+    currentTime: ac ? Math.round(ac.currentTime * 10) / 10 : 0,
+    unlocked,
+    sound: soundEnabled(),
+    extras,
+    states: [...stateLog],
+    files: [...fileDiag.values()],
+    music: musicId(),
+  };
+}
+
 /** Start the bed as the opening camera moves in. No-op when sound is off. */
 export function beginAmbience(): void {
   if (!soundEnabled()) return;
@@ -303,6 +365,7 @@ export function beginAmbience(): void {
 /** Remember the scene. Music starts after the first tap. */
 export function syncAmbience(night: boolean, events: WeatherEventId[]): void {
   want = { night, events };
+  if (ac && !buffers.has(musicId())) void loadOne(musicId());
   if (unlocked) refresh();
 }
 

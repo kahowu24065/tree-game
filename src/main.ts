@@ -14,7 +14,10 @@ import { eventLabel, regionFor, setLabelRegion } from './labels';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
-import { beginAmbience, playCelebrate, playControl, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, preloadAudio, releaseAudioExtras, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { diag, frameReport, noteFrame, noteIntro, resetFrameClock } from './diag';
+import { frames, hidePreload, runPreload } from './preload';
+import { APP_VERSION } from './version';
 import { freshNest, isNestHeightCount, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, tickNest } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
@@ -92,6 +95,7 @@ import {
   type LessonId,
   type Pick,
   type View,
+  diagModal,
 } from './ui';
 import { ANIMALS } from './data/animals';
 import { defaultSpecies, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
@@ -579,7 +583,9 @@ function render(): void {
   renderSheet(state, today());
   if (drawer && !drawer.hidden) renderPanel(v);
   if (wxPage && !wxPage.hidden) renderWeatherPage(v);
-  drawScene(input, performance.now());
+  // 1.4.33: no draw here. The rAF loop draws every frame with its own timestamp; a draw stamped with
+  // performance.now() put the next rAF frame "in the past" (dt 0), which used to snap the camera.
+  loop();
   devRender?.();
   queueNestIntro();
 }
@@ -1023,23 +1029,47 @@ function syncNest(): void {
   if (!opening) flushNestToast();
 }
 
+/** 1.4.33: ads (and on iOS the consent / ATT prompts they trigger) wait ~1 s after the opening. */
+let bannerTimer = 0;
+function banner(on: boolean, delayMs = 0): void {
+  window.clearTimeout(bannerTimer);
+  bannerTimer = 0;
+  if (!on || delayMs <= 0) {
+    syncBanner(on);
+    return;
+  }
+  bannerTimer = window.setTimeout(() => {
+    bannerTimer = 0;
+    syncBanner(true);
+  }, delayMs);
+}
+const AFTER_OPENING_MS = 1000;
+
 function finishOpening(): void {
   opening = false;
+  noteIntro('end');
   document.documentElement.classList.remove('preplant');
   document.documentElement.classList.add('hud-in');
-  syncBanner(true);
+  banner(true, AFTER_OPENING_MS);
+  window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
   flushNestToast();
   const report = deferredReport;
   deferredReport = null;
   if (report) showReport(report);
 }
 
-/** Existing tree: the planting far-to-near glide, music underneath, then the interface fades in. */
-function beginOpening(): void {
+/** Existing tree, at boot: keep the interface hidden (and night cards waiting) while the preload screen is up. */
+function holdOpening(): void {
   opening = true;
   document.documentElement.classList.add('preplant');
   document.documentElement.classList.remove('hud-in');
-  syncBanner(false);
+  banner(false);
+}
+
+/** After the preload screen: the planting far-to-near glide, music underneath, then the interface fades in. */
+function beginOpening(): void {
+  holdOpening();
+  noteIntro('start');
   beginAmbience();
   if (scene3d) scene3d.beginIntro(reducedMotion, finishOpening);
   else window.setTimeout(finishOpening, reducedMotion ? 0 : 700);
@@ -1320,7 +1350,7 @@ function beginSpeciesPick(): void {
   lesson = null;
   document.documentElement.classList.add('preplant');
   document.documentElement.classList.remove('hud-in');
-  syncBanner(false);
+  banner(false);
   scene3d?.showFarIslands();
   openStart();
 }
@@ -1329,7 +1359,8 @@ function revealHud(): void {
   plantingShow = null;
   document.documentElement.classList.remove('preplant');
   document.documentElement.classList.add('hud-in');
-  syncBanner(true);
+  banner(true, AFTER_OPENING_MS);
+  window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
   beginCoach();
   render();
   toast(coachOpen(coach) ? tl('main.046', { treeName: state.treeName }) : tl('main.026', { treeName: state.treeName }));
@@ -1389,7 +1420,7 @@ function startGame(species?: SpeciesId): void {
   plantingShow = 'arrive';
   document.documentElement.classList.add('preplant');
   document.documentElement.classList.remove('hud-in');
-  syncBanner(false);
+  banner(false);
   scene3d?.showFarIslands();
   render();
   dismissModal(() => {
@@ -1622,6 +1653,12 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'export-save':
       void exportSave();
+      return;
+    case 'diag-copy':
+      void copyText(diagText()).then((ok) => toast(ok ? tl('main.049') : tl('main.050')));
+      return;
+    case 'diag-refresh':
+      updateModal(diagModal(diagText()));
       return;
     case 'copy-save':
       void copyText(saveCodeText()).then((ok) => toast(ok ? tl('main.049') : tl('main.050')));
@@ -2367,7 +2404,15 @@ function syncFlow(force = false): void {
   }
 }
 
+/** One rAF chain only (visibility changes used to be able to start a second one, drawing twice per frame). */
+let rafId = 0;
+function loop(): void {
+  if (!rafId && !document.hidden) rafId = requestAnimationFrame(frame);
+}
+
 function frame(time: number): void {
+  rafId = 0;
+  noteFrame(time, scene3d?.introRunning() ?? false);
   const input = sceneInput();
   if (time - nestTickAt > 1000) {
     nestTickAt = time;
@@ -2386,7 +2431,7 @@ function frame(time: number): void {
     renderChrome(view(input));
   }
   checkDyingExpiry();
-  if (!document.hidden) requestAnimationFrame(frame);
+  loop();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -2396,7 +2441,8 @@ document.addEventListener('visibilitychange', () => {
     scheduleReminders(true);
     return;
   }
-  requestAnimationFrame(frame);
+  resetFrameClock();
+  loop();
   runCatchup();
   if (usesDeviceLocation()) {
     relocateNow();
@@ -2420,11 +2466,12 @@ if (isNative()) {
   scheduleReminders(false);
   void syncPush(notifyEnabled());
 }
-if (!state.started) beginSpeciesPick();
-else beginOpening();
+const startedAtBoot = state.started;
+if (!startedAtBoot) beginSpeciesPick();
+else holdOpening();
 runCatchup();
 syncNest();
-requestAnimationFrame(frame);
+loop();
 if (usesDeviceLocation()) {
   if (weather.origin === 'live' && !weatherLoading) applyWeather(weather);
   relocateNow();
@@ -2434,3 +2481,53 @@ if (usesDeviceLocation()) {
 } else {
   void refreshWeather(false);
 }
+for (const ev of ['pointerup', 'touchend', 'keydown'] as const) document.addEventListener(ev, kickAudio, { passive: true, capture: true });
+
+/**
+ * 1.4.33 preload: the swaying-sapling screen stays up while the scene's shaders compile, the music for the time
+ * of day decodes and the weather arrives (capped at ~5 s), then the opening glide starts.
+ */
+async function preloadThenOpen(): Promise<void> {
+  const weatherJob = refreshing;
+  await runPreload([
+    {
+      name: 'scene',
+      run: async () => {
+        await frames(2);
+        if (!scene3d) return 'flat';
+        return `${await scene3d.warmUp()} ms compile`;
+      },
+    },
+    { name: 'music', run: () => preloadAudio(sceneInput().daylight < 0.45).then(() => audioDiag().files.map((f) => `${f.id}:${f.state}`).join(' ')) },
+    { name: 'weather', run: () => (weatherJob ?? Promise.resolve()).then(() => weather.origin) },
+  ]);
+  await hidePreload();
+  if (startedAtBoot && state.started && opening) beginOpening();
+  else if (!startedAtBoot) window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
+}
+void preloadThenOpen();
+
+/** 1.4.33 hidden readout: long-press the version line in 設定. */
+function diagText(): string {
+  const a = audioDiag();
+  const r = scene3d?.renderDiag();
+  const lines = [
+    `World Tree ${APP_VERSION} · ${isNative() ? 'app' : 'web'} · ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)}`,
+    `screen ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}` + (r ? ` · render ${r.width}x${r.height} @${r.pixelRatio} ${r.quality} · programs ${r.programs} · calls ${r.calls} · tris ${r.tris}` : ' · 2D'),
+    ...frameReport(scene3d?.zeroDtFrames ?? 0),
+    `audio ${a.state} ${a.sampleRate} Hz t=${a.currentTime}s · sound ${a.sound ? 'on' : 'off'} · unlocked ${a.unlocked} · extras ${a.extras} · music ${a.music}`,
+    `audio states: ${a.states.join(', ') || '-'}`,
+    ...a.files.map((f) => `  ${f.id}: ${f.state}${f.file ? ` ${f.file}` : ''}${f.ms !== undefined ? ` ${f.ms} ms` : ''}${f.seconds ? ` ${f.seconds}s` : ''}${f.error ? ` — ${f.error}` : ''}`),
+    `uptime ${((performance.now() - diag.bootAt) / 1000).toFixed(1)}s`,
+  ];
+  return lines.join('\n');
+}
+
+let diagPress = 0;
+document.addEventListener('pointerdown', (e) => {
+  const el = (e.target as HTMLElement | null)?.closest?.('.set-ver');
+  if (!el) return;
+  window.clearTimeout(diagPress);
+  diagPress = window.setTimeout(() => openModal(diagModal(diagText())), 700);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) document.addEventListener(ev, () => window.clearTimeout(diagPress));
