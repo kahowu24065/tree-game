@@ -5,6 +5,7 @@ import { weatherAchievementCopy } from './labels';
 import { createGame } from './sim';
 import type { GameState, MetaState } from './types';
 import { t as tl } from './i18n';
+import { kvSet } from './native/kv';
 
 export const META_KEY = 'sekai-tree-meta-v1';
 
@@ -30,7 +31,7 @@ export function loadMeta(): MetaState {
 
 export function saveMeta(meta: MetaState): void {
   try {
-    localStorage.setItem(META_KEY, JSON.stringify(meta));
+    kvSet(META_KEY, JSON.stringify(meta));
   } catch {
     /* ignore */
   }

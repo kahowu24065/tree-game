@@ -109,6 +109,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.41 | 轉語言即時生效、唔再 reload（`live()` 表格原地重建＋`switchLocale`，重新 render、重開設定；遊戲狀態、3D、聲音照行）；澆水後 5 分鐘（遊戲時鐘）水分唔減（`state.pause.w`，`CARE_GRACE_MS`，閂 app 補算都計）— 原因係 `waterAdd` 四捨五入到 0.1，W 成日落喺 x.5，顯示進位後一秒就跌 1；施肥冇呢個問題（+25 唔捨入），所以 N 冇寬限；圖鑑只會解鎖當刻出現緊嘅動物（`outAt`：日頭日行性、夜晚夜行性），新增夜間第一隻動物「斜紋夜蛾」（`nightmoth`，同菜粉蝶同級）；versionCode 48 |
 | 1.4.42 | 修 iPhone「澆水／施肥／除蟲／疏水之後閂 app 再開就冇咗」：原生 Preferences 鏡像係 fire-and-forget 排隊寫，iOS 一入背景就暫停 JS，未寫完就被殺；下次開 app `planHydrate` 一律用 Preferences（舊）覆蓋 localStorage（新）。而家有寫入印 `sekai-tree-stamp`，邊個新用邊個；鏡像合併只寫最新值、印最後寫；背景（visibilitychange／App pause／pagehide）即刻 `saveNow()`＋flush。1.4.41 澆水寬限冇關係（只改流失速率，唔掂次數）；versionCode 49 |
 | 1.4.43 | 診斷版（用戶確認 1.4.42 喺 iPhone iOS 18.7 仍然甩動作，網頁正常）：設定版本行長按 → Diagnostics 加「存檔／讀檔紀錄」（`src/native/saveLog.ts`，最近 60 條，localStorage `diag-savelog` + 原生 Preferences 雙份，合併，殺 app 都留低）。記錄：每次存檔（觸發來源、stamp、W/N/H/R、四個動作剩餘次數、care 計數、寬限時間、原生寫入每 key 成功／失敗＋延遲）、開 app 時兩份副本嘅 stamp 同數值＋揀邊份＋原因、之後 catch-up／advanceFlow／天氣（時區）／首個 tick 嘅數值（care 有變會標 CARE CHANGED）、生命周期（appStateChange、App pause/resume、visibilitychange、pagehide、freeze）、flush 開始／完成。「清除紀錄」掣。無改遊戲邏輯；versionCode 50 |
+| 1.4.44 | 真正修好 iPhone「做完動作閂 app 再開就冇咗」：1.1 起嘅原生鏡像用 `localStorage.setItem = …` 包裝，WebKit（WKWebView）入面咁樣賦值只會儲存一個叫 "setItem" 嘅項目、唔會覆蓋方法，所以 iPhone 存檔從來冇寫入 Preferences、stamp 從未設定，開 app 時舊嘅 Preferences 副本（第一次開 app 時複製）每次都覆蓋 localStorage（1.4.43 診斷紀錄證實）。而家所有遊戲寫入經 `kvSet`／`kvRemove`（`src/native/kv.ts`）→ localStorage → 鏡像（合併、重試、stamp 最後）；開 app 只有 Preferences stamp 嚴格較新或者 localStorage 冇存檔先用 Preferences，其餘（包括兩邊都冇 stamp）保留 localStorage 並複製去 Preferences；啟動時鏡像測試寫入（診斷紀錄 `mirror ok/FAILED`）；清走殘留 "setItem"/"removeItem" 項目；appStateChange inactive 都即刻存檔＋flush；versionCode 51 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -350,6 +351,14 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - main：`persist(trigger)`、`saveNow(trigger)`、`syncFlow(force, trigger)`、`runCatchup(why)` 帶來源；`watchStep()` 開 app 90 秒內每步都記，之後只喺 care 變咗先記。
 - 已知：iOS 掃走 app 係 SIGKILL 暫停中嘅程序，pagehide 通常唔會觸發，只有入背景時嘅 visibilitychange／App pause；Preferences 寫入唔係 await（排隊 fire-and-forget），紀錄有每次延遲同 flush 完成時間。
 - 測試：`test/savelog-v1443.test.ts`。
+
+### 1.4.44 發佈（2026-10-04）
+
+- 根因：`installWriteThrough()` 直接賦值 `storage.setItem = …`。Chrome／Android WebView 得，WebKit 唔得（變成儲存項目），所以 iOS 一直冇鏡像。已移除，改為 `createMirror()`＋`setKvMirror()`；`kvStorage` 俾要 storage 參數嘅代碼（ios `savePremium`）。
+- `planHydrate`：Preferences 空 → 複製 local；local 冇 `sekai-tree-v2`／`sekai-tree-grove` 或 Preferences stamp 嚴格較新 → 還原 Preferences；否則保留 local，將唔同嘅 key 複製去 Preferences（stamp 最後）。
+- 守衛測試：`src` 入面除咗 `native/kv.ts`／`persist.ts`／`saveLog.ts`，唔准直接 `localStorage.setItem/removeItem`。
+- 測試：`test/persist-v1444.test.ts`（模擬 WebKit Storage、hydrate 平手／冇 stamp、動作 → 殺 app → 重開）。
+
 
 
 

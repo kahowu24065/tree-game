@@ -8,6 +8,7 @@ import en from './en';
 import zhCN from './zh-CN';
 import zhHK from './zh-HK';
 import zhTW from './zh-TW';
+import { kvSet } from '../native/kv';
 
 export type Locale = 'zh-TW' | 'zh-HK' | 'zh-CN' | 'en';
 export const LOCALES: readonly Locale[] = ['zh-TW', 'zh-HK', 'zh-CN', 'en'];
@@ -77,7 +78,7 @@ export function withLocale<T>(l: Locale, fn: () => T): T {
 /** Save the player's choice. The caller reloads so every table is rebuilt in the new language. */
 export function saveLocale(l: Locale): void {
   try {
-    localStorage.setItem(LOCALE_KEY, l);
+    kvSet(LOCALE_KEY, l);
   } catch {
     /* ignore */
   }

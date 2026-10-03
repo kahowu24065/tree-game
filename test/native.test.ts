@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { STAMP_KEY, installWriteThrough, isPersistKey, planHydrate } from '../src/native/persist';
+import { STAMP_KEY, createMirror, isPersistKey, planHydrate, type KvBackend } from '../src/native/persist';
+import { kvRemove, kvSet, setKvMirror, setKvStore } from '../src/native/kv';
+
+/** 1.4.44: the mirror is fed by kvSet / kvRemove (no localStorage patching). */
+function installWriteThrough(s: Storage, backend: KvBackend, now: () => number = Date.now): () => Promise<void> {
+  const m = createMirror(s, backend, now);
+  setKvStore(s);
+  setKvMirror(m);
+  return m.flush;
+}
+const w = (s: Storage) => ({ setItem: (k: string, v: string) => kvSet(k, v), removeItem: (k: string) => kvRemove(k), getItem: (k: string) => s.getItem(k) });
 import { NOTIFY_IDS, planNotifications, type NotifyInput } from '../src/native/notify';
 
 class MemStorage implements Storage {
@@ -19,9 +29,9 @@ describe('native persist adapter', () => {
     expect(isPersistKey('yiri-yisyu-quality')).toBe(true);
     expect(isPersistKey('other')).toBe(false);
   });
-  it('Preferences wins when it has a save', () => {
+  it('1.4.44: no stamps on either side → localStorage (primary) wins and is copied to Preferences', () => {
     const plan = planHydrate({ 'sekai-tree-v2': 'P', junk: 'x' }, { 'sekai-tree-v2': 'L', 'yiri-yisyu-place': 'geo' });
-    expect(plan).toEqual({ toLocal: [['sekai-tree-v2', 'P']], toPrefs: [] });
+    expect(plan).toEqual({ toLocal: [], toPrefs: [['sekai-tree-v2', 'L'], ['yiri-yisyu-place', 'geo']] });
   });
   it('migrates localStorage once when Preferences is empty', () => {
     const plan = planHydrate({}, { 'sekai-tree-v2': 'L', 'yiri-yisyu-place': 'geo', other: 'no' });
@@ -40,11 +50,11 @@ describe('native persist adapter', () => {
       { set: async (k, v) => void log.push(`set ${k}=${v}`), remove: async (k) => void log.push(`rm ${k}`) },
       () => t,
     );
-    s.setItem('sekai-tree-v2', 'a');
-    s.setItem('unrelated', 'b');
-    s.setItem('sekai-tree-v2', 'c');
-    s.setItem('sekai-tree-meta-v1', 'm');
-    s.removeItem('sekai-tree-v2');
+    w(s).setItem('sekai-tree-v2', 'a');
+    w(s).setItem('unrelated', 'b');
+    w(s).setItem('sekai-tree-v2', 'c');
+    w(s).setItem('sekai-tree-meta-v1', 'm');
+    w(s).removeItem('sekai-tree-v2');
     expect(s.getItem('unrelated')).toBe('b');
     expect(s.getItem('sekai-tree-v2')).toBeNull();
     expect(Number(s.getItem(STAMP_KEY))).toBeGreaterThan(1000); // monotonic even with a frozen clock
@@ -65,10 +75,10 @@ describe('native persist adapter', () => {
       },
       remove: async () => {},
     });
-    s.setItem('sekai-tree-v2', '1');
+    w(s).setItem('sekai-tree-v2', '1');
     await flush();
     expect(log).toContain('sekai-tree-v2=1');
-    s.setItem('sekai-tree-v2', '2');
+    w(s).setItem('sekai-tree-v2', '2');
     await flush();
     expect(log.filter((l) => l.startsWith('sekai-tree-v2='))).toEqual(['sekai-tree-v2=1', 'sekai-tree-v2=2']);
   });

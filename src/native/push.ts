@@ -3,6 +3,7 @@ import { App } from '@capacitor/app';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { isNative, platformName } from './platform';
 import { getLocale, t as tl } from '../i18n';
+import { kvSet, kvRemove } from './kv';
 
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
 export const PUSH_SERVER = 'https://158-101-140-210.sslip.io';
@@ -81,7 +82,7 @@ async function listen(): Promise<void> {
     } catch {
       /* ignore */
     }
-    localStorage.setItem(TOKEN_KEY, value);
+    kvSet(TOKEN_KEY, value);
     await post('/register', { token: value, platform: platformName(), appVersion, locale: getLocale() });
     lastSent = '';
     flushState();
@@ -101,7 +102,7 @@ export async function syncPush(enabled: boolean): Promise<void> {
     if (!enabled) {
       const token = localStorage.getItem(TOKEN_KEY);
       if (token) await post('/unregister', { token });
-      localStorage.removeItem(TOKEN_KEY);
+      kvRemove(TOKEN_KEY);
       lastSent = '';
       if (fcm) await PushNotifications.unregister();
       return;

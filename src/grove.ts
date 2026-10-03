@@ -3,6 +3,7 @@ import type { SpeciesId } from './data/species';
 import { parseSave } from './storage';
 import type { GameState, IsleAward } from './types';
 import { t as tl, live } from './i18n';
+import { kvSet, kvRemove } from './native/kv';
 
 /** Both planted trees, plus which island the camera is on. Native persist picks this up via the sekai-tree prefix. */
 export const GROVE_KEY = 'sekai-tree-grove';
@@ -53,7 +54,7 @@ export function loadGrove(fallback: GameState): Grove {
 
 export function saveGrove(grove: Grove): void {
   try {
-    localStorage.setItem(GROVE_KEY, JSON.stringify({ version: 1, isle: grove.isle, home: grove.home, second: grove.second }));
+    kvSet(GROVE_KEY, JSON.stringify({ version: 1, isle: grove.isle, home: grove.home, second: grove.second }));
   } catch {
     /* quota */
   }
@@ -61,7 +62,7 @@ export function saveGrove(grove: Grove): void {
 
 export function clearGrove(): void {
   try {
-    localStorage.removeItem(GROVE_KEY);
+    kvRemove(GROVE_KEY);
   } catch {
     /* ignore */
   }

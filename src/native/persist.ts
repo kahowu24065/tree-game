@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import { isNative } from './platform';
+import { kvSet, setKvMirror } from './kv';
 
 /** localStorage keys the game persists (save, meta, dev, place, quality, hints, notify toggle…). */
 export const PERSIST_PREFIXES = ['sekai-tree', 'yiri-yisyu'] as const;
@@ -26,33 +27,33 @@ const stampOf = (m: Record<string, string>): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Game keys whose absence in localStorage means the WebView lost its storage. */
+export const SAVE_KEYS = ['sekai-tree-v2', 'sekai-tree-grove'] as const;
+const hasSave = (m: Record<string, string>) => SAVE_KEYS.some((k) => !!m[k]);
+
 /**
- * Preferences is the native copy that survives WebView storage clean-ups. On start:
- * - Preferences empty → migrate localStorage into it once;
- * - localStorage has a newer write stamp → it holds writes that had not reached Preferences when the app was
- *   closed (1.4.41 bug: those were then overwritten by the older Preferences copy) → push localStorage to Preferences;
- * - otherwise → Preferences into localStorage (e.g. the WebView lost its storage).
+ * localStorage is primary; Preferences is the backup that survives WebView storage clean-ups. On start (1.4.44):
+ * - Preferences empty → copy localStorage into it;
+ * - localStorage has no save (WebView storage lost) or Preferences' stamp is strictly newer → Preferences into
+ *   localStorage;
+ * - otherwise (local newer, equal, or no stamps at all — every pre-1.4.44 iPhone copy) → keep localStorage and copy
+ *   the keys that differ into Preferences (stamp last).
  */
 export function planHydrate(prefs: Record<string, string>, local: Record<string, string>): HydratePlan {
   const prefKeys = Object.keys(prefs).filter(isPersistKey);
   const localKeys = Object.keys(local).filter(isPersistKey);
-  const all = (m: Record<string, string>, keys: string[]): [string, string][] => keys.map((k) => [k, m[k]!]);
-  if (!prefKeys.length) return { toLocal: [], toPrefs: all(local, localKeys) };
-  if (localKeys.length && stampOf(local) > stampOf(prefs)) {
-    // Stamp last, so an interrupted copy never looks complete.
-    const ordered = [...localKeys.filter((k) => k !== STAMP_KEY), ...localKeys.filter((k) => k === STAMP_KEY)];
-    return { toLocal: [], toPrefs: all(local, ordered) };
-  }
-  return { toLocal: all(prefs, prefKeys), toPrefs: [] };
+  const stampLast = (keys: string[]) => [...keys.filter((k) => k !== STAMP_KEY), ...keys.filter((k) => k === STAMP_KEY)];
+  if (!prefKeys.length) return { toLocal: [], toPrefs: stampLast(localKeys).map((k) => [k, local[k]!]) };
+  if (!hasSave(local) || stampOf(prefs) > stampOf(local)) return { toLocal: stampLast(prefKeys).map((k) => [k, prefs[k]!]), toPrefs: [] };
+  return { toLocal: [], toPrefs: stampLast(localKeys.filter((k) => prefs[k] !== local[k])).map((k) => [k, local[k]!]) };
 }
 
-/** 1.4.43 diagnostics: which copy planHydrate picks and why (same rules, as text). */
-export function hydrateReason(prefs: Record<string, string>, local: Record<string, string>): 'prefs-empty→migrate-local' | 'local-newer→push-to-prefs' | 'prefs-newer-or-equal→prefs-to-local' {
-  const prefKeys = Object.keys(prefs).filter(isPersistKey);
-  const localKeys = Object.keys(local).filter(isPersistKey);
-  if (!prefKeys.length) return 'prefs-empty→migrate-local';
-  if (localKeys.length && stampOf(local) > stampOf(prefs)) return 'local-newer→push-to-prefs';
-  return 'prefs-newer-or-equal→prefs-to-local';
+/** Diagnostics: which copy planHydrate picks and why (same rules, as text). */
+export function hydrateReason(prefs: Record<string, string>, local: Record<string, string>): string {
+  if (!Object.keys(prefs).filter(isPersistKey).length) return 'prefs-empty→copy-local-to-prefs';
+  if (!hasSave(local)) return 'local-has-no-save→prefs-to-local';
+  if (stampOf(prefs) > stampOf(local)) return 'prefs-newer→prefs-to-local';
+  return stampOf(prefs) === stampOf(local) ? `stamps-equal(${stampOf(local) || 'none'})→keep-local,push-to-prefs` : 'local-newer→keep-local,push-to-prefs';
 }
 
 export interface NativeWrite {
@@ -72,34 +73,43 @@ export interface KvBackend {
 }
 
 /**
- * Mirror every game-key write/remove on `storage` into `backend`. 1.4.42: coalesced — only the latest value of each
- * key is sent (the save is large and written often; a long queue of stale copies could still be in flight when the
- * app was closed), with the write stamp after the data. Failed writes stay queued for the next drain / flush.
+ * 1.4.44 native mirror (no longer patches localStorage — see kv.ts). `set` / `remove` are called by kvSet / kvRemove
+ * right after the localStorage write. Coalesced: only the latest value of each key is sent, the write stamp is bumped
+ * in localStorage after the data and sent last. Failed writes stay queued for the next drain / flush.
  */
-export function installWriteThrough(
-  storage: Storage,
+export interface Mirror {
+  set(key: string, value: string): void;
+  remove(key: string): void;
+  flush(): Promise<void>;
+}
+
+export function createMirror(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
   backend: KvBackend,
   now: () => number = Date.now,
   onBatch?: (writes: NativeWrite[]) => void,
-): () => Promise<void> {
+): Mirror {
   const clock = typeof performance !== 'undefined' ? () => performance.now() : Date.now;
-  const setItem = storage.setItem.bind(storage);
-  const removeItem = storage.removeItem.bind(storage);
   const pending = new Map<string, string | null>();
   let stamp = Number(storage.getItem(STAMP_KEY)) || 0;
   let running: Promise<void> | null = null;
   const touch = () => {
     stamp = Math.max(now(), stamp + 1);
-    setItem(STAMP_KEY, String(stamp));
+    try {
+      storage.setItem(STAMP_KEY, String(stamp));
+    } catch {
+      /* quota: the native copy still gets the stamp */
+    }
     pending.delete(STAMP_KEY);
     pending.set(STAMP_KEY, String(stamp));
   };
   const queue = (key: string, value: string | null) => {
+    if (!isPersistKey(key) || key === STAMP_KEY) return;
     pending.delete(key);
     pending.set(key, value);
     touch();
     nativeQueue.pending = pending.size;
-    drain();
+    void drain();
   };
   const drain = (): Promise<void> => {
     if (running) return running;
@@ -141,16 +151,12 @@ export function installWriteThrough(
     });
     return running;
   };
-  storage.setItem = (key: string, value: string) => {
-    setItem(key, value);
-    if (isPersistKey(key) && key !== STAMP_KEY) queue(key, String(value));
-  };
-  storage.removeItem = (key: string) => {
-    removeItem(key);
-    if (isPersistKey(key) && key !== STAMP_KEY) queue(key, null);
-  };
-  return async () => {
-    for (let i = 0; i < 3 && (running || pending.size); i++) await drain();
+  return {
+    set: (key, value) => queue(key, String(value)),
+    remove: (key) => queue(key, null),
+    flush: async () => {
+      for (let i = 0; i < 3 && (running || pending.size); i++) await drain();
+    },
   };
 }
 
@@ -163,12 +169,27 @@ function snapshot(storage: Storage): Record<string, string> {
   return out;
 }
 
-let pendingWrites: () => Promise<void> = async () => {};
-/** Wait until every mirrored write has reached Preferences (call before reloading the page). */
+let mirror: Mirror | null = null;
+/** Wait until every mirrored write has reached Preferences (call before reloading the page / going to background). */
 export function flushPersist(): Promise<void> {
-  return pendingWrites();
+  return mirror ? mirror.flush() : Promise.resolve();
 }
 
+/** WebKit leftovers of the pre-1.4.44 `localStorage.setItem = …` wrapper (stored as items, not methods). */
+export function removeStrayWrapperItems(storage: Pick<Storage, 'getItem' | 'removeItem'>): string[] {
+  const gone: string[] = [];
+  for (const k of ['setItem', 'removeItem']) {
+    try {
+      if (storage.getItem(k) !== null) {
+        storage.removeItem(k);
+        gone.push(k);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return gone;
+}
 /** 1.4.43 diagnostics: what happened in hydrateNative (both copies as found, the choice, timings). */
 export interface HydrateInfo {
   native: boolean;
@@ -181,6 +202,8 @@ export interface HydrateInfo {
   toLocal: number;
   toPrefs: number;
   err?: string;
+  /** Leftover wrapper items removed this launch. */
+  stray?: string[];
 }
 export let hydrateInfo: HydrateInfo = { native: false, ms: 0, reason: 'web (no native copy)', prefsKeys: 0, localKeys: 0, prefs: {}, local: {}, toLocal: 0, toPrefs: 0 };
 
@@ -190,12 +213,20 @@ export function observeNativeWrites(fn: (writes: NativeWrite[]) => void): void {
   batchObserver = fn;
 }
 
-/** Native only: load Preferences into localStorage before the game boots, then write-through. Web: no-op. */
+/** Diagnostics: result of the start-up mirror probe ("ok …" / "FAILED …"); resolves once checked. */
+export let mirrorProbe: Promise<string> = Promise.resolve('n/a (web)');
+const PROBE_KEY = 'sekai-tree-mirror-probe';
+
+/**
+ * Native only: reconcile localStorage with the Preferences backup before the game boots, then install the mirror
+ * used by kvSet / kvRemove. Web: no-op (kvSet just writes localStorage).
+ */
 export async function hydrateNative(): Promise<void> {
   if (!isNative()) return;
   const t0 = Date.now();
+  const stray = removeStrayWrapperItems(localStorage);
   const local = snapshot(localStorage);
-  hydrateInfo = { native: true, ms: 0, reason: 'error', prefsKeys: 0, localKeys: Object.keys(local).filter(isPersistKey).length, prefs: {}, local, toLocal: 0, toPrefs: 0 };
+  hydrateInfo = { native: true, ms: 0, reason: 'error', prefsKeys: 0, localKeys: Object.keys(local).filter(isPersistKey).length, prefs: {}, local, toLocal: 0, toPrefs: 0, stray };
   try {
     const { keys } = await Preferences.keys();
     const prefs: Record<string, string> = {};
@@ -207,7 +238,7 @@ export async function hydrateNative(): Promise<void> {
     hydrateInfo = { ...hydrateInfo, prefs, prefsKeys: Object.keys(prefs).length, reason: hydrateReason(prefs, local), toLocal: plan.toLocal.length, toPrefs: plan.toPrefs.length };
     for (const [k, v] of plan.toLocal) localStorage.setItem(k, v);
     for (const [key, value] of plan.toPrefs) await Preferences.set({ key, value });
-    pendingWrites = installWriteThrough(
+    mirror = createMirror(
       localStorage,
       {
         set: (key, value) => Preferences.set({ key, value }),
@@ -216,8 +247,25 @@ export async function hydrateNative(): Promise<void> {
       Date.now,
       (w) => batchObserver?.(w),
     );
+    setKvMirror(mirror);
+    const m = mirror;
+    mirrorProbe = (async () => {
+      const value = String(Date.now());
+      const before = localStorage.getItem(STAMP_KEY);
+      const p0 = Date.now();
+      try {
+        kvSet(PROBE_KEY, value);
+        await m.flush();
+        const got = (await Preferences.get({ key: PROBE_KEY })).value;
+        const stamped = localStorage.getItem(STAMP_KEY) !== before;
+        return got === value && stamped ? `ok (${Date.now() - p0}ms, stamp set)` : `FAILED (native ${got === value ? 'ok' : 'missing'}, stamp ${stamped ? 'set' : 'NOT set'})`;
+      } catch (e) {
+        return `FAILED ${String(e).slice(0, 80)}`;
+      }
+    })();
   } catch (e) {
     hydrateInfo = { ...hydrateInfo, err: String(e).slice(0, 120) };
+    mirrorProbe = Promise.resolve('FAILED (Preferences unavailable)');
     /* Preferences unavailable: the game keeps using localStorage as on the web. */
   }
   hydrateInfo.ms = Date.now() - t0;

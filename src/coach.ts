@@ -1,4 +1,5 @@
 import { t as tl } from './i18n';
+import { kvSet, kvRemove } from './native/kv';
 /** First-plant coach. Stored beside the save so an existing tree is not interrupted. */
 
 export interface Coach {
@@ -89,7 +90,7 @@ export function loadCoach(): Coach {
 
 export function saveCoach(c: Coach): void {
   try {
-    localStorage?.setItem(COACH_KEY, JSON.stringify(c));
+    kvSet(COACH_KEY, JSON.stringify(c));
   } catch {
     /* private mode */
   }
@@ -97,7 +98,7 @@ export function saveCoach(c: Coach): void {
 
 export function clearCoach(): void {
   try {
-    localStorage?.removeItem(COACH_KEY);
+    kvRemove(COACH_KEY);
   } catch {
     /* private mode */
   }

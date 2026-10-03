@@ -6,6 +6,7 @@
  */
 import type { WeatherEventId } from './balance';
 import { t as tl } from './i18n';
+import { kvStorage } from './native/kv';
 
 export const PREMIUM_KEY = 'sekai-tree-premium';
 /** RevenueCat entitlement / store product (App Store Connect + Play Console). */
@@ -115,7 +116,7 @@ export function loadPremium(storage: Pick<Storage, 'getItem'> = localStorage): P
   return parsePremium(storage.getItem(PREMIUM_KEY));
 }
 
-export function savePremium(p: PremiumStore, storage: Pick<Storage, 'setItem'> = localStorage): void {
+export function savePremium(p: PremiumStore, storage: Pick<Storage, 'setItem'> = kvStorage): void {
   try {
     storage.setItem(PREMIUM_KEY, JSON.stringify(p));
   } catch {

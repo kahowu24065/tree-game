@@ -1,6 +1,7 @@
 import type { WeatherEventId } from '../balance';
 import type { TimeMode } from '../types';
 import type { SpeciesId } from '../data/species';
+import { kvSet } from '../native/kv';
 
 /** Developer panel settings — stored apart from the game save. */
 export interface DevSettings {
@@ -34,7 +35,7 @@ export function loadDev(): DevSettings {
 
 export function saveDev(d: DevSettings): void {
   try {
-    localStorage.setItem(DEV_KEY, JSON.stringify(d));
+    kvSet(DEV_KEY, JSON.stringify(d));
   } catch {
     /* ignore */
   }
