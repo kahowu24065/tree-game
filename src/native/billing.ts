@@ -2,7 +2,7 @@
  * Store subscription via RevenueCat (StoreKit on iOS, Play Billing on Android). Public SDK keys come from build-time
  * env (VITE_RC_IOS_KEY / VITE_RC_ANDROID_KEY, never committed). Browsers and builds without a key: unavailable.
  */
-import { ENTITLEMENT, LIFETIME_ID, PRODUCT_ID, type Plan } from '../premium';
+import { ENTITLEMENT, LIFETIME_ID, PLANS, PRODUCT_ID, YEARLY_ID, type Plan } from '../premium';
 import { isNative, platformName } from './platform';
 
 export type BillingState = 'unavailable' | 'loading' | 'ready';
@@ -12,6 +12,8 @@ export interface BillingInfo {
   active: boolean;
   /** Store-localised monthly price, e.g. "HK$8.00" (null until the offering loads / not set up). */
   price: string | null;
+  /** 1.4.40: store-localised yearly price (null until loaded / not set up). */
+  yearlyPrice: string | null;
   /** 1.4.39: store-localised one-time lifetime price (null until loaded / not set up). */
   lifetimePrice: string | null;
   /** The active entitlement comes from the lifetime purchase (no expiry, no renewal). */
@@ -39,17 +41,21 @@ export function defaultManageUrl(platform = platformName()): string {
     : `https://play.google.com/store/account/subscriptions?sku=${PRODUCT_ID}&package=app.sekaitree.game`;
 }
 
-let info: BillingInfo = { state: 'unavailable', active: false, price: null, lifetimePrice: null, lifetime: false, manageUrl: defaultManageUrl(), expires: null, willRenew: false };
+let info: BillingInfo = { state: 'unavailable', active: false, price: null, yearlyPrice: null, lifetimePrice: null, lifetime: false, manageUrl: defaultManageUrl(), expires: null, willRenew: false };
 const listeners: Listener[] = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let rc: any = null;
-// Monthly / lifetime: an offering package, else (lifetime only) the store product fetched by id.
+// Per plan: the offering package (Monthly / Annual / Lifetime), else the store product fetched by id.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let pkg: any = null;
+let pkgs: Record<Plan, any> = { monthly: null, yearly: null, lifetime: null };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let lifePkg: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let lifeProduct: any = null;
+let products: Record<Plan, any> = { monthly: null, yearly: null, lifetime: null };
+const PLAN_ID: Record<Plan, string> = { monthly: PRODUCT_ID, yearly: YEARLY_ID, lifetime: LIFETIME_ID };
+const PLAN_PKG: Record<Plan, { key: 'monthly' | 'annual' | 'lifetime'; type: string }> = {
+  monthly: { key: 'monthly', type: 'MONTHLY' },
+  yearly: { key: 'annual', type: 'ANNUAL' },
+  lifetime: { key: 'lifetime', type: 'LIFETIME' },
+};
 
 function emit(patch: Partial<BillingInfo>): void {
   info = { ...info, ...patch };
@@ -93,41 +99,48 @@ export async function initBilling(): Promise<void> {
 }
 
 async function loadOffering(): Promise<void> {
+  pkgs = { monthly: null, yearly: null, lifetime: null };
   try {
-    const offerings = await rc.getOfferings();
-    const cur = offerings?.current;
+    const cur = (await rc.getOfferings())?.current;
     const all: { packageType?: string; product?: { identifier?: string } }[] = cur?.availablePackages ?? [];
-    pkg = cur?.monthly ?? all.find((p) => p.product?.identifier?.startsWith(PRODUCT_ID)) ?? null;
-    lifePkg = cur?.lifetime ?? all.find((p) => p.packageType === 'LIFETIME' || p.product?.identifier?.startsWith(LIFETIME_ID)) ?? null;
+    for (const p of PLANS) {
+      const { key, type } = PLAN_PKG[p];
+      pkgs[p] = cur?.[key] ?? all.find((x) => x.packageType === type || x.product?.identifier?.startsWith(PLAN_ID[p])) ?? null;
+    }
   } catch {
-    pkg = null;
-    lifePkg = null;
+    /* no offering: fall back to product ids below */
   }
-  if (!lifePkg) {
+  for (const p of PLANS) {
+    if (pkgs[p]) continue;
     try {
-      const { products } = await rc.getProducts({ productIdentifiers: [LIFETIME_ID], type: 'NON_SUBSCRIPTION' });
-      lifeProduct = products?.find((p: { identifier?: string }) => p.identifier?.startsWith(LIFETIME_ID)) ?? null;
+      const res = await rc.getProducts({ productIdentifiers: [PLAN_ID[p]], type: p === 'lifetime' ? 'NON_SUBSCRIPTION' : 'SUBSCRIPTION' });
+      products[p] = res?.products?.find((x: { identifier?: string }) => x.identifier?.startsWith(PLAN_ID[p])) ?? null;
     } catch {
-      lifeProduct = null;
+      products[p] = null;
     }
   }
-  emit({ price: pkg?.product?.priceString ?? null, lifetimePrice: (lifePkg?.product ?? lifeProduct)?.priceString ?? null });
+  const price = (p: Plan): string | null => (pkgs[p]?.product ?? products[p])?.priceString ?? null;
+  emit({ price: price('monthly'), yearlyPrice: price('yearly'), lifetimePrice: price('lifetime') });
+}
+
+/** Store price of a plan (null = not loaded / not set up). */
+export function planPrice(i: Pick<BillingInfo, 'price' | 'yearlyPrice' | 'lifetimePrice'>, plan: Plan): string | null {
+  return plan === 'monthly' ? i.price : plan === 'yearly' ? i.yearlyPrice : i.lifetimePrice;
 }
 
 /** Which plans have a store price (= can be bought now). Pure, for tests. */
-export function planReady(i: Pick<BillingInfo, 'state' | 'price' | 'lifetimePrice'>, plan: Plan): boolean {
-  return i.state === 'ready' && (plan === 'monthly' ? i.price : i.lifetimePrice) !== null;
+export function planReady(i: Pick<BillingInfo, 'state' | 'price' | 'yearlyPrice' | 'lifetimePrice'>, plan: Plan): boolean {
+  return i.state === 'ready' && planPrice(i, plan) !== null;
 }
 
 export type PurchaseResult = 'ok' | 'cancelled' | 'failed' | 'unavailable';
 
 export async function purchase(plan: Plan = 'monthly'): Promise<PurchaseResult> {
   if (!rc) return 'unavailable';
-  const have = () => (plan === 'monthly' ? pkg : lifePkg ?? lifeProduct);
-  if (!have()) await loadOffering();
-  if (!have()) return 'unavailable';
+  if (!pkgs[plan] && !products[plan]) await loadOffering();
+  if (!pkgs[plan] && !products[plan]) return 'unavailable';
   try {
-    const res = plan === 'monthly' ? await rc.purchasePackage({ aPackage: pkg }) : lifePkg ? await rc.purchasePackage({ aPackage: lifePkg }) : await rc.purchaseStoreProduct({ product: lifeProduct });
+    const res = pkgs[plan] ? await rc.purchasePackage({ aPackage: pkgs[plan] }) : await rc.purchaseStoreProduct({ product: products[plan] });
     applyCustomer(res?.customerInfo);
     return info.active ? 'ok' : 'failed';
   } catch (e) {
@@ -135,7 +148,7 @@ export async function purchase(plan: Plan = 'monthly'): Promise<PurchaseResult> 
   }
 }
 
-/** Restore (monthly and lifetime alike — both grant `premium`): 'ok' (entitlement active), 'none' or 'failed'. */
+/** Restore (monthly, yearly and lifetime alike — both grant `premium`): 'ok' (entitlement active), 'none' or 'failed'. */
 export async function restore(): Promise<'ok' | 'none' | 'failed' | 'unavailable'> {
   if (!rc) return 'unavailable';
   try {

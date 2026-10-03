@@ -126,7 +126,7 @@ import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { setAdsPremium, syncBanner } from './native/banner';
 import { billingInfo, billingSupported, initBilling, onBilling, planReady, purchase, restore } from './native/billing';
-import { PREMIUM_EXTRAS, type Plan, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
+import { PLANS, PREMIUM_EXTRAS, type Plan, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
 import { premiumModal, premiumRow, weatherAlbumModal, type PremiumMode } from './premiumUi';
 import { isNative, platformName } from './native/platform';
 import { flushPersist, hydrateNative } from './native/persist';
@@ -1700,7 +1700,7 @@ function doAction(action: string, target: HTMLElement): void {
       showPremium('paywall');
       return;
     case 'premium-buy':
-      void buyPremium(target.dataset.plan === 'lifetime' ? 'lifetime' : 'monthly');
+      void buyPremium(PLANS.find((p) => p === target.dataset.plan) ?? 'monthly');
       return;
     case 'premium-restore':
       void restorePremium();

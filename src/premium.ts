@@ -13,7 +13,10 @@ export const ENTITLEMENT = 'premium';
 export const PRODUCT_ID = 'sekai_tree_monthly';
 /** 1.4.39: one-time (non-consumable) purchase granting the same `premium` entitlement for good. */
 export const LIFETIME_ID = 'sekai_tree_lifetime';
-export type Plan = 'monthly' | 'lifetime';
+/** 1.4.40: yearly auto-renewing subscription, same subscription group as monthly, same `premium` entitlement. */
+export const YEARLY_ID = 'sekai_tree_yearly';
+export type Plan = 'monthly' | 'yearly' | 'lifetime';
+export const PLANS: readonly Plan[] = ['monthly', 'yearly', 'lifetime'];
 /**
  * Extra perks (monthly leaf skins + real-weather album) are built but switched OFF: the only perk is "no ads".
  * While false nothing about them is shown, recorded or applied. Flip to true (and restore the paywall text) later.

@@ -3,9 +3,11 @@ import { LOCALES, t, useLocale } from '../src/i18n';
 import { PREMIUM_EXTRAS, activeSkin, claimMonthlySkin, diaryByMonth, emptyPremium, equipSkin, noteDiary, parsePremium, settleDiary, SKINS, skinOfMonth } from '../src/premium';
 import { adsWanted } from '../src/native/banner';
 import { planReady, billingKey, billingSupported, defaultManageUrl, type BillingInfo } from '../src/native/billing';
-import { APPLE_EULA_URL, premiumModal, premiumRow, PRIVACY_URL, TERMS_URL, weatherAlbumModal } from '../src/premiumUi';
+import { APPLE_EULA_URL, priceLine, premiumModal, premiumRow, PRIVACY_URL, TERMS_URL, weatherAlbumModal } from '../src/premiumUi';
 
-const billing = (o: Partial<BillingInfo> = {}): BillingInfo => ({ state: 'ready', active: false, price: 'HK$8.00', lifetimePrice: 'HK$88.00', lifetime: false, manageUrl: 'https://apps.apple.com/account/subscriptions', expires: null, willRenew: false, ...o });
+/** Price line with its soft line-break hints (premiumUi). */
+const w = (s: string) => priceLine(s);
+const billing = (o: Partial<BillingInfo> = {}): BillingInfo => ({ state: 'ready', active: false, price: 'HK$8.00', yearlyPrice: 'HK$80.00', lifetimePrice: 'HK$88.00', lifetime: false, manageUrl: 'https://apps.apple.com/account/subscriptions', expires: null, willRenew: false, ...o });
 
 afterEach(() => useLocale('zh-HK'));
 
@@ -121,7 +123,7 @@ describe('paywall', () => {
 describe('1.4.37 paywall before the store is set up (no RevenueCat key)', () => {
   it.each(LOCALES)('%s: full iOS paywall, plans named without a price, enabled buttons, restore / manage / disclosure / EULA + privacy, no "store unavailable" line', (loc) => {
     useLocale(loc);
-    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ state: 'unavailable', price: null, lifetimePrice: null }), today: '2026-10-03', notYet: true });
+    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ state: 'unavailable', price: null, yearlyPrice: null, lifetimePrice: null }), today: '2026-10-03', notYet: true });
     for (const s of ['data-action="premium-buy"', 'data-action="premium-restore"', 'apps.apple.com/account/subscriptions', APPLE_EULA_URL, PRIVACY_URL]) expect(html).toContain(s);
     expect(html).toContain(t('prem.lead'));
     expect(html).not.toContain('HK$');
@@ -142,13 +144,13 @@ describe('1.4.37 paywall before the store is set up (no RevenueCat key)', () => 
 describe('1.4.39 monthly + lifetime plans, store prices only', () => {
   it.each(LOCALES)('%s: two buttons with the store prices, perks incl. "more perks later", disclosure with price + one-time note', (loc) => {
     useLocale(loc);
-    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ price: 'NT$30', lifetimePrice: 'NT$330' }), today: '2026-10-03' });
+    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ price: 'NT$30', yearlyPrice: null, lifetimePrice: 'NT$330' }), today: '2026-10-03' });
     expect(html).toContain('data-plan="monthly"');
     expect(html).toContain('data-plan="lifetime"');
-    expect(html).toContain(`>${t('prem.planMonthly')}<small class="prem-price">${t('prem.priceMonthly', { price: 'NT$30' })}</small></button>`);
-    expect(html).toContain(`>${t('prem.planLifetime')}<small class="prem-price">${t('prem.priceOnce', { price: 'NT$330' })}</small></button>`);
+    expect(html).toContain(`>${t('prem.planMonthly')}<small class="prem-price">${w(t('prem.priceMonthly', { price: 'NT$30' }))}</small></button>`);
+    expect(html).toContain(`>${t('prem.planLifetime')}<small class="prem-price">${w(t('prem.priceOnce', { price: 'NT$330' }))}</small></button>`);
     expect(html).toContain(`<li>${t('prem.perkAds')}</li><li>${t('prem.perkMore')}</li>`);
-    expect(html).toContain(t('prem.perMonth', { price: 'NT$30' }).trim().replace(/&/g, '&amp;'));
+    expect(html).toContain(t('prem.priceMonthly', { price: 'NT$30' }));
     expect(html).toContain(t('prem.lifetimeNote').slice(0, 8).replace(/"/g, '&quot;'));
     expect(html).not.toContain('HK$');
     expect(html).not.toContain('{per}');
@@ -168,5 +170,27 @@ describe('1.4.39 monthly + lifetime plans, store prices only', () => {
     const html = premiumModal({ mode: 'ios', store: p, billing: billing({ active: true, lifetime: true }), today: '2026-10-03' });
     expect(html).toContain(t('prem.lifetimeActive'));
     expect(html).not.toContain('premium-buy');
+  });
+});
+
+describe('1.4.40 yearly plan', () => {
+  it.each(LOCALES)('%s: 月費 / 年費 / 永久 in that order with store prices; disclosure lists monthly + yearly prices', (loc) => {
+    useLocale(loc);
+    const html = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ price: 'NT$30', yearlyPrice: 'NT$290', lifetimePrice: 'NT$330' }), today: '2026-10-03' });
+    const order = ['monthly', 'yearly', 'lifetime'].map((p) => html.indexOf(`data-plan="${p}"`));
+    expect(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1]))).toBe(true);
+    expect(html).toContain(`>${t('prem.planYearly')}<small class="prem-price">${w(t('prem.priceYearly', { price: 'NT$290' }))}</small></button>`);
+    const list = [t('prem.priceMonthly', { price: 'NT$30' }), t('prem.priceYearly', { price: 'NT$290' })].join(t('prem.listSep'));
+    expect(html).toContain(t('prem.perList', { list }).trim());
+    expect(html).not.toContain('{per}');
+    useLocale('zh-HK');
+  });
+  it('yearly without a price: name only, not buyable; no price fragment at all when nothing loaded', () => {
+    const b = billing({ yearlyPrice: null });
+    expect(premiumModal({ mode: 'ios', store: emptyPremium(), billing: b, today: '2026-10-03' })).toContain(`>${t('prem.planYearly')}</button>`);
+    expect(planReady(b, 'yearly')).toBe(false);
+    expect(planReady(b, 'monthly')).toBe(true);
+    const none = premiumModal({ mode: 'ios', store: emptyPremium(), billing: billing({ price: null, yearlyPrice: null, lifetimePrice: null }), today: '2026-10-03', notYet: true });
+    expect(none).toContain(t('prem.disclosureIos', { per: '' }).slice(0, 20).replace(/"/g, '&quot;'));
   });
 });

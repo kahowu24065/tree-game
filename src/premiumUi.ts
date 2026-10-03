@@ -2,7 +2,7 @@
 import { eventLabel } from './labels';
 import { getLocale, t as tl } from './i18n';
 import { weatherArt } from './icons';
-import { PREMIUM_EXTRAS, SKINS, diaryByMonth, skinName, skinOfMonth, type PremiumStore } from './premium';
+import { PREMIUM_EXTRAS, SKINS, diaryByMonth, skinName, skinOfMonth, type Plan, type PremiumStore } from './premium';
 import { esc, formatHeight } from './util';
 import type { BillingInfo } from './native/billing';
 
@@ -67,11 +67,17 @@ function dateText(iso: string | null): string {
 }
 
 /**
- * Paywall (not a member) or member page. 1.4.39: two plans side by side — 月費 (auto-renewing) and 永久 (one-time) —
+ * Paywall (not a member) or member page. 1.4.39/1.4.40: three plans side by side — 月費 / 年費 (auto-renewing) and 永久 (one-time) —
  * each labelled with the store's own localised price; never a hard-coded amount. A plan without a loaded price is
  * shown by name only and says "not open yet" when tapped (main.ts), as does every plan in a build without a store
  * key (`notYet`, 1.4.37: the full paywall is still shown, e.g. for the App Review screenshot).
  */
+/** Store price + unit; in a narrow button the unit ("/月", "（一次性）") drops to its own line whole. */
+export function priceLine(s: string): string {
+  const m = /^(.*?)([/／・（].*)$/.exec(s);
+  return m ? `${esc(m[1])}<wbr><span class="nw">${esc(m[2])}</span>` : esc(s);
+}
+
 export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billing: BillingInfo; today: string; busy?: boolean; extras?: boolean; notYet?: boolean }): string {
   const { mode, store, billing } = o;
   const extras = o.extras ?? PREMIUM_EXTRAS;
@@ -87,15 +93,16 @@ export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billin
     const status = billing.lifetime ? tl('prem.lifetimeActive') : when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
     return `${head}<p class="prem-status">${esc(tl('prem.active'))}${status ? `<br><small>${esc(status)}</small>` : ''}</p>${perks}${extras ? skinsSection(store, o.today) : ''}${album}${manage}${legal(mode)}${back}`;
   }
-  const per = billing.price ? tl('prem.perMonth', { price: billing.price }) : '';
+  const subs = [billing.price ? tl('prem.priceMonthly', { price: billing.price }) : '', billing.yearlyPrice ? tl('prem.priceYearly', { price: billing.yearlyPrice }) : ''].filter(Boolean);
+  const per = subs.length ? tl('prem.perList', { list: subs.join(tl('prem.listSep')) }) : '';
   const disclosure = `${esc(tl(mode === 'ios' ? 'prem.disclosureIos' : 'prem.disclosureAndroid', { per }))}<br>${esc(tl('prem.lifetimeNote'))}`;
   const loading = !o.notYet && billing.state === 'loading';
   const state = o.notYet ? '' : loading ? tl('prem.loading') : billing.state === 'unavailable' ? tl('prem.unavailable') : '';
   const off = loading || o.busy ? ' aria-disabled="true"' : '';
-  // Plan name, with the store price on a second line when loaded (keeps both buttons side by side on a 320 px phone).
-  const plan = (p: 'monthly' | 'lifetime', name: string, price: string | null) =>
-    `<button type="button" class="primary prem-buy" data-action="premium-buy" data-plan="${p}"${off}>${esc(name)}${price ? `<small class="prem-price">${esc(price)}</small>` : ''}</button>`;
-  const buy = `<div class="prem-plans">${plan('monthly', tl('prem.planMonthly'), billing.price ? tl('prem.priceMonthly', { price: billing.price }) : null)}${plan('lifetime', tl('prem.planLifetime'), billing.lifetimePrice ? tl('prem.priceOnce', { price: billing.lifetimePrice }) : null)}</div>`;
+  // Plan name, with the store price on a second line when loaded (three columns still fit a 320 px phone).
+  const plan = (p: Plan, name: string, price: string | null) =>
+    `<button type="button" class="primary prem-buy" data-action="premium-buy" data-plan="${p}"${off}>${esc(name)}${price ? `<small class="prem-price">${priceLine(price)}</small>` : ''}</button>`;
+  const buy = `<div class="prem-plans">${plan('monthly', tl('prem.planMonthly'), billing.price ? tl('prem.priceMonthly', { price: billing.price }) : null)}${plan('yearly', tl('prem.planYearly'), billing.yearlyPrice ? tl('prem.priceYearly', { price: billing.yearlyPrice }) : null)}${plan('lifetime', tl('prem.planLifetime'), billing.lifetimePrice ? tl('prem.priceOnce', { price: billing.lifetimePrice }) : null)}</div>`;
   return `${head}<p class="prem-lead">${esc(tl('prem.lead'))}</p>${perks}${state ? `<p class="prem-small">${esc(state)}</p>` : ''}${buy}${album}${manage}<p class="prem-disclosure">${disclosure}</p>${legal(mode)}${back}`;
 }
 

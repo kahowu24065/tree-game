@@ -1473,8 +1473,8 @@ const table: Record<string, string> = {
  "prem.manage": "管理訂閱",
  "prem.terms": "使用條款",
  "prem.privacy": "私隱權政策",
- "prem.disclosureIos": "「世界之樹會員」係每月自動續期訂閱{per}。確認購買時會經你嘅 Apple 帳戶收費。除非喺今期完結前最少 24 小時關閉自動續期，否則訂閱會自動續期，並喺今期完結前 24 小時內收取下期費用。你可以喺 App Store 帳戶設定管理或者取消訂閱。",
- "prem.disclosureAndroid": "「世界之樹會員」係每月自動續期訂閱{per}，確認購買時會經 Google Play 收費。除非喺今期完結前取消，否則每月會自動續期收費。你可以隨時喺 Google Play「付款和訂閱」管理或者取消。",
+ "prem.disclosureIos": "「世界之樹會員」月費同年費係自動續期訂閱{per}，每月或者每年續期一次。確認購買時會經你嘅 Apple 帳戶收費。除非喺今期完結前最少 24 小時關閉自動續期，否則訂閱會自動續期，並喺今期完結前 24 小時內收取下期費用。你可以喺 App Store 帳戶設定管理或者取消訂閱。",
+ "prem.disclosureAndroid": "「世界之樹會員」月費同年費係自動續期訂閱{per}，確認購買時會經 Google Play 收費。除非喺今期完結前取消，否則會按月或者按年自動續期收費。你可以隨時喺 Google Play「付款和訂閱」管理或者取消。",
  "prem.active": "你係會員，多謝支持！",
  "prem.renews": "{date} 自動續期",
  "prem.expires": "{date} 到期（已關閉自動續期）",
@@ -1550,10 +1550,13 @@ const table: Record<string, string> = {
  "prem.perkMore": "後續更新會加入更多會員福利",
  "prem.planMonthly": "月費",
  "prem.planLifetime": "永久",
- "prem.priceMonthly": "{price}／月",
- "prem.priceOnce": "{price}・一次性",
- "prem.perMonth": "（{price}／月）",
+ "prem.priceMonthly": "{price}/月",
+ "prem.priceOnce": "{price}（一次性）",
  "prem.lifetimeNote": "「永久」係一次性購買，唔會自動續期，亦唔會再收費。",
- "prem.lifetimeActive": "永久會員"
+ "prem.lifetimeActive": "永久會員",
+ "prem.planYearly": "年費",
+ "prem.priceYearly": "{price}/年",
+ "prem.perList": "（{list}）",
+ "prem.listSep": "、"
 };
 export default table;

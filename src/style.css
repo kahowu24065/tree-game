@@ -4160,7 +4160,11 @@ body.sheet-open .animal-toast.show {
 html[lang='en'] .status-sub {
   white-space: normal;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.prem-price .nw {
+  white-space: nowrap;
 }
 /* Stat rows: the letter keys (H/W/N/R) only; full names stay in the title tooltip. */
 html[lang='en'] .bar {
@@ -4266,26 +4270,27 @@ html[lang='en'] .emerg > span {
   margin: 6px 0 10px;
 }
 
-/* 1.4.39: 月費 | 永久 side by side; the store price sits on a second line inside each button. */
+/* 1.4.39/1.4.40: 月費 | 年費 | 永久 in three equal columns; the store price sits on a second line inside each button. */
 .prem-plans {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
   margin: 6px 0 10px;
 }
 
 .prem-plans .prem-buy {
-  flex: 1 1 0;
   min-width: 0;
   width: auto;
+  height: auto;
+  min-height: 46px;
   margin: 0;
-  padding-left: 6px;
-  padding-right: 6px;
+  padding: 7px 4px;
   line-height: 1.25;
 }
 
 .prem-price {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   opacity: 0.9;
   overflow-wrap: anywhere;
