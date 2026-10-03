@@ -90,6 +90,7 @@ describe('no hard-coded Chinese in src', () => {
     'hko.ts': [/./], // HKO station names + psr codes + "級" regex: matched against the Observatory's Chinese API
     'smg.ts': [/./], // SMG station names (shown via tName) + Chinese XML parse patterns
     'cwa.ts': [/^臺灣$/, /特報|警報|資訊|訊息|燈號|^(黃|橙|紅)色$/], // place fallback (tName); CWA warning names matched to warn.* keys
+    'presets.ts': [/^(中西區|油尖旺|沙田|離島區)$/], // HKO rainfall district names, matched against rhrread
     'weather.ts': [/^(澳門|香港|天晴|陽光)$/, /陽光|區/], // place names via tName; HKO-text mapping regexes
     'storage.ts': [/./], // migrations rewriting text in old saves
     'ui.ts': [/健康/], // regex parsing health marks out of old log text

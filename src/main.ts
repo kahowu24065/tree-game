@@ -10,7 +10,8 @@ import { bookGameEnd, bookMilestones, bookNest, bookWeather, loadMeta, newGame, 
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { mulchLaid } from './campfire';
-import { eventLabel, regionFor, setLabelRegion } from './labels';
+import { eventLabel, setLabelRegion } from './labels';
+import { findPlace, migratePlaceId, pushRegionFlags, weatherRegion, type WeatherRegion } from './presets';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
@@ -107,8 +108,6 @@ import {
   hkoForecast,
   stampDays,
   inHongKong,
-  inMacau,
-  nearHongKong,
   isRainCode,
   isSnowCode,
   locate,
@@ -121,7 +120,7 @@ import {
 } from './weather';
 import { fetchHko, fillHkoGaps, hkoIconLabel, hkoIconRain, hkoIconToWmo } from './hko';
 import { fetchSmg } from './smg';
-import { cwaArea, fetchCwa, inTaiwan } from './cwa';
+import { cwaArea, fetchCwa } from './cwa';
 import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
@@ -239,9 +238,14 @@ let plantingSecond = false;
 let dev: DevSettings = DEV_PANEL ? loadDev() : defaultDev();
 let tab: TabId = 'care';
 let placeChoice = localStorage.getItem(PLACE_KEY) ?? '';
+// 1.4.48 one-time move of the old Hong Kong presets (中環 → 香港, 沙田／大埔／西貢／元朗 → 新界, 東涌 → 離島).
+if (migratePlaceId(placeChoice) !== placeChoice) {
+  placeChoice = migratePlaceId(placeChoice);
+  kvSet(PLACE_KEY, placeChoice);
+}
 let weather: WeatherSnapshot = initialWeather();
 let weatherLoading = weather.provider === 'sim';
-setLabelRegion(regionFor(weather.source, nearHongKong(weather.lat, weather.lon), inMacau(weather.lat, weather.lon)));
+setLabelRegion(snapRegion(weather) === 'hk' || snapRegion(weather) === 'mo' ? 'hk' : 'intl');
 let statusLine = weather.origin === 'live' ? tl('main.001') : tl('ui.152');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let pendingNote = '';
@@ -275,7 +279,7 @@ const sheetHandle = document.getElementById('sheet-handle');
 function initialWeather(): WeatherSnapshot {
   const cached = loadWeatherCache();
   const choice = placeChoice && placeChoice !== 'geo' ? placeChoice : 'auto';
-  if (cached && cached.provider !== 'sim' && (cached.choice ?? 'auto') === choice) {
+  if (cached && cached.provider !== 'sim' && migratePlaceId(cached.choice ?? 'auto') === choice) {
     const age = Date.now() - cached.fetchedAt;
     if (age < WEATHER_TTL_MS) return { ...cached, origin: 'live' };
     if (age < WEATHER_STALE_MS) return { ...cached, origin: 'cache' };
@@ -320,13 +324,18 @@ function presentedDays() {
   return presentForecast(weather.daily, today());
 }
 
-function usesSmg(snapshot: WeatherSnapshot = weather): boolean {
-  return snapshot.source === 'geo' && inMacau(snapshot.lat, snapshot.lon);
+/** 1.4.48 which bureau covers this snapshot: a preset's own region, or the GPS fix's coordinates (see weatherRegion). */
+function snapRegion(snapshot: WeatherSnapshot): WeatherRegion {
+  return weatherRegion(snapshot.source, snapshot.lat, snapshot.lon, snapshot.choice);
 }
 
-/** v1.4.14: a device location in Taiwan uses 中央氣象署 (via the push server) for weather and warnings. */
+function usesSmg(snapshot: WeatherSnapshot = weather): boolean {
+  return snapRegion(snapshot) === 'mo';
+}
+
+/** v1.4.14: Taiwan (device location or, since 1.4.48, a Taiwan preset) uses CWA via the push server. */
 function usesCwa(snapshot: WeatherSnapshot = weather): boolean {
-  return snapshot.source === 'geo' && inTaiwan(snapshot.lat, snapshot.lon);
+  return snapRegion(snapshot) === 'tw';
 }
 
 /** Official warnings (HKO, SMG or CWA) decide severe weather, rather than model numbers. */
@@ -875,9 +884,7 @@ function scheduleReminders(background: boolean): void {
         warm: done('warmCover'),
       },
       region: { lat: weather.lat, lon: weather.lon },
-      isHK: usesHko(weather) || usesSmg(weather),
-      isMO: usesSmg(weather),
-      ...(usesCwa(weather) ? { isTW: true, twCounty: cwaArea()?.county || undefined, twTown: cwaArea()?.town || undefined } : {}),
+      ...pushRegionFlags(snapRegion(weather), usesCwa(weather) ? cwaArea() : null),
       rUnlocked: Boolean(state.windUnlocked),
       alive: state.started && !state.over,
       tree: state.over ? 'dead' : state.dying ? 'dying' : 'ok',
@@ -1201,7 +1208,7 @@ function clockOf(ms: number): string {
 }
 
 function usesHko(snapshot: WeatherSnapshot): boolean {
-  return !usesSmg(snapshot) && regionFor(snapshot.source, nearHongKong(snapshot.lat, snapshot.lon)) === 'hk';
+  return snapRegion(snapshot) === 'hk';
 }
 
 let refreshing: Promise<void> | null = null;
@@ -1249,20 +1256,22 @@ function refreshWeather(forceLocate = false): Promise<void> {
  * Sun times still come from Open-Meteo when it answered, because the bureaus don't send them.
  */
 async function loadWeather(forceLocate: boolean): Promise<void> {
-  const manual = PLACES.find((p) => p.id === placeChoice);
+  const manual = findPlace(placeChoice);
   const reuseGeo = !forceLocate && weather.source === 'geo' && weather.choice === 'auto' && Date.now() - weather.fetchedAt < WEATHER_TTL_MS;
   const loc = manual
     ? { lat: manual.lat, lon: manual.lon, source: 'manual' as const }
     : reuseGeo
       ? { lat: weather.lat, lon: weather.lon, source: 'geo' as const }
       : await locate(8000);
-  const macau = loc.source === 'geo' && inMacau(loc.lat, loc.lon);
-  const tw = loc.source === 'geo' && !macau && inTaiwan(loc.lat, loc.lon);
+  // 1.4.48: a preset is routed by its own region (Macau / Taiwan presets too), a GPS fix by where it is.
+  const region = weatherRegion(loc.source, loc.lat, loc.lon, manual?.id);
+  const macau = region === 'mo';
+  const tw = region === 'tw';
   // Macau (SMG) and Taiwan (CWA) share one path: a bureau bundle in the HKO shape plus its own wind / rain readings.
   const mo = macau || tw;
   const bureauId: WeatherProvider = tw ? 'cwa' : 'smg';
   const bureauTz = tw ? 'Asia/Taipei' : 'Asia/Macau';
-  const hk = !mo && (loc.source !== 'geo' || nearHongKong(loc.lat, loc.lon));
+  const hk = region === 'hk';
   const intl = !hk && !mo;
   const [om, hkoRes, smgRes, placeRes, alertRes] = await Promise.allSettled([
     fetchForecast(loc.lat, loc.lon),
@@ -1285,7 +1294,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   // Taiwan: the CWA station's town (the same area its warnings are checked for) beats the reverse geocoder.
   const cwaPlace = tw && smg ? cwaArea()?.town || cwaArea()?.county || undefined : undefined;
   const place = manual?.name ?? cwaPlace ?? found?.name ?? (macau ? tl('main.044') : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? tl('ui.346') : tl('main.009'));
-  const district = manual?.name ?? found?.district;
+  // HKO rainfall is keyed by its Chinese district names, so a preset brings its own (not the translated label).
+  const district = manual ? manual.rainDistrict : found?.district;
   const openMeteo = om.status === 'fulfilled' ? om.value : null;
   let base: ForecastResult | null = hk || mo ? null : openMeteo;
   let provider: WeatherProvider = 'open-meteo';

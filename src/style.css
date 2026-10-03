@@ -2220,6 +2220,44 @@ body.sheet-open .sheet-backdrop {
   gap: 8px;
 }
 
+/* 1.4.48 grouped presets: small region heading over each two-column grid. */
+.place-groups {
+  margin-bottom: 4px;
+}
+
+.places-head {
+  margin: 8px 2px 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.place-groups .place {
+  min-width: 0;
+  height: auto;
+  min-height: 38px;
+  padding: 5px 8px;
+  gap: 5px;
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+
+.place-groups .place span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.place-groups .place svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.place-groups .places {
+  gap: 6px;
+}
+
 .setting-row {
   display: flex;
   align-items: center;
