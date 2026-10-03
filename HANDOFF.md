@@ -104,6 +104,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.36 | 存咗嘅文字跟而家語言：成長日誌每行除咗原文，加存訊息 key＋參數（`LogEntry.i18n`，`src/i18n/msg.ts`），顯示時用而家語言重砌；寫入時靠 `t()` 最近輸出追蹤（`traceOf`）攞準 key，舊存檔逐行對四語範本反向配對（`migrateLogI18n`，要砌返一模一樣先算），配唔到就照原文顯示；早晨小結（`morningNote`）、結算水分標籤都跟語言；`labels.001` 拆 個／場 兩條（英文冇量詞）；健康日曆記號識英文；禁止頁面縮放（viewport `maximum-scale=1, user-scalable=no`、body `touch-action: manipulation`、iOS `gesturestart`／`dblclick` preventDefault），UI 唔可以長按揀字／彈 callout（輸入框、存檔碼、診斷文字除外），3D 小島雙指縮放照舊；versionCode 43 |
 | 1.4.37 | 法律頁：重寫 `public/privacy.html`／`public/terms.html`（繁體中文書面語＋英文，生效 2026-10-03，按實際行為：位置、推送伺服器資料、天氣 API、本機存檔、AdMob＋UMP＋ATT、RevenueCat 訂閱 HK$8／月、Apple EULA、兒童、刪除資料，聯絡 akar.554426@gmail.com），GitHub Pages 上線；設定底部改為 免責聲明／私隱權政策／使用條款（後兩個直接開網頁，`src/legal.ts`），刪咗 App 內舊私隱簡介（`ui.357`）；ios 分支：冇 RC_IOS_KEY 都顯示完整訂閱頁，撳訂閱／恢復購買會提示「暫時未開放」；versionCode 44 |
 | 1.4.38 | 網站搬去 Cloudflare Pages：https://sekai-tree.pages.dev/（project `sekai-tree`），App 內私隱權政策／使用條款連結（設定、訂閱頁，`src/legal.ts`）改用 `https://sekai-tree.pages.dev/privacy`、`/terms`；新增 `scripts/deploy-pages.sh`；gh-pages 照舊部署；versionCode 45 |
+| 1.4.39 | 訂閱頁（ios 分支）：「冇廣告」下面加一行較淡嘅次要項目「後續更新會加入更多會員福利」（`prem.perkMore`，四語），唔會當成而家已有嘅付費功能；main 只係升版本；versionCode 46 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -317,3 +318,6 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 舊網址轉址（2026-10-03）
 - `kahowu24065.github.io/tree-game/` 改為轉址去 https://sekai-tree.pages.dev/（gh-pages d580ec5，源檔 `site-redirect/`）；之後發佈只部署 Cloudflare Pages。
+
+### 1.4.39 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。網站只部署 Cloudflare Pages（gh-pages 係轉址頁，唔好覆蓋）。i18n 腳本 `/workspace/.ed/i18n139ios.py`（ios）。
