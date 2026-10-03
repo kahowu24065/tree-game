@@ -1589,6 +1589,11 @@ export function settingsModal(treeName: string, notify: boolean | null = null): 
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION) });
 }
 
+/** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */
+export function diagModal(text: string): string {
+  return `<p class="eyebrow">Diagnostics</p><pre class="diag-pre">${esc(text)}</pre><div class="seg diag-actions"><button type="button" data-action="diag-refresh">Refresh</button><button type="button" data-action="diag-copy">Copy</button></div><button type="button" class="primary" data-action="close-modal">OK</button>`;
+}
+
 export function disclaimerModal(): string {
   return tl('ui.356');
 }

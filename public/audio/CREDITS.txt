@@ -23,3 +23,5 @@ https://opengameart.org/content/rain-long-thunder
 
 Button clicks — Kenney Interface Sounds, CC0
 https://kenney.nl/assets/interface-sounds
+
+1.4.33: day music re-encoded (mono, trailing silence cut, AAC day.m4a + MP3 day.mp3); night.m4a is an AAC copy of night.ogg for older iPhones.
