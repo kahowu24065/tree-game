@@ -1419,7 +1419,7 @@ const table: Record<string, string> = {
  "labels.typhoon8": "高級颱風",
  "labels.rainstorm": "暴雨",
  "labels.blackrain": "黑雨",
- "labels.001": "捱過 {count} {unit}{name}",
+ "labels.001": "捱過 {count} 個{name}",
  "ui.language": "語言",
  "html.desc": "一日一樹：一個跟住真實天氣、每日照顧一棵樹的輕遊戲。",
  "html.scene": "今日的樹同天空",
@@ -1547,6 +1547,7 @@ const table: Record<string, string> = {
  "nest.intro": "\n    <p class=\"eyebrow\">雀仔生蛋</p>\n    <h2>🐦 {bird}嚟咗！</h2>\n    <p>嚟過你棵樹嘅雀仔有機會喺樹上生蛋。想佢哋生蛋，要做到：</p>\n    <ul class=\"facts\">\n      <li>棵樹健康度要有 <b>{minH} 或以上</b></li>\n      <li>圖鑑入面要有見過嘅雀仔：每日最多生 <b>1 粒</b>，由見過嘅雀仔揀一種</li>\n      <li>巢入面冇蛋先會再生：上一粒要孵咗，等到晚黑 12 點結算計埋數</li>\n    </ul>\n    <p>蛋生咗 <b>{hours} 個鐘</b>就孵化，喺晚黑結算時計數：第 1 粒同之後每 10 粒島上多一座裝飾，第 5、15、25… 粒棵樹會額外長高。孵蛋數去成就分頁睇。</p>\n    <button type=\"button\" class=\"primary\" data-action=\"close-modal\">知道喇</button>",
  "isle.aria0": "島嶼：第一座島。喺呢條橫條向左掃去第二座空島。",
  "isle.aria1": "島嶼：第二座空島。喺呢條橫條向右掃返第一座島。",
- "isle.ariaLocked": "島嶼：第一座島。打破世界紀錄之後，喺呢條橫條向左掃去第二座空島。"
+ "isle.ariaLocked": "島嶼：第一座島。打破世界紀錄之後，喺呢條橫條向左掃去第二座空島。",
+ "labels.001b": "捱過 {count} 場{name}"
 };
 export default table;

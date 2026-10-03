@@ -4,6 +4,7 @@
  */
 import { EMERGENCY_NAMES, INTL_LABELS, WEATHER_EVENTS, WX_TRACKS, parseWxAwardId, type WeatherEventId, type WeatherTrackId } from './balance';
 import { t as tl } from './i18n';
+import { registerTwins, renderMsg } from './i18n/msg';
 
 export type Region = 'hk' | 'intl';
 
@@ -64,5 +65,16 @@ export function weatherAchievementCopy(id: string, region: Region = current): { 
   const count = parsed?.count ?? 0;
   const track = weatherTrack(trackId);
   const { name, detail } = weatherTrackCopy(trackId, region);
-  return { title: tl('labels.001', { count, unit: track.unit, name }), detail };
+  return { title: tl(byField(track.unitKey), { count, name }), detail };
 }
+
+/** 1.4.36: 個 / 場 is part of the key (English has no measure word, so a stored line could not tell them apart). */
+const byField = (unitKey: string) => (unitKey === 'balance.041' ? 'labels.001b' : 'labels.001');
+
+// An English line read back from an old save: which of the two twins it was follows from the weather named.
+registerTwins(['labels.001', 'labels.001b'], (m) => {
+  const name = m.p?.name;
+  const shown = typeof name === 'object' && !Array.isArray(name) ? renderMsg(name) : String(name ?? '');
+  const t = WX_TRACKS.find((x) => x.name === shown || ('intlName' in x && x.intlName === shown));
+  return byField(t?.unitKey ?? '');
+});

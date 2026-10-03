@@ -22,6 +22,7 @@ import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
 import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables } from './i18n';
+import { localize, logTexts } from './i18n/msg';
 
 const WEEK = [tl('ui.001'), tl('ui.002'), tl('ui.003'), tl('ui.004'), tl('ui.005'), tl('ui.006'), tl('ui.007')];
 
@@ -372,9 +373,11 @@ export function noteCards(state: GameState, dyingLeft: number): NoteCard[] {
     });
   }
   if (state.morningNote) {
+    // 1.4.36: written in the language of that morning — show it in the current one.
+    const note = localize(state.morningNote);
     const prefix = tl('sim.summaryPrefix');
-    const summary = state.morningNote.startsWith(prefix);
-    out.push({ key: 'note', cls: '', title: summary ? tl('ui.086') : tl('ui.087'), body: esc(summary ? state.morningNote.slice(prefix.length) : state.morningNote), btns: tl('ui.088') });
+    const summary = note.startsWith(prefix);
+    out.push({ key: 'note', cls: '', title: summary ? tl('ui.086') : tl('ui.087'), body: esc(summary ? note.slice(prefix.length) : note), btns: tl('ui.088') });
   }
   return out;
 }
@@ -818,8 +821,10 @@ function daysInMonth(ym: string): number {
 
 /** up: health rose or held 100. down: health fell. flat: unchanged and still under 100. */
 export function healthDayMark(entries: LogEntry[], isToday: boolean, healthNow: number): 'up' | 'down' | 'flat' | '' {
-  const settle = entries.find((e) => e.kind === 'settle') ?? entries.find((e) => /健康\s*\d+\s*→\s*\d+/.test(e.text));
-  const match = settle?.text.match(/健康\s*(\d+)\s*→\s*(\d+)/);
+  // Settle lines read 「健康 70 → 64」 / "Health 70 → 64" (whichever language wrote them).
+  const HEALTH = /(?:健康|[Hh]ealth)\s*(\d+)\s*→\s*(\d+)/;
+  const settle = entries.find((e) => e.kind === 'settle') ?? entries.find((e) => HEALTH.test(e.text));
+  const match = settle?.text.match(HEALTH);
   if (match) {
     const before = Number(match[1]);
     const after = Number(match[2]);
@@ -864,7 +869,7 @@ export function renderSheet(state: GameState, today: string): void {
   if (!body) return;
   if (title) title.textContent = tl('ui.185');
   if (!calMonth || calMonth > today.slice(0, 7)) calMonth = today.slice(0, 7);
-  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}`;
+  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}`;
   if (key === sheetKey) return;
   sheetKey = key;
   body.innerHTML = logCalendarHtml(state.log, today, calMonth, calDay, state.health);
@@ -872,13 +877,14 @@ export function renderSheet(state: GameState, today: string): void {
 
 function logRow(entry: LogEntry): string {
   const meta = entry.kind ? KIND_META[entry.kind] : { icon: 'calendar' as IconName, tone: 'gray', title: tl('ui.186') };
-  const title = entry.title || meta.title;
+  const shown = logTexts(entry);
+  const title = shown.title || meta.title;
   const time = entry.time || tl('ui.187');
-  const chip = entry.reward ? `<span class="chip ${entry.reward.tone}">${esc(entry.reward.text)}</span>` : '';
+  const chip = entry.reward ? `<span class="chip ${entry.reward.tone}">${esc(shown.reward ?? '')}</span>` : '';
   return `<li class="log-row">
     <time>${esc(time)}</time>
     <span class="log-ic ${meta.tone}">${icon(meta.icon)}</span>
-    <span class="log-copy"><b>${esc(title)}</b><span>${esc(entry.text)}</span></span>
+    <span class="log-copy"><b>${esc(title)}</b><span>${esc(shown.text)}</span></span>
     ${chip}
   </li>`;
 }
@@ -992,7 +998,7 @@ function careTab(view: View): string {
 }
 
 export function settlementCard(s: NonNullable<GameState['lastSettlement']>): string {
-  return tl('ui.238', { p0: esc(formatShort(s.date)), p1: esc(ev(s.event).label), p2: Math.round(s.hBefore), p3: Math.round(s.hAfter), p4: s.wLabel ? `・${esc(s.wLabel)}` : tl('ui.216'), p5: s.wFactor > 0 ? '+' : '', wFactor: s.wFactor, p7: Math.round(s.wBefore), p8: Math.round(s.wAfter), p9: s.wNight ? (s.wNight.kind === 'loss' ? tl('ui.217') : s.wNight.kind === 'drizzle' ? tl('ui.218') : tl('ui.219')) : '', p10: s.nFactor > 0 ? '+' : '', nFactor: s.nFactor, p12: Math.round(s.nBefore), p13: Math.round(s.nAfter), p14: s.heat === undefined && s.wind === undefined && s.cold === undefined
+  return tl('ui.238', { p0: esc(formatShort(s.date)), p1: esc(ev(s.event).label), p2: Math.round(s.hBefore), p3: Math.round(s.hAfter), p4: s.wLabel ? `・${esc(localize(s.wLabel))}` : tl('ui.216'), p5: s.wFactor > 0 ? '+' : '', wFactor: s.wFactor, p7: Math.round(s.wBefore), p8: Math.round(s.wAfter), p9: s.wNight ? (s.wNight.kind === 'loss' ? tl('ui.217') : s.wNight.kind === 'drizzle' ? tl('ui.218') : tl('ui.219')) : '', p10: s.nFactor > 0 ? '+' : '', nFactor: s.nFactor, p12: Math.round(s.nBefore), p13: Math.round(s.nAfter), p14: s.heat === undefined && s.wind === undefined && s.cold === undefined
             ? tl('ui.220', { finalDamage: s.finalDamage, baseDamage: s.baseDamage, p2: Math.round(s.rBefore) })
             : tl('ui.232', { p0: s.heat ? tl('ui.223', { p0: esc(eventLabel('hot')), p1: s.heat.handled ? '0' : `−${s.heat.base}`, p2: s.heat.handled ? tl('ui.221') : tl('ui.222') }) : '', p1: s.cold ? tl('ui.225', { p0: s.cold.handled ? '0' : `−${s.cold.base}`, p1: s.cold.handled ? tl('ui.221') : tl('ui.224') }) : '', p2: s.rain ? tl('ui.227', { p0: esc(ev(s.rain.event).label), p1: s.rain.handled ? '0' : `−${s.rain.base}`, p2: s.rain.handled ? tl('ui.221') : tl('ui.226', { p0: esc(emergencyName('rainDrain')) }) }) : '', p3: s.wind ? tl('ui.229', { p0: esc(ev(s.wind.event).label), p1: s.wind.score ? `−${-s.wind.score}` : '0', p2: s.wind.locked ? tl('ui.228') : tl('ui.062', { base: s.wind.base, p1: Math.round(s.wind.r) }) }) : '', p4: !s.heat && !s.cold && !s.rain && !s.wind ? tl('ui.230', { p0: esc(ev(s.event).label) }) : '', p5: s.emergencyBonus ? tl('ui.231', { emergencyBonus: s.emergencyBonus, p1: (s.emergencyCount ?? 0) > 1 ? esc(emergencyBonusText(s.emergencyCount ?? 0).replace(/ = .*$/, '')) : '' }) : '' }), p15: s.pestDamage ? tl('ui.233', { pestDamage: s.pestDamage }) : '', p16: s.deltaG >= 0 ? '+' : '', deltaG: s.deltaG, baseGrowth: s.baseGrowth, hMult: s.hMult, weatherBonus: s.weatherBonus, p21: s.collapse ? tl('ui.235', { p0: esc(formatHeight(s.collapse.heightBefore)), p1: esc(formatHeight(s.collapse.heightAfter)), count: s.collapse.count, p3: s.collapse.revived ? tl('ui.234') : '' }) : '', p22: s.notes.length ? tl('ui.237', { p0: s.notes.map(esc).join(tl('ui.236')) }) : '' });
 }

@@ -101,6 +101,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.33 | 開 app 預載畫面（`#preload`，同原生 splash 一樣天藍 #BEE2F7，Android 深色 #142638；icon 拆成背景＋會搖嘅樹苗 `public/preload/*.webp`，加飄落葉）：背後 compile shader（`Scene3D.warmUp`）、解碼當時嘅音樂、等天氣，最多 5 秒，之後先開場；鏡頭彈跳修正：`render()` 唔再直接畫（只叫 `loop()`），dt 0 唔再等於「即刻到位」，只有第一格／`requestSnap()` 先 snap；單一 rAF；廣告／同意／ATT 同其餘音效床延到開場後 1 秒；日間音樂改 `day.m4a`（AAC 單聲道，尾段靜音離線剪走，`day.mp3` 後備），`night.m4a` 做 iOS 舊版後備，唔再 runtime trimSilence，音樂自己載完就播；AudioContext `interrupted` 當 `suspended` 處理，任何點擊／返回前台都會叫醒；隱藏診斷：設定 → 長按版本號；versionCode 40 |
 | 1.4.34 | iOS 冇音樂嘅真因：Capacitor iOS `WebViewAssetHandler` 對 media 副檔名（m4a／mp3／wav…）回 plain `URLResponse`（唔係 HTTPURLResponse），`fetch()` 見到 status 0 / ok=false，舊 loader 當失敗（ogg 唔喺 media 名單所以正常）；而家 `fetchBytes` 接受 status 0 而有內容，再唔得就 XHR arraybuffer；其餘 ogg 都有 `.m4a` 後備（iOS 18.4 前冇 Ogg）；預載：新入口 `src/boot.ts` 等預載畫面畫好、CSS 動畫上咗 compositor 先 `import('./main')`，第一次建場景再遲兩格；淡出用 Web Animation `finished`（唔再用固定 timer 硬拆）；淡出前先擺好開場遠景（intro 最少靜止 0.75 秒蓋住淡出）；versionCode 41 |
 | 1.4.35 | 成長日誌分頁：`.tabs` 改 flex、按內容闊度分配（`flex: 1 1 auto`），左右 padding `clamp(6px, 2.4vw, 11px)`、字 `clamp(11px, 3.25vw, 13.5px)`，320／360／390 px 四語文字兩邊都有 ≥8 px；英文 Achievements 全部改 Badges（分頁、標題、提示、玩法說明，腳本 `/workspace/.ed/i18n135.py`），其他語言冇改；versionCode 42 |
+| 1.4.36 | 存咗嘅文字跟而家語言：成長日誌每行除咗原文，加存訊息 key＋參數（`LogEntry.i18n`，`src/i18n/msg.ts`），顯示時用而家語言重砌；寫入時靠 `t()` 最近輸出追蹤（`traceOf`）攞準 key，舊存檔逐行對四語範本反向配對（`migrateLogI18n`，要砌返一模一樣先算），配唔到就照原文顯示；早晨小結（`morningNote`）、結算水分標籤都跟語言；`labels.001` 拆 個／場 兩條（英文冇量詞）；健康日曆記號識英文；禁止頁面縮放（viewport `maximum-scale=1, user-scalable=no`、body `touch-action: manipulation`、iOS `gesturestart`／`dblclick` preventDefault），UI 唔可以長按揀字／彈 callout（輸入框、存檔碼、診斷文字除外），3D 小島雙指縮放照舊；versionCode 43 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
@@ -303,6 +304,10 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.35 發佈（2026-10-03）
 - 見版本歷史；推送伺服器冇改。
+
+### 1.4.36 發佈（2026-10-03）
+- 見版本歷史；推送伺服器冇改。i18n 改動腳本 `/workspace/.ed/i18n136.py`（`labels.001`／`labels.001b`）。
+- 新增文字要跟語言：經 `addLog` 寫嘅日誌自動有 `i18n`；`t()` 以外砌出嚟嘅片段（例如 `regionalize` 替換）配唔到就照原文。測試 `test/msg-v1436.test.ts`。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
