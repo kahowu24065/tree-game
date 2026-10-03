@@ -21,6 +21,7 @@ import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, Mil
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
+import { PRIVACY_URL, TERMS_URL } from './legal';
 import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables } from './i18n';
 import { localize, logTexts } from './i18n/msg';
 
@@ -1592,7 +1593,7 @@ export function settingsModal(treeName: string, notify: boolean | null = null): 
   const langRow = `<div class="setting-row"><span>${esc(tl('ui.language'))}</span><select class="lang-select" data-lang-select aria-label="${esc(tl('ui.language'))} / Language">${LOCALES.map((l) => `<option value="${l}"${l === loc ? ' selected' : ''}>${esc(LOCALE_NAMES[l])}</option>`).join('')}</select></div>`;
   return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + (notify === null
         ? ''
-        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION) });
+        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL });
 }
 
 /** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */
@@ -1602,10 +1603,6 @@ export function diagModal(text: string): string {
 
 export function disclaimerModal(): string {
   return tl('ui.356');
-}
-
-export function privacyModal(): string {
-  return tl('ui.357');
 }
 
 /** 匯出存檔: the code in a read-only box (already copied when possible). */

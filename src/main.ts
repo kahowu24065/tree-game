@@ -77,7 +77,6 @@ import {
   setThumbnailer,
   settingsModal,
   disclaimerModal,
-  privacyModal,
   exportSaveModal,
   importSaveModal,
   startModal,
@@ -1603,9 +1602,6 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'disclaimer':
       openModal(disclaimerModal());
-      return;
-    case 'privacy':
-      openModal(privacyModal());
       return;
     case 'weather':
       openWeather();

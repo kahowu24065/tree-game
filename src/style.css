@@ -2019,10 +2019,12 @@ body.sheet-open .sheet-backdrop {
   margin-top: 16px;
 }
 
+.set-legal a,
 .set-legal button {
   color: #9aa39c;
   font-size: 12px;
   font-weight: 500;
+  text-decoration: none;
 }
 
 .set-ver {
