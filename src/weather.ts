@@ -7,6 +7,7 @@ import { isNative } from './native/platform';
 import { nativePosition } from './native/location';
 import { t as tl, live } from './i18n';
 import type { OfficialAlerts } from './alerts';
+import { permsReady } from './native/permGate';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
@@ -562,10 +563,12 @@ export function locate(timeoutMs = 8000): Promise<{ lat: number; lon: number; so
     );
   });
   // Skip the wait entirely when the player has already said no.
+  // 1.4.45: before onboarding is over, only use the location if it was already granted (no browser prompt).
+  const ready = permsReady();
   const perms = (navigator as Navigator & { permissions?: Permissions }).permissions;
-  if (!perms?.query) return ask();
+  if (!perms?.query) return ready ? ask() : Promise.resolve(fallback);
   return perms
     .query({ name: 'geolocation' as PermissionName })
-    .then((status) => (status.state === 'denied' ? fallback : ask()))
-    .catch(() => ask());
+    .then((status) => (status.state === 'denied' || (!ready && status.state !== 'granted') ? fallback : ask()))
+    .catch(() => (ready ? ask() : fallback));
 }

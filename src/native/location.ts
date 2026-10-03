@@ -1,4 +1,5 @@
 import { Geolocation } from '@capacitor/geolocation';
+import { permsReady } from './permGate';
 
 const granted = (p: { location: string; coarseLocation: string }) => p.location === 'granted' || p.coarseLocation === 'granted';
 
@@ -9,7 +10,8 @@ const granted = (p: { location: string; coarseLocation: string }) => p.location 
 export async function nativePosition(timeoutMs: number): Promise<{ lat: number; lon: number } | null> {
   try {
     let perm = await Geolocation.checkPermissions();
-    if (!granted(perm) && perm.coarseLocation !== 'denied') perm = await Geolocation.requestPermissions({ permissions: ['coarseLocation'] });
+    // 1.4.45: no prompt before onboarding is over (already granted still works).
+    if (!granted(perm) && perm.coarseLocation !== 'denied' && permsReady()) perm = await Geolocation.requestPermissions({ permissions: ['coarseLocation'] });
     if (!granted(perm)) return null;
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
     const fix = Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: Math.max(1000, timeoutMs - 500), maximumAge: 0 })

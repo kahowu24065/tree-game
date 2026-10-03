@@ -126,6 +126,7 @@ import { reverseGeocode } from './place';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
 import { isNative } from './native/platform';
+import { onboardingDone, openPerms, permsReady } from './native/permGate';
 import { flushPersist, hydrateInfo, hydrateNative, mirrorProbe, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
 import { createSaveLog } from './native/saveLog';
 import { careSig, stampText, sumGroveRaw, sumRaw, sumState } from './saveDiag';
@@ -221,6 +222,8 @@ let home = loadedGrove.home;
 let second: GameState | null = loadedGrove.second;
 let isle: 0 | 1 = loadedGrove.isle;
 state = isle === 1 && second ? second : home;
+// 1.4.45: an existing player (tree planted, coach finished or never shown) is past onboarding: prompts as before.
+if (onboardingDone(home.started, coach)) openPerms();
 const bootLogUntil = Date.now() + 90_000;
 logState(`loaded (loadGame + loadGrove, migrations applied; save had ${loadGame() ? 'a tree' : 'none'})`, 'boot');
 /** Diagnostics: log a step that may change the loaded state (always shortly after launch, later only if care changed). */
@@ -625,6 +628,23 @@ function finishCoach(step: 'water' | 'feed' | 'health' | 'carbon' | 'skip'): voi
   saveCoach(coach);
   render();
   if (finished) toast(tl('main.011'));
+  if (onboardingDone(state.started, coach) && openPerms()) void askPermissionsInOrder();
+}
+
+/** 1.4.45: right after onboarding — location first, then notifications (push, then local reminders). */
+async function askPermissionsInOrder(): Promise<void> {
+  try {
+    if (usesDeviceLocation()) {
+      if (refreshing) await refreshing;
+      await refreshWeather(true);
+    }
+    if (isNative()) {
+      await syncPush(notifyEnabled());
+      scheduleReminders(false);
+    }
+  } catch {
+    /* best-effort */
+  }
 }
 
 function beginCoach(): void {
@@ -1670,6 +1690,7 @@ function doAction(action: string, target: HTMLElement): void {
       finishLesson();
       return;
     case 'locate':
+      openPerms(); // asked for by the player
       placeChoice = 'geo';
       kvSet(PLACE_KEY, placeChoice);
       void refreshWeather(true);
@@ -1973,6 +1994,7 @@ document.addEventListener('click', (event) => {
   }
   if (target.dataset.place) {
     placeChoice = target.dataset.place;
+    if (placeChoice === 'geo') openPerms(); // asked for by the player
     kvSet(PLACE_KEY, placeChoice);
     closeModal();
     const name = PLACES.find((p) => p.id === placeChoice)?.name ?? tl('main.051');
@@ -1987,6 +2009,7 @@ document.addEventListener('click', (event) => {
   }
   if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {
     kvSet(NOTIFY_KEY, target.dataset.notify === 'on' ? '1' : '0');
+    if (target.dataset.notify === 'on') openPerms(); // asked for by the player
     scheduleReminders(false);
     void syncPush(target.dataset.notify === 'on');
     const row = target.closest('.seg');
@@ -2283,6 +2306,7 @@ if (DEV_PANEL) {
     resetView: () => scene3d?.resetView(),
     fadeInfo: () => scene3d?.fadeInfo() ?? null,
     viewState: () => scene3d?.viewState(),
+    camTrace: () => scene3d?.camTrace() ?? [],
     flyers: () => scene3d?.flyerHeights() ?? [],
     animalScreen: (id: string) => scene3d?.animalScreen(id) ?? null,
     fenceCheck: () => scene3d?.fenceCheck() ?? null,
@@ -2570,6 +2594,11 @@ function diagText(): string {
     `audio states: ${a.states.join(', ') || '-'}`,
     ...a.files.map((f) => `  ${f.id}: ${f.state}${f.file ? ` ${f.file}` : ''}${f.ms !== undefined ? ` ${f.ms} ms` : ''}${f.seconds ? ` ${f.seconds}s` : ''}${f.error ? ` — ${f.error}` : ''}`),
     `uptime ${((performance.now() - diag.bootAt) / 1000).toFixed(1)}s`,
+    (() => {
+      const j = scene3d?.camJump();
+      return j ? `opening camera: ${j.frames} frames · largest step ${(j.maxRel * 100).toFixed(1)}% of distance (${j.at})` : 'opening camera: -';
+    })(),
+    `permission prompts: ${permsReady() ? 'allowed' : 'waiting for onboarding'}`,
     `now ${new Date().toString().slice(0, 33)} · tz ${timezone} · today ${today()} · isle ${isle}`,
     `state ${sumState(state)}`,
     `stamp local ${stampText(localStorage.getItem(STAMP_KEY) ?? undefined)} · native queue ${hydrateInfo.native ? `${nativeQueue.busySince ? `BUSY ${Math.round((Date.now() - nativeQueue.busySince) / 1000)}s` : 'idle'} · pending ${nativeQueue.pending} · batches ${nativeQueue.batches} · failed ${nativeQueue.fails}` : 'n/a (web)'}`,

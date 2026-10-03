@@ -12,7 +12,7 @@ https://opengameart.org/content/ambient-bird-sounds
 Night crickets — Wolfgang_, CC0
 https://opengameart.org/content/crickets-ambient-noise-loopable
 
-Bird, frog and cricket calls — Aj_, CC0
+Frog call — Aj_, CC0
 https://opengameart.org/content/birdcricketfrog-and-mosquito-sounds
 
 Rain loop — rubberduck, CC0
@@ -25,3 +25,4 @@ Button clicks — Kenney Interface Sounds, CC0
 https://kenney.nl/assets/interface-sounds
 
 1.4.33: day music re-encoded (mono, trailing silence cut, AAC day.m4a + MP3 day.mp3); night.m4a is an AAC copy of night.ogg for older iPhones.
+1.4.45: call.ogg / call.m4a (animal-arrival bird call) is a 1.6 s faded excerpt of the morning-birds recording above; the old bird.wav / chirp.wav clips were removed.
