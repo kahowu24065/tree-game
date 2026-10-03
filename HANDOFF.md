@@ -10,7 +10,7 @@
 - 網頁版（GitHub Pages）同 Android app（Capacitor 7）共用同一份 `dist/`。
 - 香港用天文台（HKO）警告同讀數；香港以外用 Open-Meteo，按遊戲自己嘅門檻判斷。
 - Android app 另有：原生定位、Preferences 存檔、本機提醒、FCM 天氣警告推送（經自家 push server）。
-- Repo：`github.com/kahowu24065/tree-game`（remote 名喺原本部機叫 `github`；`main` = 開發，`gh-pages` = 網站）。
+- Repo：`github.com/kahowu24065/tree-game`（remote 名喺原本部機叫 `github`；`main` = 開發，`gh-pages` = 舊網址轉址頁；網站喺 Cloudflare Pages）。
 
 ### 技術
 | 部分 | 用咩 |
@@ -147,22 +147,13 @@ Windows 用 `gradlew.bat`。亦可以喺 Android Studio 開 `android/`，Build �
 
 ---
 
-## 4. 網站（Cloudflare Pages ＋ gh-pages）
+## 4. 網站（Cloudflare Pages；gh-pages 只係轉址）
 
-- 1.4.38 起主網址：**https://sekai-tree.pages.dev/**（Cloudflare Pages project `sekai-tree`，direct upload；私隱權政策 `/privacy`、使用條款 `/terms`，`.html` 會 308 轉去冇副檔名嘅網址）。App 內連結喺 `src/legal.ts`。
-- 每次發佈：`npm run build` 之後跑 `scripts/deploy-pages.sh`（要 env `CLOUDFLARE_API_TOKEN`，唔好印出嚟；account ID 由 token 自動查；wrangler 4 要 Node ≥22，box 上喺 `/workspace/tools/node-v22.20.0-linux-x64`、`/workspace/tools/wrangler`），然後照舊 deploy gh-pages。
-- `kahowu24065.github.io/tree-game/` 暫時保留（用戶決定幾時停；可以考慮喺 gh-pages 放轉址頁去 pages.dev）。
+- 主網址：**https://sekai-tree.pages.dev/**（Cloudflare Pages project `sekai-tree`，direct upload；私隱權政策 `/privacy`、使用條款 `/terms`，`.html` 會 308 轉去冇副檔名嘅網址）。App 內連結喺 `src/legal.ts`。
+- 每次發佈**只**部署 Cloudflare Pages：`npm run build`（有開發者面板，網站一直係咁）之後跑 `scripts/deploy-pages.sh`（要 env `CLOUDFLARE_API_TOKEN`，唔好印出嚟；account ID 由 token 自動查；wrangler 4 要 Node ≥22，box 上喺 `/workspace/tools/node-v22.20.0-linux-x64`、`/workspace/tools/wrangler`）。
+- **唔好再 deploy `dist/` 去 gh-pages。** 2026-10-03 起 `gh-pages` 只放轉址頁（源檔 `site-redirect/`）：`index.html` → `https://sekai-tree.pages.dev/`，`privacy.html` → `/privacy`，`terms.html` → `/terms`（JS `location.replace` 保留 query／hash＋meta refresh＋canonical），`404.html` 將 `/tree-game/<路徑>` 轉去新站同一路徑；**一定要保留 `.nojekyll`**。GitHub Pages 設定同 repo 唔好刪。
+- 要改轉址頁先至改 `site-redirect/` 再手動放上 gh-pages（worktree，清走舊檔保留 `.git`／`.nojekyll`，唔好 force push）。
 - 推送伺服器 CORS 係 `*`，pages.dev 唔使改。
-
-- `gh-pages` branch 根目錄放 `dist/` 嘅內容，**一定要保留 `.nojekyll`**。
-- 用 `npm run build`（有開發者面板，網站一直係咁）。
-- 步驟（唔好 force push）：
-  ```bash
-  npm run build
-  git worktree add ../tree-pages gh-pages
-  # 清走 ../tree-pages 入面舊檔（保留 .git 同 .nojekyll），再 copy dist/* 入去
-  cd ../tree-pages && touch .nojekyll && git add -A && git commit -m "Deploy <commit>" && git push github gh-pages
-  ```
 - 用戶冇叫就唔好 deploy 網站。
 
 ---
@@ -233,7 +224,7 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 - 用戶講「**分析**」＝只分析、報告，**唔好改 code**。
 - 用戶用廣東話口語寫；遊戲 UI 用繁體中文（廣東話口語）。
 - **慳 quota**：測試保持基本（現有測試＋少量針對性測試），截圖越少越好（通常最後一張／一張 contact sheet）。
-- Git：正常 commit＋push `main`；**唔好 force push**；冇叫就唔好 deploy gh-pages；唔好 commit 任何金鑰、密碼、service account。
+- Git：正常 commit＋push `main`；**唔好 force push**；冇叫就唔好 deploy 網站（Cloudflare Pages），gh-pages 只放轉址頁、唔好再覆蓋；唔好 commit 任何金鑰、密碼、service account。
 - 報告要簡短：改咗咩、檔案路徑、有咩問題。
 
 
@@ -323,6 +314,9 @@ Windows 冇 rsync 可以用 `scp -r`（記得唔好上傳 node_modules）或者 
 
 ### 1.4.38 發佈（2026-10-03）
 - 見版本歷史；推送伺服器冇改（CORS `*`）。網站兩邊都部署：Cloudflare Pages（`scripts/deploy-pages.sh`）＋ gh-pages。
+
+### 舊網址轉址（2026-10-03）
+- `kahowu24065.github.io/tree-game/` 改為轉址去 https://sekai-tree.pages.dev/（gh-pages d580ec5，源檔 `site-redirect/`）；之後發佈只部署 Cloudflare Pages。
 
 ### iOS + 會員（`ios` 分支，未發佈）
 - iOS：Capacitor iOS（`ios/`），Firebase Messaging 把 APNs 權杖換成 FCM 權杖（AppDelegate.swift），`GoogleService-Info.plist` 由 CI secret 寫入（唔入 repo）。CI：`.github/workflows/ios.yml`（macos-26／Xcode 26.6；冇 secrets 就只做 simulator build + ad-hoc archive；有就 cloud signing 上 TestFlight）。
