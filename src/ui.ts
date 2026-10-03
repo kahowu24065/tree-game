@@ -593,7 +593,8 @@ export function renderChrome(view: View): void {
   document.body.classList.toggle('thriving', state.health >= 80 && !state.over);
   document.body.classList.toggle('dying', Boolean(state.dying) && !state.over);
   document.getElementById('scene')?.setAttribute('aria-label', tl('ui.133', { treeName: state.treeName, p1: weatherLabel(cond.code), p2: formatHeight(state.heightCm) }));
-  document.title = tl('ui.134', { treeName: state.treeName });
+  // Tab title: just the app name per locale (the tree's name used to be prefixed → 「世界之樹 · 世界之樹」 by default).
+  document.title = tl('sim.001');
   syncHatchCard(state);
 }
 
