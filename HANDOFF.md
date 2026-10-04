@@ -114,6 +114,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.46 | 碳吸收量顯示：`carbonKg()` 唔再四捨五入（之前 18 cm 銀杏 0.026 kg → 「約 0 公斤」）；`carbonParts()`／`formatCarbon()`：1 kg 以下用整數克（最少 1 克，例如「約 26 克 CO₂／年」），1 kg 起用公斤一個小數；樹木狀態卡、照顧頁、紀錄頁、分享卡四處都用（`carbon.g`／`carbon.kg`，範本冇咗單位）。真實樹齡：365 日起顯示「X 年 Y 日」（Y=0 →「X 年」），英文精簡「132D」／「1Y」／「1Y 32D」（`age.*`、`formatRealAge()`）；英文狀態卡碳一行改「about 26 g CO₂/yr」。320 px 闊螢幕上狀態卡（130 px 文字欄）實測唔會多換行；versionCode 53 |
 | 1.4.47 | 英文樹齡單複數：「Tree age 1 days」→「1 day」（`ui.113`、`ui.298`、`ui.317`、`ui.332`、`main.017` 用 `{n, plural, one {# day} other {# days}}`，同 `ui.073` 一樣）。其他英文「N nights／days／hours」都係固定常數（≥ 3），唔使改；測試會擋住新嘅變數 + days／years 冇複數；versionCode 54 |
 | 1.4.48 | 天氣地點分組預設：保留「用我所在位置」大掣，下面分「香港／澳門／台灣」三組（每組細標題 + 兩欄）：香港（香港島，香港公園站）、九龍、新界、離島；澳門半島、氹仔、路環；台北、台中、台南、台東。`src/presets.ts`：每個預設帶 `region`（hk／mo／tw）同 HK 嘅天文台雨量分區（`rainDistrict`，中文）；`weatherRegion()` 決定用天文台／氣象局／氣象署（預設跟自己 region，GPS 跟座標，冇位置＝香港），天氣、警告、標籤地區同推送 isHK／isMO／isTW（台灣縣市）全部跟佢（`pushRegionFlags()`）。舊預設一次性搬：中環→香港，沙田／大埔／西貢／元朗→新界，東涌→離島；hk、geo、空白照舊。對話框文字講明各地來源。推送伺服器唔使改；versionCode 55 |
+| 1.4.49 | 「世界之樹會員」改名「世界之樹 Premium」（英文 World Tree Premium、簡體 世界之树 Premium）：私隱權政策／使用條款（main）；ios 分支：訂閱頁、設定、恢復購買等四語字串全部改，設定頁最頂加 Premium 卡（`premiumCard()`，同設定卡同闊同圓角，淡綠→淡金漸變邊、皇冠葉 icon、「移除廣告・支持開發」＋「查看方案」，成張卡撳得，開現有訂閱頁；已係會員就顯示精簡「你已經係 世界之樹 Premium 會員 ✓」）；versionCode 56 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 
