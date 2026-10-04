@@ -1577,14 +1577,18 @@ export function locationModal(current: string): string {
 }
 
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
-export function settingsModal(treeName: string, notify: boolean | null = null, premiumRowHtml = ''): string {
+/** `premiumCardHtml` (ios branch, 1.4.49): the 世界之樹 Premium card, placed at the top of 設定 right under the heading. */
+export function settingsModal(treeName: string, notify: boolean | null = null, premiumCardHtml = ''): string {
   const soundOn = soundEnabled();
   const loc = getLocale();
   // Each language is named in itself, so the picker reads the same whatever the current language is.
   const langRow = `<div class="setting-row"><span>${esc(tl('ui.language'))}</span><select class="lang-select" data-lang-select aria-label="${esc(tl('ui.language'))} / Language">${LOCALES.map((l) => `<option value="${l}"${l === loc ? ' selected' : ''}>${esc(LOCALE_NAMES[l])}</option>`).join('')}</select></div>`;
-  return tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + premiumRowHtml + (notify === null
+  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + (notify === null
         ? ''
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL });
+  if (!premiumCardHtml) return html;
+  const at = html.indexOf('</h2>');
+  return at < 0 ? premiumCardHtml + html : html.slice(0, at + 5) + premiumCardHtml + html.slice(at + 5);
 }
 
 /** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */

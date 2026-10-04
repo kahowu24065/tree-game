@@ -1,4 +1,4 @@
-/** 設定 → 世界之樹會員: settings row, paywall / member page (skins, album link) and the 真實天氣紀念冊. HTML only. */
+/** 設定 → 世界之樹 Premium: settings row, paywall / member page (skins, album link) and the 真實天氣紀念冊. HTML only. */
 import { eventLabel } from './labels';
 import { getLocale, t as tl } from './i18n';
 import { weatherArt } from './icons';
@@ -28,6 +28,22 @@ export function premiumRow(mode: PremiumMode, active: boolean): string {
       ? `<span class="prem-note">${esc(tl('prem.rowWeb'))}</span>`
       : `<button type="button" class="ghost" data-action="premium">${esc(active ? tl('prem.rowOn') : tl('prem.rowOff'))}</button>`;
   return `<div class="setting-row prem-row"><span>${esc(tl('prem.row'))}</span>${right}</div>`;
+}
+
+/** Crown with a leaf on top, for the Premium card (stroke = currentColor). */
+const CROWN_LEAF = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17.5 3 8.5l4.6 3.6L12 6l4.4 6.1L21 8.5l-1 9z" fill="currentColor" fill-opacity=".22"/><path d="M4.5 20.5h15"/><path d="M12 6c0-2.1 1.3-3.4 3.4-3.6-.1 2.1-1.4 3.4-3.4 3.6z" fill="currentColor" fill-opacity=".35"/></svg>';
+
+/**
+ * 1.4.49: card at the very top of 設定 (under the heading). Not a member: title + 「移除廣告・支持開發」 + 「查看方案」, the whole
+ * card opens the paywall. Member: one compact line 「你已經係 世界之樹 Premium 會員 ✓」 (still opens the member page).
+ */
+export function premiumCard(mode: PremiumMode, active: boolean): string {
+  const icon = `<span class="prem-card-icon">${CROWN_LEAF}</span>`;
+  if (active) {
+    return `<button type="button" class="prem-card on" data-action="premium">${icon}<span class="prem-card-text"><b>${esc(tl('prem.cardOn'))}</b></span></button>`;
+  }
+  const cta = mode === 'web' ? `<span class="prem-note">${esc(tl('prem.rowWeb'))}</span>` : `<span class="prem-card-cta">${esc(tl('prem.cardCta'))}</span>`;
+  return `<button type="button" class="prem-card" data-action="premium" aria-label="${esc(tl('prem.cardAria'))}">${icon}<span class="prem-card-text"><b>${esc(tl('prem.title'))}</b><small>${esc(tl('prem.cardSub'))}</small></span>${cta}</button>`;
 }
 
 function skinSwatch(rgb: [number, number, number]): string {

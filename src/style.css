@@ -4436,3 +4436,90 @@ html[lang='en'] .emerg > span {
 .wx-main small {
   color: #8a948d;
 }
+
+/* 1.4.49: 世界之樹 Premium card at the top of 設定 (full width, same 16px radius as the modal buttons; soft green → gold). */
+.prem-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 150, 15, 0.28);
+  background: linear-gradient(120deg, #e8f5e1 0%, #f4f6e2 55%, #fcf1cf 100%);
+  box-shadow: 0 4px 12px rgba(63, 154, 75, 0.12);
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+}
+
+.prem-card:active {
+  transform: scale(0.99);
+}
+
+.prem-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #5cb85f, #c8960f);
+  color: #fffbea;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.prem-card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+}
+
+.prem-card-text b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.prem-card-text small {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.prem-card-cta {
+  flex: none;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #5cb85f, #3f9a4b);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(63, 154, 75, 0.28);
+}
+
+.prem-card.on {
+  padding: 8px 12px;
+  background: linear-gradient(120deg, #eef7e9, #f8f4e2);
+  box-shadow: none;
+}
+
+.prem-card.on .prem-card-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+}
+
+.prem-card.on .prem-card-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.prem-card.on .prem-card-text b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #2f7a3a;
+}

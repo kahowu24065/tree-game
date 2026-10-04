@@ -3,7 +3,7 @@ import { LOCALES, t, useLocale } from '../src/i18n';
 import { PREMIUM_EXTRAS, activeSkin, claimMonthlySkin, diaryByMonth, emptyPremium, equipSkin, noteDiary, parsePremium, settleDiary, SKINS, skinOfMonth } from '../src/premium';
 import { adsWanted } from '../src/native/banner';
 import { planReady, billingKey, billingSupported, defaultManageUrl, type BillingInfo } from '../src/native/billing';
-import { APPLE_EULA_URL, priceLine, premiumModal, premiumRow, PRIVACY_URL, TERMS_URL, weatherAlbumModal } from '../src/premiumUi';
+import { APPLE_EULA_URL, premiumCard, priceLine, premiumModal, premiumRow, PRIVACY_URL, TERMS_URL, weatherAlbumModal } from '../src/premiumUi';
 
 /** Price line with its soft line-break hints (premiumUi). */
 const w = (s: string) => priceLine(s);
@@ -75,9 +75,29 @@ describe('ads and billing gates', () => {
   });
 });
 
+describe('1.4.49 naming', () => {
+  it('no locale still calls the product 世界之樹會員 / World Tree Member', async () => {
+    const fs = await import('node:fs');
+    for (const f of ['zh-HK', 'zh-TW', 'zh-CN', 'en']) {
+      const src = fs.readFileSync(`src/i18n/${f}.ts`, 'utf8');
+      expect(src).not.toMatch(/世界之樹會員|世界之树会员|World Tree Member/);
+    }
+  });
+});
+
 describe('paywall', () => {
   it('web: no buy button, "available in the app"', () => {
     expect(premiumRow('web', false)).toContain(t('prem.rowWeb'));
+    // 1.4.49 Settings card: sell state opens the paywall, member state is one compact line, no 「會員」 product name left.
+    const sell = premiumCard('ios', false);
+    expect(sell).toContain('data-action="premium"');
+    expect(sell).toContain(t('prem.title'));
+    expect(sell).toContain(t('prem.cardCta'));
+    expect(sell).not.toContain('<button type="button" class="prem-card"><button');
+    const on = premiumCard('ios', true);
+    expect(on).toContain(t('prem.cardOn'));
+    expect(on).not.toContain(t('prem.cardCta'));
+    expect(premiumCard('web', false)).toContain(t('prem.rowWeb'));
     const html = premiumModal({ mode: 'web', store: emptyPremium(), billing: billing({ state: 'unavailable' }), today: '2026-10-01' });
     expect(html).not.toContain('premium-buy');
     expect(html).toContain(t('prem.webOnly'));

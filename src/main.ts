@@ -126,7 +126,7 @@ import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { retryConsent, setAdsPremium, syncBanner } from './native/banner';
 import { billingInfo, billingSupported, initBilling, onBilling, planReady, purchase, restore } from './native/billing';
 import { PLANS, PREMIUM_EXTRAS, type Plan, activeSkin, claimMonthlySkin, equipSkin, loadPremium, noteDiary, savePremium, settleDiary, skinName } from './premium';
-import { premiumModal, premiumRow, weatherAlbumModal, type PremiumMode } from './premiumUi';
+import { premiumCard, premiumModal, weatherAlbumModal, type PremiumMode } from './premiumUi';
 import { isNative, platformName } from './native/platform';
 import { onboardingDone, openPerms, permsReady } from './native/permGate';
 import { flushPersist, hydrateInfo, hydrateNative, mirrorProbe, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
@@ -1846,7 +1846,7 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'settings':
       premiumOpen = 'none';
-      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, premiumRow(premiumMode(), premium.active)));
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, premiumCard(premiumMode(), premium.active)));
       return;
     case 'premium':
       showPremium('paywall');
