@@ -47,9 +47,7 @@ describe('observed numbers (no official feed)', () => {
     expect(s.hourly.map((x) => x.time)).toEqual(times.slice(2));
     expect(s.pastHours[2]!.windKmh).toBe(7);
     expect(hoursOfDate([h(1), { ...h(2), time: '2026-10-01T23:00' }], D)).toHaveLength(1);
-    const url = new URL(forecastUrl(39.9, 116.4));
-    expect(url.searchParams.get('past_hours')).toBe('48');
-    expect(url.searchParams.get('hourly')).toContain('wind_speed_10m');
+    expect(new URL(forecastUrl(39.9, 116.4)).pathname).toBe('/forecast');
   });
 });
 

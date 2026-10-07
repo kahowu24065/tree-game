@@ -4523,3 +4523,10 @@ html[lang='en'] .emerg > span {
   font-weight: 600;
   color: #2f7a3a;
 }
+
+/* 1.4.50 資料來源及授權 */
+.credits { max-height: 58vh; overflow-y: auto; text-align: left; font-size: 12.5px; line-height: 1.5; -webkit-user-select: text; user-select: text; }
+.credits h3 { font-size: 13.5px; margin: 12px 0 4px; }
+.credits ul { margin: 0; padding-left: 18px; }
+.credits li { margin: 0 0 6px; overflow-wrap: anywhere; }
+.credits p { margin: 6px 0; }

@@ -22,7 +22,7 @@ small,.meta{color:#6f7a71}a{color:#2f6f3a}ul{padding-left:22px}li{margin:3px 0}n
 <h3>1. 位置</h3>
 <ul>
 <li>本應用只請求<b>大約位置</b>（Android 為「大概位置」；iOS 為「使用 App 期間」），用於顯示當地天氣、天氣警告及地名。你可以拒絕或隨時在系統設定關閉；拒絕時會改用香港天氣，或使用你在應用內手動選擇的地點。</li>
-<li>查詢天氣時，坐標會直接傳送至 Open-Meteo（天氣預報，約小數點後 4 位）及 BigDataCloud（地名，約小數點後 4 位）。香港天文台及澳門地球物理暨氣象局的資料以整份公開資料下載，不會傳送你的位置。</li>
+<li>查詢天氣時，香港、澳門、台灣以外的坐標會經我們的推送伺服器傳送至挪威氣象研究所 MET Norway（天氣預報，最多小數點後 4 位；MET Norway 只會見到伺服器，不會見到你的 IP）及 BigDataCloud（地名，約小數點後 4 位）。香港天文台及澳門地球物理暨氣象局的資料以整份公開資料下載，不會傳送你的位置。</li>
 <li>查詢香港、澳門以外地區（例如台灣、日本、美國、加拿大、歐洲）的官方警告時，坐標會四捨五入至小數點後 3 位（約 100 米）傳送至我們的推送伺服器，伺服器只用作即時回答，不會把該坐標連同任何識別碼儲存。伺服器再以概略地區向相關官方機構（例如中央氣象署、日本氣象廳及環境省、美國國家氣象局、加拿大環境及氣候變化部、MeteoAlarm）查詢公開警告。</li>
 <li>最近一次位置及天氣結果只儲存在你的裝置上，以便離線時使用。</li>
 </ul>
@@ -54,7 +54,7 @@ small,.meta{color:#6f7a71}a{color:#2f6f3a}ul{padding-left:22px}li{margin:3px 0}n
 </ul>
 
 <h3>6. 第三方服務</h3>
-<p>Open-Meteo、BigDataCloud、香港天文台、澳門地球物理暨氣象局、Google（Firebase Cloud Messaging、AdMob、使用者同意聲明）、Apple（推送通知、App Store）、RevenueCat、Oracle Cloud（推送伺服器主機）及 GitHub Pages（網頁版主機，可能記錄存取日誌）。各服務按其私隱政策處理資料。</p>
+<p>MET Norway（挪威氣象研究所）、BigDataCloud、香港天文台、澳門地球物理暨氣象局、Google（Firebase Cloud Messaging、AdMob、使用者同意聲明）、Apple（推送通知、App Store）、RevenueCat、Oracle Cloud（推送伺服器主機）及 GitHub Pages（網頁版主機，可能記錄存取日誌）。各服務按其私隱政策處理資料。</p>
 
 <h3>7. 兒童</h3>
 <p>本應用適合一般觀眾，並非專為 13 歲以下兒童設計。我們不會刻意收集兒童的個人資料；如你認為兒童透過本應用向我們提供了個人資料，請聯絡我們刪除。</p>
@@ -77,7 +77,7 @@ small,.meta{color:#6f7a71}a{color:#2f6f3a}ul{padding-left:22px}li{margin:3px 0}n
 <h3>1. Location</h3>
 <ul>
 <li>The app asks only for <b>approximate location</b> (Android “approximate”; iOS “While Using the App”) to show local weather, weather warnings and the place name. You can decline or turn it off at any time in system settings; the app then uses Hong Kong weather or a place you choose in the app.</li>
-<li>For weather, coordinates are sent directly to Open-Meteo (forecasts, about 4 decimal places) and BigDataCloud (place name, about 4 decimal places). Hong Kong Observatory and Macao Meteorological and Geophysical Bureau data are downloaded as whole public feeds; your location is not sent to them.</li>
+<li>For weather, coordinates outside Hong Kong, Macau and Taiwan are sent through our push server to MET Norway (Norwegian Meteorological Institute; forecasts, at most 4 decimal places; MET Norway sees only our server, not your IP) and BigDataCloud (place name, about 4 decimal places). Hong Kong Observatory and Macao Meteorological and Geophysical Bureau data are downloaded as whole public feeds; your location is not sent to them.</li>
 <li>To look up official warnings outside Hong Kong and Macau (for example Taiwan, Japan, the US, Canada and Europe), coordinates rounded to 3 decimal places (about 100 m) are sent to our push server, which uses them only to answer the request and does not store them with any identifier. The server queries public warnings from the relevant agencies (such as Taiwan’s Central Weather Administration, the Japan Meteorological Agency and Ministry of the Environment, the US National Weather Service, Environment and Climate Change Canada and MeteoAlarm) by approximate area.</li>
 <li>Your latest location and weather results are kept only on your device for offline use.</li>
 </ul>
@@ -109,7 +109,7 @@ small,.meta{color:#6f7a71}a{color:#2f6f3a}ul{padding-left:22px}li{margin:3px 0}n
 </ul>
 
 <h3>6. Third-party services</h3>
-<p>Open-Meteo, BigDataCloud, Hong Kong Observatory, Macao Meteorological and Geophysical Bureau, Google (Firebase Cloud Messaging, AdMob, User Messaging Platform), Apple (push notifications, App Store), RevenueCat, Oracle Cloud (push server hosting) and GitHub Pages (web version hosting, which may keep access logs). Each handles data under its own privacy policy.</p>
+<p>MET Norway (Norwegian Meteorological Institute), BigDataCloud, Hong Kong Observatory, Macao Meteorological and Geophysical Bureau, Google (Firebase Cloud Messaging, AdMob, User Messaging Platform), Apple (push notifications, App Store), RevenueCat, Oracle Cloud (push server hosting) and GitHub Pages (web version hosting, which may keep access logs). Each handles data under its own privacy policy.</p>
 
 <h3>7. Children</h3>
 <p>The app is for a general audience and is not directed at children under 13. We do not knowingly collect children’s personal information; if you believe a child has given us personal information through the app, contact us and we will delete it.</p>
