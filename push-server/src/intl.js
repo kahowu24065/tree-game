@@ -1,6 +1,6 @@
 import { intlLabel, str } from './i18n.js';
 // Non-HK weather: the game's own rules (ported 1:1 from tree-game src/events.ts + src/balance.ts; a tree-game test
-// checks this port against the TypeScript originals) applied to Open-Meteo, per 0.5° grid cell.
+// checks this port against the TypeScript originals) applied to MET Norway numbers (src/metno.js, Open-Meteo-shaped), per 0.5° grid cell.
 
 // balance.ts
 export const HOT_ABS_MAX_C = 35;
@@ -99,20 +99,6 @@ export function parseOpenMeteo(body) {
   };
 }
 
-/** Same request as the game (weather.ts forecastUrl), minus the hourly block. */
-export function forecastUrl(lat, lon) {
-  const u = new URL('https://api.open-meteo.com/v1/forecast');
-  u.searchParams.set('latitude', lat.toFixed(4));
-  u.searchParams.set('longitude', lon.toFixed(4));
-  u.searchParams.set('current', 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m');
-  u.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max');
-  u.searchParams.set('timezone', 'auto');
-  u.searchParams.set('forecast_days', '2');
-  u.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
-  u.searchParams.set('wind_speed_unit', 'kmh');
-  return u.toString();
-}
-
 /** Game events → per-category push level (wind: 烈風 1 < 狂風雷暴 2 < 暴風 3; rain: 大雨 1 < 豪雨 2). */
 export function levelsFromEvents(events) {
   const out = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
@@ -193,23 +179,6 @@ export function observedEvents(hours, current) {
   if (rain) out.add(rain);
   if (current ? current.precipMm >= 0.2 || RAIN_CODES(current.code) : pts.some((h) => h.precipMm >= 0.5)) out.add('drizzle');
   return [...out];
-}
-
-/** Open-Meteo request for observed pushes: live reading, the last 24 completed hours, and 14 past days for normals. */
-export function observedUrl(lat, lon) {
-  const u = new URL('https://api.open-meteo.com/v1/forecast');
-  u.searchParams.set('latitude', lat.toFixed(4));
-  u.searchParams.set('longitude', lon.toFixed(4));
-  u.searchParams.set('current', 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m');
-  u.searchParams.set('hourly', 'temperature_2m,precipitation,weather_code,wind_gusts_10m,wind_speed_10m');
-  u.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min');
-  u.searchParams.set('timezone', 'auto');
-  u.searchParams.set('forecast_days', '1');
-  u.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
-  u.searchParams.set('past_hours', '24');
-  u.searchParams.set('forecast_hours', '1');
-  u.searchParams.set('wind_speed_unit', 'kmh');
-  return u.toString();
 }
 
 export function parseObserved(body) {

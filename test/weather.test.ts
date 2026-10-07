@@ -39,8 +39,8 @@ describe('Open-Meteo', () => {
     vi.stubGlobal('fetch', fetchMock);
     const r = await fetchForecast(22.3, 114.17, { tries: 3 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0]![0])).toContain('wind_gusts_10m');
-    expect(String(fetchMock.mock.calls[0]![0])).toContain('hourly=');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/forecast?lat=');
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain('open-meteo.com');
     expect(r.daily).toHaveLength(7);
   });
 

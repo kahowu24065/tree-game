@@ -122,6 +122,8 @@ import { fetchHko, fillHkoGaps, hkoIconLabel, hkoIconRain, hkoIconToWmo } from '
 import { fetchSmg } from './smg';
 import { cwaArea, fetchCwa } from './cwa';
 import { reverseGeocode } from './place';
+import { sunForDate } from './sun';
+import { creditsModal } from './credits';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
 import { syncBanner } from './native/banner';
 import { isNative } from './native/platform';
@@ -578,7 +580,7 @@ function view(input: SceneInput): View {
     minutesToSettle: 24 * 60 - clockMinutes(timezone),
     isle: { here: isle, bare: isle === 1 && !second, open: canOpenSecond(homeTree()) },
     wx: {
-      provider: weather.provider ?? (weather.origin === 'offline' ? 'sim' : 'open-meteo'),
+      provider: weather.provider ?? (weather.origin === 'offline' ? 'sim' : 'met-no'),
       origin: weather.origin,
       loading: weatherLoading,
       fetchedAt: weather.fetchedAt,
@@ -1274,7 +1276,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const hk = region === 'hk';
   const intl = !hk && !mo;
   const [om, hkoRes, smgRes, placeRes, alertRes] = await Promise.allSettled([
-    fetchForecast(loc.lat, loc.lon),
+    // 1.4.50: HK / Macau / Taiwan use only their bureau; the model (MET Norway) is for everywhere else.
+    intl ? fetchForecast(loc.lat, loc.lon) : Promise.resolve(null),
     hk ? fetchHko(loc.lat, loc.lon) : Promise.resolve(null),
     tw ? fetchCwa(loc.lat, loc.lon) : mo ? fetchSmg(loc.lat, loc.lon) : Promise.resolve(null),
     loc.source === 'geo' ? reverseGeocode(loc.lat, loc.lon) : Promise.resolve(null),
@@ -1296,21 +1299,19 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
   const place = manual?.name ?? cwaPlace ?? found?.name ?? (macau ? tl('main.044') : loc.source === 'fallback' || inHongKong(loc.lat, loc.lon) ? tl('ui.346') : tl('main.009'));
   // HKO rainfall is keyed by its Chinese district names, so a preset brings its own (not the translated label).
   const district = manual ? manual.rainDistrict : found?.district;
-  const openMeteo = om.status === 'fulfilled' ? om.value : null;
+  const openMeteo = om.status === 'fulfilled' ? om.value : null; // MET Norway, Open-Meteo-shaped
   let base: ForecastResult | null = hk || mo ? null : openMeteo;
-  let provider: WeatherProvider = 'open-meteo';
-  const error = om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : tl('main.045')) : undefined;
+  let provider: WeatherProvider = 'met-no';
+  const error = intl && om.status === 'rejected' ? (om.reason instanceof Error ? om.reason.message : tl('main.045')) : undefined;
   if (official && (hk || mo)) {
     const bureau = hkoForecast(official, today());
     if (bureau) {
-      if (openMeteo) {
-        const sun = new Map(openMeteo.daily.map((d) => [d.date, d]));
-        bureau.daily = bureau.daily.map((d) => {
-          const s = sun.get(d.date);
-          return s ? { ...d, sunrise: s.sunrise, sunset: s.sunset } : d;
-        });
-      }
       bureau.timezone = mo ? bureauTz : bureau.timezone;
+      // Sun times computed locally (the bureaus don't send them; no model API here since 1.4.50).
+      bureau.daily = bureau.daily.map((d) => {
+        const s = sunForDate(loc.lat, loc.lon, d.date, bureau.timezone);
+        return s ? { ...d, ...s } : d;
+      });
       base = bureau;
       provider = mo ? bureauId : 'hko';
     }
@@ -1358,8 +1359,8 @@ async function loadWeather(forceLocate: boolean): Promise<void> {
     provider: mo && smg ? bureauId : provider,
     hko: official,
     district,
-    rainInHours: provider === 'open-meteo' ? base.rainInHours : null,
-    pastHours: provider === 'open-meteo' ? base.pastHours : undefined,
+    rainInHours: provider === 'met-no' ? base.rainInHours : null,
+    pastHours: provider === 'met-no' ? base.pastHours : undefined,
     alerts,
     choice: choiceKey(),
     error: provider === 'hko' || (mo && smg && om.status === 'rejected') ? error : undefined,
@@ -1752,6 +1753,9 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'disclaimer':
       openModal(disclaimerModal());
+      return;
+    case 'credits':
+      openModal(creditsModal());
       return;
     case 'weather':
       openWeather();

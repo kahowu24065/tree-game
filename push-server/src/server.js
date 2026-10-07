@@ -3,7 +3,8 @@
 //  • Macau devices (isMO): polls SMG on the same interval as HKO.
 //  • Other devices (1.4.27): per ~0.1° area every ~10 min. Where an official feed covers it (NWS / ECCC / JMA + 環境省
 //    熱中症 alerts / MeteoAlarm, src/official.js) → push the alerts actually issued (start / upgrade / end, 2 readings to
-//    confirm a drop). No feed → observed numbers only (Open-Meteo past hours + live reading, the game's WX_OBS rules).
+//    confirm a drop). No feed → observed numbers only (MET Norway hours as they passed + live hour, the game's WX_OBS rules).
+//  • 1.4.50 GET /forecast?lat=&lon=&tz= — MET Norway Locationforecast 2.0 (cached, identified) in the Open-Meteo shape.
 //  • v1.4: downgrades / cancellations push as info; dead / 瀕死 trees still get warnings (with a state line);
 //    wind warnings before 青年樹 become real-life safety notices; the action push / 2 h reminder is skipped once
 //    today's matching 應急行動 is done. HKO 山泥傾瀉警告 (WL) is its own category, handled by 加固.
@@ -17,7 +18,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { moLabels, normLocale, recordLocale, str } from './i18n.js';
 import { deviceMessage, dropMessageFor, levelsFromWarnsum, messageFor, reminderFor, shouldNotify } from './warnings.js';
-import { cellKey, intlDropMessageFor, intlMessageFor, levelsFromEvents, observedEventsIntl, observedUrl, parseObserved } from './intl.js';
+import { cellKey, intlDropMessageFor, intlMessageFor, levelsFromEvents, observedEventsIntl, parseObserved } from './intl.js';
+import { createMetClient, validTz } from './metno.js';
 import { stepScope } from './alerts.js';
 import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
@@ -40,6 +42,7 @@ const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 const store = new TokenStore(path.join(DATA, 'tokens.json'));
 const fcm = await createSender();
 const cwa = createCwaClient();
+const met = createMetClient({ histFile: path.join(DATA, 'metno-hist.json') });
 const official = createOfficialClient();
 let lastTwPoll = null;
 let lastPoll = null;
@@ -179,7 +182,7 @@ async function pollCells() {
     byArea.get(key).push(r);
   }
   const seen = new Set();
-  const observedCells = new Map(); // one Open-Meteo call per 0.5° cell per cycle
+  const observedCells = new Map(); // one MET Norway lookup per 0.5° cell per cycle (cached until Expires)
   let n = 0;
   for (const [key, records] of byArea) {
     if (n++ >= MAX_CELLS) break; // rate limit: bounded lookups per cycle (feeds are cached per area / country / office)
@@ -217,9 +220,8 @@ async function pollCells() {
     const sk = `o:${cell}`;
     try {
       const [lat, lon] = cell.split(',').map(Number);
-      const res = await fetch(observedUrl(lat, lon), { signal: AbortSignal.timeout(15_000) });
-      if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
-      const levels = levelsFromEvents(observedEventsIntl(parseObserved(await res.json())));
+      const tz = validTz(records.find((r) => r.tz)?.tz);
+      const levels = levelsFromEvents(observedEventsIntl(parseObserved(await met.observed(lat, lon, tz))));
       const { state, fresh, reminders, drops } = stepScope(alerts.cells[sk] ?? null, levels, Date.now(), { confirmDrops: 2 });
       alerts.cells[sk] = state;
       writeJson(ALERTS_FILE, alerts);
@@ -236,7 +238,7 @@ async function pollCells() {
   lastCellPoll = new Date().toISOString();
 }
 
-/** Taiwan: one warning check per county / town with an active device; the same stepScope as the Open-Meteo cells. */
+/** Taiwan: one warning check per county / town with an active device; the same stepScope as the observed cells. */
 async function pollTw() {
   if (!cwa.enabled) return;
   const now = Date.now();
@@ -383,6 +385,20 @@ const server = http.createServer(async (req, res) => {
       const body = await cwaAnswer(lat, lon);
       if (!body) return send(res, 404, { ok: false, error: 'no station nearby' });
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=120', ...CORS });
+      return res.end(JSON.stringify(body));
+    } catch (e) {
+      return send(res, 502, { ok: false, error: String(e?.message ?? e) });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/forecast') {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    if (limited(`fc:${ip}`, 120)) return send(res, 429, { ok: false, error: 'rate limited' });
+    const lat = Number(url.searchParams.get('lat'));
+    const lon = Number(url.searchParams.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return send(res, 400, { ok: false, error: 'bad lat/lon' });
+    try {
+      const body = await met.forecast(lat, lon, url.searchParams.get('tz'));
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300', ...CORS });
       return res.end(JSON.stringify(body));
     } catch (e) {
       return send(res, 502, { ok: false, error: String(e?.message ?? e) });

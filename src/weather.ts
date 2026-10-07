@@ -1,4 +1,3 @@
-import { NORMAL_PAST_DAYS } from './balance';
 import { addDays } from './dates';
 import { isColdDay, isHotDay, type TempInput } from './events';
 import { hkoIconLabel, hkoIconRain, hkoIconToWmo, isHkoIcon, rainFromPsr, timeoutSignal, windFromText, type HkoData, type HkoWarning } from './hko';
@@ -8,12 +7,13 @@ import { nativePosition } from './native/location';
 import { t as tl, live } from './i18n';
 import type { OfficialAlerts } from './alerts';
 import { permsReady } from './native/permGate';
+import { PUSH_SERVER } from './native/push';
 
 export const HK_LAT = 22.3022;
 export const HK_LON = 114.1744;
 
-/** Where the numbers came from: Open-Meteo model data, HKO observations/forecast, or the built-in simulation. */
-export type WeatherProvider = 'open-meteo' | 'hko' | 'smg' | 'cwa' | 'sim';
+/** Where the numbers came from: MET Norway model data (1.4.50; was Open-Meteo, via our server, Open-Meteo-shaped), HKO observations/forecast, or the built-in simulation. */
+export type WeatherProvider = 'met-no' | 'hko' | 'smg' | 'cwa' | 'sim';
 
 export interface WeatherSnapshot {
   lat: number;
@@ -419,25 +419,30 @@ export function splitHours(hourly: OpenMeteoHourly | undefined, nowIso: string):
   return { pastHours: all.filter((h) => h.time <= nowIso), hourly: all.filter((h) => h.time.slice(0, 13) >= hour) };
 }
 
-export function forecastUrl(lat: number, lon: number): string {
-  const url = new URL('https://api.open-meteo.com/v1/forecast');
-  url.searchParams.set('latitude', lat.toFixed(4));
-  url.searchParams.set('longitude', lon.toFixed(4));
-  url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,is_day');
-  url.searchParams.set('hourly', 'precipitation,weather_code,wind_gusts_10m,wind_speed_10m');
-  url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,sunrise,sunset');
-  url.searchParams.set('timezone', 'auto');
-  url.searchParams.set('forecast_days', '7');
-  url.searchParams.set('past_days', String(NORMAL_PAST_DAYS));
-  url.searchParams.set('forecast_hours', '12');
-  url.searchParams.set('past_hours', '48');
-  url.searchParams.set('wind_speed_unit', 'kmh');
+/** Device time zone (the forecast's dates follow it; only GPS fixes reach the MET Norway path). */
+export function deviceTz(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * 1.4.50: MET Norway Locationforecast 2.0 through our push server (GET /forecast), which identifies us, caches until
+ * Expires and answers in the Open-Meteo shape parseOpenMeteo reads (14 past days for normals, 48 past hours, 12 ahead).
+ */
+export function forecastUrl(lat: number, lon: number, tz = deviceTz()): string {
+  const url = new URL(`${PUSH_SERVER}/forecast`);
+  url.searchParams.set('lat', lat.toFixed(4));
+  url.searchParams.set('lon', lon.toFixed(4));
+  url.searchParams.set('tz', tz);
   return url.toString();
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Open-Meteo forecast with up to 3 tries (backs off on 429/5xx/network errors, honours Retry-After up to 8 s). */
+/** MET Norway forecast (via our server) with up to 3 tries (backs off on 429/5xx/network errors, honours Retry-After up to 8 s). */
 export async function fetchForecast(lat: number, lon: number, opts: { tries?: number; timeoutMs?: number } = {}): Promise<ForecastResult> {
   const url = forecastUrl(lat, lon);
   const tries = opts.tries ?? 3;
@@ -462,7 +467,7 @@ export async function fetchForecast(lat: number, lon: number, opts: { tries?: nu
   throw new Error(lastError);
 }
 
-/** Build a forecast purely from HKO (used when Open-Meteo is unreachable but HKO answers). */
+/** Build a forecast purely from the bureau (HKO shape; HK / Macau / Taiwan use only this since 1.4.50). */
 export function hkoForecast(hko: HkoData, today: string): ForecastResult | null {
   if (!hko.current && !hko.forecast.length) return null;
   const nowTemp = hko.current?.tempC ?? hko.forecast[0]?.tempMax ?? 28;

@@ -192,8 +192,12 @@ describe('v15 香港以外相對酷熱', () => {
 });
 
 describe('v15 Open-Meteo 過去 14 日平均', () => {
-  it('forecastUrl 加 past_days=14', () => {
-    expect(new URL(forecastUrl(51.5, -0.12)).searchParams.get('past_days')).toBe('14');
+  it('1.4.50 forecastUrl 經推送伺服器 /forecast（MET Norway），最多 4 位小數，帶時區', () => {
+    const u = new URL(forecastUrl(51.512345, -0.12, 'Europe/London'));
+    expect(u.pathname).toBe('/forecast');
+    expect(u.searchParams.get('lat')).toBe('51.5123');
+    expect(u.searchParams.get('tz')).toBe('Europe/London');
+    expect(u.host).not.toContain('open-meteo');
   });
 
   it('過去日子只用嚟計平均，daily 由今日開始', () => {

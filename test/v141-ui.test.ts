@@ -54,7 +54,7 @@ describe('v1.4.1 天氣概況 page', () => {
     const html = weatherPageHtml(view({ situation: text }));
     expect(html.indexOf('未來預報')).toBeLessThan(html.indexOf(text));
     expect(html).toContain(`<article class="card wx-outlook"><p class="eyebrow">天氣概況</p><p>${text}</p></article>`);
-    const none = weatherPageHtml(view({ situation: '', hkoUsed: false, provider: 'open-meteo' }));
+    const none = weatherPageHtml(view({ situation: '', hkoUsed: false, provider: 'met-no' }));
     expect(none).not.toContain('wx-outlook');
   });
   it('says the warning list failed instead of claiming there is none', () => {
@@ -65,7 +65,7 @@ describe('v1.4.1 天氣概況 page', () => {
     expect(html).not.toContain('濕度 70%');
   });
   it('outside HK says there are no HKO warnings', () => {
-    const html = weatherPageHtml(view({ hkoUsed: false, warnings: [], provider: 'open-meteo' }));
+    const html = weatherPageHtml(view({ hkoUsed: false, warnings: [], provider: 'met-no' }));
     expect(html).toContain('Open-Meteo');
     expect(html).not.toContain('香港天文台・生效中警告');
     expect(html).not.toContain('加固');

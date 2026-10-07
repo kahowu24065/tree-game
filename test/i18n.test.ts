@@ -44,7 +44,8 @@ describe('i18n tables', () => {
   });
 
   it('English has no Chinese characters', () => {
-    const cjk = Object.entries(T.en).filter(([k, v]) => !k.startsWith('name.') && /[\u3400-\u9fff]/.test(v));
+    // 1.4.50: JMA / MOE ask for their Japanese source line (出典：…) verbatim, so those two keep it in English too.
+    const cjk = Object.entries(T.en).filter(([k, v]) => !k.startsWith('name.') && !['credits.jmaLic', 'credits.wbgtLic'].includes(k) && /[\u3400-\u9fff]/.test(v));
     expect(cjk).toEqual([]);
   });
 });
