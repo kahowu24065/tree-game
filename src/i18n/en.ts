@@ -1214,6 +1214,7 @@ const table: Record<string, string> = {
  "ui.077": "<button type=\"button\" class=\"night-chip {t}\" data-action=\"preview\" aria-expanded=\"{previewOpen}\">{p2}Tonight <b>{p3}</b>{p4}</button>",
  "ui.078": "<div class=\"bar water wbar {p0} {zone} {flash}\" title=\"Moisture 0–150: best {p3}–{p4}, root rot above 100, dying at 150\">\n    <span class=\"bar-key\">W</span><span class=\"bar-label\">Moisture</span>\n    {p5}\n    <b class=\"bar-val\">{v}</b>\n  </div>",
  "ui.079": "Hatching time: <b>{text}</b>",
+ "ui.079b": "{line}",
  "ui.080": "Dying<span class=\"nc-long\"> · left</span> {p0}",
  "ui.081": "Bring moisture to {p0}–{p1} and nutrients above {p2} to save it at once ({p3} left).",
  "ui.082": "<button type=\"button\" data-open=\"care\">Rescue</button>",
@@ -1597,6 +1598,19 @@ const table: Record<string, string> = {
  "credits.sRain": "Rain",
  "credits.sStorm": "Rain and thunder",
  "credits.sClick": "Button clicks",
- "wx.srcJma": "JMA + MET Norway"
+ "wx.srcJma": "JMA + MET Norway",
+ "nest.lay": "Your tree is healthy ({minH}+), so a {bird} laid an egg here! It hatches in {hours} h.",
+ "nest.reward.build": "After it hatches: the island gains {decoration}",
+ "nest.reward.growth": "After it hatches: that night's growth is about 30% more",
+ "nest.reward.badge": "After it hatches: you earn an achievement badge",
+ "nest.reward.none": "After it hatches: the bird comes out to keep you company",
+ "nest.warm": "Keep warm (−1 h)",
+ "nest.warmed": "Kept warm ✓",
+ "nest.warmSoon": "Hatching soon",
+ "nest.warmToast": "You kept {bird}'s egg warm. It hatches 1 h sooner!",
+ "nest.explain": "Why eggs are laid",
+ "nest.close": "Close",
+ "nest.firstEgg": "<div><p class=\"eyebrow\">First egg</p><h2>{bird}</h2><p>This egg hatches in <b>{hours} h</b>.</p><p>{reward}</p><p>Keep it warm to hatch 1 h sooner, once per egg.</p><p>The tree needs health <b>{minH} or above</b> for another egg.</p><button type=\"button\" class=\"primary\" data-action=\"close-modal\">Got it</button></div>",
+ "nest.egg": "<div data-egg=\"1\"><p class=\"eyebrow\">{bird}</p><h2>{bird}</h2><p id=\"egg-clock\"><b>{clock}</b></p><p>{reward}</p><button type=\"button\" class=\"ghost\" data-action=\"nest-intro\">{explain}</button><button type=\"button\" class=\"primary {warmCls}\" data-action=\"warm-egg\" aria-disabled=\"{warmOff}\">{warm}</button><button type=\"button\" class=\"texty\" data-action=\"close-modal\">{close}</button></div>"
 };
 export default table;

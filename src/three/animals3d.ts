@@ -1300,6 +1300,15 @@ export class Animals3D {
   private clutchBird = '';
   /** One nest on a branch while an egg or chick is waiting. The magpie robin already brings its own. */
   private clutchNest: THREE.Group | null = null;
+  /** 1.4.52 egg tap: elapsed seconds of the wobble, or -1 when still. */
+  private eggWobble = -1;
+  private readonly clutchPick = new THREE.Vector3();
+  private readonly broodScale = new THREE.Vector3();
+  /** Hide the nest chick while the hatch flight is playing. */
+  private hatchHide = false;
+  /** Parent sitting on the eggs in bad weather. Empty when the weather is calm. */
+  private broodId = '';
+  private brood: THREE.Group | null = null;
   private night = false;
   private weak = false;
   private stage = 0;
@@ -1536,6 +1545,154 @@ export class Animals3D {
     return best;
   }
 
+  /**
+   * Egg or nest under a tap, before animals. Generous: the clutch is small on screen.
+   * True only while the clutch is still an egg.
+   */
+  pickClutch(ray: THREE.Ray, tolAt: (d: number) => number): boolean {
+    if (this.clutch !== 'egg') return false;
+    let best = 1;
+    const consider = (obj: THREE.Object3D | null | undefined) => {
+      if (!obj || !obj.visible) return;
+      obj.updateWorldMatrix(true, false);
+      obj.getWorldPosition(this.clutchPick);
+      const along =
+        (this.clutchPick.x - ray.origin.x) * ray.direction.x +
+        (this.clutchPick.y - ray.origin.y) * ray.direction.y +
+        (this.clutchPick.z - ray.origin.z) * ray.direction.z;
+      if (along <= 0) return;
+      const dist = ray.distanceToPoint(this.clutchPick);
+      const k = dist / Math.max(0.5, tolAt(along) * 1.4);
+      if (k < best) best = k;
+    };
+    if (this.clutchBird === 'magpierobin') {
+      for (const c of this.crews) {
+        if (c.def.motion !== 'nest' || c.leaving) continue;
+        for (const m of c.members) consider(m.obj.getObjectByName('nestMesh'));
+      }
+    } else consider(this.clutchNest);
+    return best < 1;
+  }
+
+  /** World position of the branch the clutch uses, even after the egg has been counted and the nest hidden. */
+  nestPoint(out: THREE.Vector3): boolean {
+    const tree = this.tree;
+    if (!tree) return false;
+    if (tree.nest) out.copy(tree.nest.pos);
+    else out.set(tree.trunkRadius * 2, tree.height * 0.58, tree.trunkRadius * 0.4);
+    tree.group.updateWorldMatrix(true, false);
+    tree.group.localToWorld(out);
+    return true;
+  }
+
+  /** World position of the visible clutch, for the hatch flight. */
+  clutchAnchor(out: THREE.Vector3): boolean {
+    const obj = this.clutchObject();
+    if (!obj) return false;
+    obj.updateWorldMatrix(true, false);
+    obj.getWorldPosition(out);
+    return true;
+  }
+
+  /** Start the damped egg wobble (a few swings over ~0.6 s). */
+  nudgeEggs(): void {
+    this.eggWobble = 0;
+  }
+
+  /** Hide the in-nest chick while the hatch animation is in the air. */
+  setHatchHide(on: boolean): void {
+    this.hatchHide = on;
+  }
+
+  /**
+   * Weather brooding, visual only. `id` is the parent species when it is a resident
+   * (or the magpie robin, which already owns the nest); empty clears it.
+   * A non-resident parent is passed as a generic stand-in by the caller.
+   */
+  setBrood(id: string): void {
+    if (id === this.broodId) return;
+    this.broodId = id;
+    if (this.brood) {
+      this.root.remove(this.brood);
+      this.brood = null;
+    }
+    if (!id || id === 'magpierobin') return;
+    const src = template(id) ?? template('sparrow');
+    if (!src) return;
+    const g = src.clone();
+    g.name = 'broodBird';
+    foldWings(g, 1);
+    g.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) mesh.castShadow = false;
+    });
+    this.brood = g;
+    this.root.add(g);
+  }
+
+  private clutchObject(): THREE.Object3D | null {
+    if (this.clutch === 'empty') return null;
+    if (this.clutchBird === 'magpierobin') {
+      for (const c of this.crews) {
+        if (c.def.motion !== 'nest' || c.leaving) continue;
+        for (const m of c.members) {
+          const nest = m.obj.getObjectByName('nestMesh');
+          if (nest) return nest;
+        }
+      }
+      return null;
+    }
+    return this.clutchNest && this.clutchNest.visible ? this.clutchNest : null;
+  }
+
+  private stepEggs(dt: number): void {
+    if (this.eggWobble < 0) return;
+    this.eggWobble += dt;
+    const u = this.eggWobble / 0.6;
+    const ang = u >= 1 ? 0 : Math.sin(u * Math.PI * 5) * 0.21 * (1 - u);
+    const spin = (root: THREE.Object3D | null | undefined) => {
+      if (!root) return;
+      root.traverse((o) => {
+        if (o.name === 'eggs') o.rotation.z = ang;
+      });
+    };
+    spin(this.clutchNest);
+    for (const c of this.crews) {
+      if (c.def.motion !== 'nest') continue;
+      for (const m of c.members) spin(m.obj);
+    }
+    if (u >= 1) this.eggWobble = -1;
+  }
+
+  private placeBrood(): void {
+    const robin = this.clutchBird === 'magpierobin';
+    for (const c of this.crews) {
+      if (c.def.id !== 'magpierobin') continue;
+      for (const m of c.members) {
+        if (m.obj.children[0]?.name !== 'nestMesh') continue;
+        const bird = m.obj.children[1];
+        if (!bird) continue;
+        if (robin && this.broodId === 'magpierobin' && this.clutch === 'egg') bird.position.set(0, 0.32, 0.02);
+        else bird.position.set(0.25, 0.18, 0.2);
+      }
+    }
+    if (!this.brood) return;
+    const show = !robin && this.broodId !== '' && this.clutch === 'egg';
+    this.brood.visible = show;
+    if (!show) return;
+    const anchor = this.clutchObject();
+    if (!anchor) {
+      this.brood.visible = false;
+      return;
+    }
+    anchor.getWorldPosition(this.brood.position);
+    anchor.getWorldScale(this.broodScale);
+    const s = Math.max(0.18, this.broodScale.x * 0.9);
+    this.brood.scale.setScalar(s);
+    this.brood.position.y += s * 0.35;
+    this.brood.lookAt(this.brood.position.x * 1.4, this.brood.position.y, this.brood.position.z * 1.4);
+  }
+
   /** Follow-cam data for a picked animal, or null once it has left. v10: always one member (chase cam when flying). */
   focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean; flying?: boolean; perched?: boolean; group?: number; id: string } | null {
     const h = ref as { crew: Crew; member: Member } | null;
@@ -1587,8 +1744,8 @@ export class Animals3D {
     }
     this.clutchNest.visible = true;
     this.clutchNest.traverse((o) => {
-      if (o.name === 'eggs') o.visible = this.clutch === 'egg';
-      if (o.name === 'chick') o.visible = this.clutch === 'chick';
+      if (o.name === 'eggs') o.visible = this.clutch === 'egg' && !this.hatchHide;
+      if (o.name === 'chick') o.visible = this.clutch === 'chick' && !this.hatchHide;
     });
     const local = tree.nest ? tree.nest.pos : new THREE.Vector3(tree.trunkRadius * 2, tree.height * 0.58, tree.trunkRadius * 0.4);
     tree.group.localToWorld(this.clutchNest.position.copy(local));
@@ -1599,8 +1756,8 @@ export class Animals3D {
   private applyClutch(c: { members: { obj: THREE.Object3D }[] }): void {
     for (const m of c.members) {
       m.obj.traverse((o) => {
-        if (o.name === 'eggs') o.visible = this.clutch === 'egg';
-        if (o.name === 'chick') o.visible = this.clutch === 'chick';
+        if (o.name === 'eggs') o.visible = this.clutch === 'egg' && !this.hatchHide;
+        if (o.name === 'chick') o.visible = this.clutch === 'chick' && !this.hatchHide;
       });
     }
   }
@@ -2092,6 +2249,8 @@ export class Animals3D {
     if (this.fly.points.visible) this.updateFireflies(t, night);
     this.updateHints(t, dt);
     this.syncClutchNest();
+    this.stepEggs(dt);
+    this.placeBrood();
   }
 
   /** v9: faint trails behind small flying birds, twinkles on insects — strongest when they are tiny on screen. */
@@ -2418,8 +2577,8 @@ export class Animals3D {
           else this.perchWorld(0, m.pos);
           const show = this.clutchBird === 'magpierobin' ? this.clutch : 'empty';
           m.obj.traverse((o) => {
-            if (o.name === 'eggs') o.visible = show === 'egg';
-            if (o.name === 'chick') o.visible = show === 'chick';
+          if (o.name === 'eggs') o.visible = show === 'egg' && !this.hatchHide;
+          if (o.name === 'chick') o.visible = show === 'chick' && !this.hatchHide;
           });
           break;
         }

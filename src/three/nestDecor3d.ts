@@ -159,21 +159,35 @@ function addPavilion(g: THREE.Group): void {
   g.add(pad, floor, seat, seatLeg, roof);
 }
 
+/** Island-unit site for decoration index (0 = the first hatch). */
+export function nestSite(index: number): { x: number; z: number; y: number; rot: number } {
+  const site = SITES[index % SITES.length]!;
+  return { x: site.x, z: site.z, y: domeY(site.x, site.z), rot: site.rot };
+}
+
+/** One decoration, unpositioned, feet at y = 0. The caller places it. */
+export function nestPiece(kind: NestBuildKind): { group: THREE.Group; blades: THREE.Object3D | null } {
+  const group = new THREE.Group();
+  let blades: THREE.Object3D | null = null;
+  if (kind === 'windmill') blades = addWindmill(group);
+  else if (kind === 'statue') addStatue(group);
+  else if (kind === 'house') addHouse(group);
+  else addPavilion(group);
+  return { group, blades };
+}
+
 /** One mesh group for every decoration this tree has earned. Positions are in island units. */
 export function buildNestDecor(kinds: readonly NestBuildKind[]): NestDecor {
   const group = new THREE.Group();
   const blades: THREE.Object3D[] = [];
   const obstacles: { x: number; z: number; r: number }[] = [];
   kinds.forEach((kind, i) => {
-    const site = SITES[i % SITES.length]!;
-    const piece = new THREE.Group();
-    piece.position.set(site.x, domeY(site.x, site.z), site.z);
-    piece.rotation.y = site.rot;
-    if (kind === 'windmill') blades.push(addWindmill(piece));
-    else if (kind === 'statue') addStatue(piece);
-    else if (kind === 'house') addHouse(piece);
-    else addPavilion(piece);
-    group.add(piece);
+    const site = nestSite(i);
+    const built = nestPiece(kind);
+    built.group.position.set(site.x, site.y, site.z);
+    built.group.rotation.y = site.rot;
+    if (built.blades) blades.push(built.blades);
+    group.add(built.group);
     const r = kind === 'statue' ? 0.42 : kind === 'windmill' ? 0.7 : 0.68;
     obstacles.push({ x: site.x, z: site.z, r });
   });

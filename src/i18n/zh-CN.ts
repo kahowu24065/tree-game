@@ -1195,6 +1195,7 @@ const table: Record<string, string> = {
  "ui.077": "<button type=\"button\" class=\"night-chip {t}\" data-action=\"preview\" aria-expanded=\"{previewOpen}\">{p2}今晚预计 <b>{p3}</b>{p4}</button>",
  "ui.078": "<div class=\"bar water wbar {p0} {zone} {flash}\" title=\"水分 0–150：最佳 {p3}–{p4}，100 以上烂根，150 濒死\">\n    <span class=\"bar-key\">W</span><span class=\"bar-label\">水分</span>\n    {p5}\n    <b class=\"bar-val\">{v}</b>\n  </div>",
  "ui.079": "孵蛋时间：<b>{text}</b>",
+ "ui.079b": "{line}",
  "ui.080": "濒死<span class=\"nc-long\">・剩</span> {p0}",
  "ui.081": "将水分调到 {p0}–{p1}、养分 {p2} 以上立刻救回（剩 {p3}）。",
  "ui.082": "<button type=\"button\" data-open=\"care\">去救</button>",
@@ -1578,6 +1579,19 @@ const table: Record<string, string> = {
  "credits.sRain": "雨声",
  "credits.sStorm": "雨声与雷声",
  "credits.sClick": "按钮声",
- "wx.srcJma": "气象厅 + MET Norway"
+ "wx.srcJma": "气象厅 + MET Norway",
+ "nest.lay": "树很健康（{minH}+），{bird}在这里下了蛋！{hours} 小时后孵化",
+ "nest.reward.build": "孵化后：岛上会多{decoration}",
+ "nest.reward.growth": "孵化后：当晚生长多约三成",
+ "nest.reward.badge": "孵化后：得到成就徽章",
+ "nest.reward.none": "孵化后：鸟儿会飞出来陪你",
+ "nest.warm": "保暖（快 1 小时）",
+ "nest.warmed": "已保暖 ✓",
+ "nest.warmSoon": "快要孵化了",
+ "nest.warmToast": "你帮{bird}的蛋保暖，提早 1 小时孵化！",
+ "nest.explain": "为什么会下蛋",
+ "nest.close": "关闭",
+ "nest.firstEgg": "<div><p class=\"eyebrow\">第一颗蛋</p><h2>{bird}</h2><p>这颗蛋 <b>{hours} 小时</b>后孵化。</p><p>{reward}</p><p>可以点保暖，快 1 小时孵化，每颗蛋一次。</p><p>树的健康度要有 <b>{minH} 或以上</b> 才会再有蛋。</p><button type=\"button\" class=\"primary\" data-action=\"close-modal\">知道了</button></div>",
+ "nest.egg": "<div data-egg=\"1\"><p class=\"eyebrow\">{bird}</p><h2>{bird}</h2><p id=\"egg-clock\"><b>{clock}</b></p><p>{reward}</p><button type=\"button\" class=\"ghost\" data-action=\"nest-intro\">{explain}</button><button type=\"button\" class=\"primary {warmCls}\" data-action=\"warm-egg\" aria-disabled=\"{warmOff}\">{warm}</button><button type=\"button\" class=\"texty\" data-action=\"close-modal\">{close}</button></div>"
 };
 export default table;
