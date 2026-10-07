@@ -45,6 +45,8 @@ export interface WeatherSnapshot {
   alerts?: OfficialAlerts | null;
   /** v15 local normals (average daily min / max of the past 14 days), null when unavailable. */
   normals?: Normals | null;
+  /** 1.4.51 'jma' when JMA (気象庁) numbers were used (Japan), else MET Norway only. */
+  model?: 'jma' | 'met';
   /** Location choice this snapshot was made for ('auto' or a PLACES id), so a changed choice refetches. */
   choice?: string;
 }
@@ -323,6 +325,8 @@ export interface Normals {
 
 export interface ForecastResult {
   timezone: string;
+  /** 1.4.51 'jma' when the server put JMA numbers in (Japan). */
+  model?: 'jma' | 'met';
   normals?: Normals | null;
   current: CurrentWeather;
   daily: ForecastDay[];
@@ -356,7 +360,7 @@ export function rainSoon(hourly: OpenMeteoHourly | undefined, nowIso: string): n
 
 export function parseOpenMeteo(data: unknown): ForecastResult {
   if (!data || typeof data !== 'object') throw new Error(tl('weather.021'));
-  const body = data as { timezone?: string; current?: OpenMeteoCurrent; daily?: OpenMeteoDaily; hourly?: OpenMeteoHourly };
+  const body = data as { source?: string; timezone?: string; current?: OpenMeteoCurrent; daily?: OpenMeteoDaily; hourly?: OpenMeteoHourly };
   const daily = body.daily;
   const dates = daily?.time ?? [];
   if (!dates.length) throw new Error(tl('weather.022'));
@@ -385,6 +389,7 @@ export function parseOpenMeteo(data: unknown): ForecastResult {
   const normals: Normals | null = first > 0 ? { min: avg(daily?.temperature_2m_min), max: avg(daily?.temperature_2m_max), days: first } : null;
   return {
     timezone: body.timezone || 'Asia/Hong_Kong',
+    model: /JMA/.test(body.source ?? '') ? 'jma' : 'met',
     normals: normals && (normals.min !== null || normals.max !== null) ? normals : null,
     current: {
       tempC: num(current.temperature_2m, days[0]?.tempMax ?? 26),

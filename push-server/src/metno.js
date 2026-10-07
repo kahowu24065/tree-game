@@ -6,8 +6,10 @@
 // cell in DATA/metno-hist.json — MET Norway has no history endpoint.
 import fs from 'node:fs';
 
+const inJapanBox = (lat, lon) => lat >= 24 && lat <= 46 && lon >= 122.9 && lon <= 154;
+
 export const MET_URL = 'https://api.met.no/weatherapi/locationforecast/2.0/complete';
-export const MET_UA = 'SekaiTree/1.4.50 https://sekai-tree.pages.dev akar.554426@gmail.com';
+export const MET_UA = 'SekaiTree/1.4.51 https://sekai-tree.pages.dev akar.554426@gmail.com';
 const HIST_DAYS = 15;
 
 /** Cache / history cell: 2 decimals (~1 km), well within the 4-decimal rule and shared by nearby players. */
@@ -219,7 +221,17 @@ export function validTz(tz) {
 }
 
 /** Caching client: one upstream request per cell until Expires; If-Modified-Since afterwards; hours kept as they pass. */
-export function createMetClient({ histFile, fetchImpl = fetch, ua = MET_UA, now = () => Date.now() } = {}) {
+export function createMetClient({ histFile, fetchImpl = fetch, ua = MET_UA, now = () => Date.now(), jma = null } = {}) {
+  /** 1.4.51 Japan: JMA numbers on top (src/jmawx.js); any JMA failure keeps the MET Norway body. */
+  async function withJma(shaped, lat, lon, tz) {
+    if (!jma || !inJapanBox(lat, lon)) return shaped;
+    try {
+      await jma.overlay(shaped, lat, lon, tz);
+    } catch (e) {
+      console.error('[jma wx]', String(e?.message ?? e));
+    }
+    return shaped;
+  }
   const cache = new Map(); // key → { body, expires, lastModified, at }
   const inflight = new Map();
   let hist = {};
@@ -292,12 +304,12 @@ export function createMetClient({ histFile, fetchImpl = fetch, ua = MET_UA, now 
     /** Open-Meteo-shaped forecast for the game (`GET /forecast`). */
     async forecast(lat, lon, tz) {
       const { key, body } = await raw(lat, lon);
-      return toOpenMeteoShape(body, hist[key] ?? [], lat, lon, validTz(tz), now());
+      return withJma(toOpenMeteoShape(body, hist[key] ?? [], lat, lon, validTz(tz), now()), lat, lon, validTz(tz));
     },
     /** Same shape, for the observed-number pushes (24 past hours, 1 forecast hour, today). */
     async observed(lat, lon, tz) {
       const { key, body } = await raw(lat, lon);
-      return toOpenMeteoShape(body, hist[key] ?? [], lat, lon, validTz(tz), now(), { pastHours: 24, forecastHours: 1, forecastDays: 1 });
+      return withJma(toOpenMeteoShape(body, hist[key] ?? [], lat, lon, validTz(tz), now(), { pastHours: 24, forecastHours: 1, forecastDays: 1 }), lat, lon, validTz(tz));
     },
     save,
   };

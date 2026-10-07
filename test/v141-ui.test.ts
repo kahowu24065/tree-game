@@ -66,7 +66,7 @@ describe('v1.4.1 天氣概況 page', () => {
   });
   it('outside HK says there are no HKO warnings', () => {
     const html = weatherPageHtml(view({ hkoUsed: false, warnings: [], provider: 'met-no' }));
-    expect(html).toContain('Open-Meteo');
+    expect(html).toContain('MET Norway');
     expect(html).not.toContain('香港天文台・生效中警告');
     expect(html).not.toContain('加固');
   });
