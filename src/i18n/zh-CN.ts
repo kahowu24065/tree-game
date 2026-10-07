@@ -592,7 +592,7 @@ const table: Record<string, string> = {
  "guide.feedCA": "加拿大：Rainfall warning → {rain}（红色 → {black}）；Wind warning → {t8}（黄色 → {t1}）；Hurricane warning → {t8}；Tropical storm warning → {t1}；Severe thunderstorm／Tornado warning → {thunder}；Heat warning → {hot}；Extreme cold warning → {cold}。",
  "guide.feedCard": "香港、澳门、台湾以外：天气卡列出官方预警（游戏类别、官方原名、时间与数据来源）；没有官方来源的地方会注明使用实测数字。",
  "guide.feedEU": "欧洲：MeteoAlarm 橙色或红色才算。雨／洪水：橙 → {rain}、红 → {black}；风：橙 → {t1}、红 → {t8}；雷暴、高温、低温：橙或以上 → {thunder}／{hot}／{cold}。黄色只显示。没有对应地区数据的国家（例如瑞士）会用实测数字。",
- "guide.feedIntro": "美国（国家气象局）、加拿大（加拿大环境部）、日本（气象厅）与欧洲大部分国家（MeteoAlarm）：只计官方正式发布、当前生效的预警。事件、伤害与成就全部只依这些预警（挺过或完成应对才算），不会用 MET Norway 数字或预报。",
+ "guide.feedIntro": "美国（国家气象局）、加拿大（加拿大环境部）、日本（气象厅）与欧洲大部分国家（MeteoAlarm）：只计官方正式发布、当前生效的预警。日本的天气数字（气温、湿度、雨量、风、预报）也使用气象厅 AMeDAS 实测与天气预报，缺少的部分才用 MET Norway。事件、伤害与成就全部只依这些预警（挺过或完成应对才算），不会用 MET Norway 数字或预报。",
  "guide.feedJP": "日本：大雨特别警报、大雨危险警报 → {black}；大雨警报 → {rain}；暴风（雪）警报与特别警报 → {t8}；强风、风雪注意报 → {t1}；雷注意报 → {thunder}；低温注意报 → {cold}；环境省的中暑警戒警报（熱中症警戒アラート，暑热指数 WBGT ≥ 33）与中暑特别警戒警报（熱中症特別警戒アラート，WBGT ≥ 35）→ {hot}（按府县地区，当天生效；每年约 4 月底至 10 月底才有）。",
  "guide.feedUS": "美国：Flash Flood Warning → {black}；Flood Warning → {rain}；Hurricane／Typhoon／High Wind／Extreme Wind Warning → {t8}；Tropical Storm Warning、Wind Advisory → {t1}；Severe Thunderstorm／Tornado Warning → {thunder}；Extreme Heat Warning → {hot}；Extreme Cold／Wind Chill／Freeze Warning → {cold}。",
  "guide.obsBlack": "一小时 ≥ {mm} 毫米，或 3 小时合计 ≥ {mm3} 毫米",
@@ -1461,10 +1461,10 @@ const table: Record<string, string> = {
  "ui.344": "\n    <div class=\"explainer\">\n      <p class=\"eyebrow\">🌳 {p0}长成青年树</p>\n      <h2>由今天开始，风灾会影响这棵树</h2>\n      <ul class=\"explain-list\">\n        <li><b>加固解锁</b><span>打木桩 +{amount}、绑防风绳 +{amount_}、修枝防风 +{amount__}，每项每天一次（最多 {R_MAX}）。</span></li>\n        <li><b>抗风力开始生效</b><span>现在 {p5}。每晚稍微松动（−{R_DAILY_DECAY}）；风灾过后会消耗：初级台风 18、狂风雷暴 25、高级台风 35。</span></li>\n        <li><b>风灾会伤树</b><span>伤害 = 基础 × (1 − R/100)：初级台风 30、狂风雷暴 35、高级台风 60。抗风力越高，伤得越少；挡到七成半以上还有生长 ×1.3。</span></li>\n        <li><b>倒塌</b><span>风灾那晚抗风力低于门槛（初级台风 20、狂风雷暴 25、高级台风 40）一定倒塌：主干断了一截，高度 −20%。最多倒 2 次，第 3 次这棵树会死。倒塌后第二天加固双倍。</span></li>\n        <li><b>今晚预计会提醒你</b><span>有风灾而抗风力不足，“今晚预计”会出倒塌警告。</span></li>\n      </ul>\n      <p class=\"fine\">酷热和暴雨照旧靠应急行动（酷热浇水、暴雨疏水），抗风力帮不上忙。</p>\n      <button type=\"button\" class=\"primary\" data-action=\"wind-explained\">明白</button>\n    </div>",
  "ui.345": "\n    <p class=\"eyebrow\">夜间结算</p>\n    <h2>昨晚发生了一些事</h2>\n    <p>{p0}</p>\n    <button type=\"button\" class=\"primary\" data-action=\"close-modal\">去看看这棵树</button>\n  ",
  "ui.346": "香港",
- "ui.353": "\n    <p class=\"eyebrow\">天气地点</p>\n    <h2>在哪里种这棵树？</h2>\n    <p>天气和预警会跟着这个地方：香港依天文台，澳门依地球物理气象局，台湾依中央气象署。选“用我所在位置”会询问你的位置，只用来查天气；在其他地方则使用 MET Norway。</p>\n    <button type=\"button\" class=\"place wide {p0}\" data-place=\"geo\">{p1}<span>用我所在位置</span></button>\n    <div class=\"place-groups\">{rows}</div>\n    <button type=\"button\" class=\"texty\" data-action=\"close-modal\">取消</button>\n  ",
+ "ui.353": "\n    <p class=\"eyebrow\">天气地点</p>\n    <h2>在哪里种这棵树？</h2>\n    <p>天气和预警会跟着这个地方：香港依天文台，澳门依地球物理气象局，台湾依中央气象署。选“用我所在位置”会询问你的位置，只用来查天气；日本使用气象厅，其他地方则使用 MET Norway。</p>\n    <button type=\"button\" class=\"place wide {p0}\" data-place=\"geo\">{p1}<span>用我所在位置</span></button>\n    <div class=\"place-groups\">{rows}</div>\n    <button type=\"button\" class=\"texty\" data-action=\"close-modal\">取消</button>\n  ",
  "ui.354": "<div class=\"setting-row\">\n      <span>提醒通知</span>\n      <div class=\"seg\">\n        <button type=\"button\" class=\"{p0}\" data-notify=\"on\">开</button>\n        <button type=\"button\" class=\"{p1}\" data-notify=\"off\">关</button>\n      </div>\n    </div>",
  "ui.355": "\n    <p class=\"eyebrow\">设置</p>\n    <h2>{p0}</h2>\n    <div class=\"setting-row\">\n      <span>树的名字</span>\n      <button type=\"button\" class=\"ghost\" data-action=\"rename\">改名</button>\n    </div>\n    <div class=\"setting-row\">\n      <span>声音</span>\n      <div class=\"seg\">\n        <button type=\"button\" class=\"{p1}\" data-sound=\"1\" aria-pressed=\"{soundOn}\">开</button>\n        <button type=\"button\" class=\"{p3}\" data-sound=\"0\" aria-pressed=\"{soundOn_}\">关</button>\n      </div>\n    </div>\n    {p5}\n    <div class=\"setting-row\">\n      <span>规则和计算</span>\n      <button type=\"button\" class=\"ghost\" data-action=\"guide\">玩法</button>\n    </div>\n    <div class=\"setting-row\">\n      <span>存盘</span>\n      <div class=\"seg\">\n        <button type=\"button\" data-action=\"export-save\">导出存盘</button>\n        <button type=\"button\" data-action=\"import-save\">导入存盘</button>\n      </div>\n    </div>\n    <p class=\"set-legal\"><button type=\"button\" data-action=\"disclaimer\">免责声明</button><a href=\"{privacyUrl}\" target=\"_blank\" rel=\"noopener\">隐私政策</a><a href=\"{termsUrl}\" target=\"_blank\" rel=\"noopener\">使用条款</a></p>\n    <p class=\"set-ver\">版本 {p6}</p>\n    <button type=\"button\" class=\"primary\" data-action=\"close-modal\">关闭</button>\n  ",
- "ui.356": "\n    <p class=\"eyebrow\">免责声明</p>\n    <h2>免责声明</h2>\n    <p>世界之树是游戏。画面里面的健康、水分、养分、倒塌和成长，都是玩法，不代表一棵真树。</p>\n    <p>天气来自香港天文台、澳门地球物理气象局、台湾中央气象署或者 MET Norway，可能和官方最新消息有出入，不是出行或者安全指引。恶劣天气请以当地气象部门为准。</p>\n    <button type=\"button\" class=\"primary\" data-action=\"settings\">返回</button>\n  ",
+ "ui.356": "\n    <p class=\"eyebrow\">免责声明</p>\n    <h2>免责声明</h2>\n    <div class=\"credits\"><p><b>这只是游戏。</b>世界之树是以真实天气为背景的休闲游戏。画面中的树、健康、水分、养分、抗风力、倒塌、事件与成就全部都是游戏玩法，不代表任何真实植物或真实情况。</p><p><b>不是官方预报或预警。</b>游戏显示的天气、预报、预警与推送通知，是由公开数据（香港天文台、澳门地球物理气象局、台湾中央气象署、日本气象厅、美国国家气象局、加拿大环境与气候变化部、MeteoAlarm、MET Norway 等）整理与转换而成，仅供娱乐。它们不是官方发布，不能代替官方预报、预警或紧急通知。</p><p><b>数据可能延迟或不准确。</b>数据可能因网络、服务器、来源更新时间或本游戏的转换（例如换算单位、选择最近测站、转成游戏事件）而延迟、不完整或有出入，也可能随时中断。</p><p><b>安全第一。</b>遇到恶劣天气（台风、暴雨、雷暴、高温、低温等）时，请以当地气象部门与政府的最新消息为准，并按官方指示行动。请勿为了游戏在危险天气或危险地点外出、拍摄或停留。高温时注意补水、避免长时间暴晒；玩游戏请适度休息。</p><p><b>无认可、无关联。</b>上述各气象机构及数据提供者并未认可、推荐、赞助或参与本游戏，本游戏也不代表它们。来源与授权见 设置 › 数据来源及授权。</p><p><b>责任限制。</b>本游戏按“现状”提供，不作任何明示或默示保证。在法律允许的最大范围内，开发者不对因使用或依赖本游戏（包括天气数据与通知）造成的任何直接或间接损失负责。</p></div>\n    <button type=\"button\" class=\"primary\" data-action=\"settings\">返回</button>\n  ",
  "ui.358": "已经拷贝到剪贴板。",
  "ui.359": "长按下方选“全选”再拷贝。",
  "ui.360": "<button type=\"button\" data-action=\"share-save\">分享</button>",
@@ -1563,7 +1563,7 @@ const table: Record<string, string> = {
  "credits.eccc": "加拿大环境与气候变化部（ECCC）",
  "credits.ecccLic": "Data Source: Environment and Climate Change Canada。按 ECCC Data Server End-use Licence（与 Open Government Licence – Canada 同类条款）使用。",
  "credits.jma": "日本气象厅",
- "credits.jmaLic": "出典：気象庁ホームページ。按公共数据利用规约（第1.0版）使用；预警分类由本游戏加工。",
+ "credits.jmaLic": "出典：気象庁ホームページ（AMeDAS 实测、天气预报、警报・注意报）。按公共数据利用规约（第1.0版）使用；本游戏已加工（选择最近测站、换算单位、转成游戏事件）。",
  "credits.wbgt": "日本环境省 中暑预防信息网站",
  "credits.wbgtLic": "出典：環境省熱中症予防情報サイト。按公共数据利用规约（第1.0版）使用；由本游戏加工。",
  "credits.meteoalarm": "MeteoAlarm（EUMETNET 欧洲各国气象机构）",
@@ -1577,6 +1577,7 @@ const table: Record<string, string> = {
  "credits.sFrog": "青蛙",
  "credits.sRain": "雨声",
  "credits.sStorm": "雨声与雷声",
- "credits.sClick": "按钮声"
+ "credits.sClick": "按钮声",
+ "wx.srcJma": "气象厅 + MET Norway"
 };
 export default table;

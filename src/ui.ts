@@ -62,6 +62,8 @@ export interface WeatherView {
   hkoUsed: boolean;
   /** Which bureau the warnings came from. Macau uses SMG, Taiwan CWA; absent means HKO when hkoUsed. */
   bureau?: 'hko' | 'smg' | 'cwa';
+  /** 1.4.51 'jma' = 氣象廳 numbers (Japan) with MET Norway for the rest. */
+  model?: 'jma' | 'met';
   warnings: HkoWarning[];
   /** False when the bureau warning list failed to load. Missing means the list is known. */
   warningsKnown?: boolean;
@@ -705,7 +707,7 @@ function sourceLabel(wx: WeatherView): string {
     const note = wx.bureau === 'smg' && wx.hkoUsed ? tl('ui.153') : wx.bureau === 'cwa' && wx.hkoUsed ? tl('ui.154') : wx.hkoUsed ? tl('ui.155') : '';
     return tl('ui.156', { note });
   }
-  const names = wx.bureau === 'smg' ? tl('ui.157') : wx.bureau === 'cwa' ? tl('ui.158') : wx.bureau === 'hko' || wx.provider === 'hko' ? tl('ui.159') : 'Open-Meteo';
+  const names = wx.bureau === 'smg' ? tl('ui.157') : wx.bureau === 'cwa' ? tl('ui.158') : wx.bureau === 'hko' || wx.provider === 'hko' ? tl('ui.159') : wx.model === 'jma' ? tl('wx.srcJma') : 'MET Norway';
   if (wx.origin === 'cache') return tl('ui.160', { p0: esc(wx.updated), names });
   return tl('ui.162', { names, p1: wx.updated ? ` · ${esc(wx.updated)}` : '', p2: wx.loading ? tl('ui.161') : '' });
 }
