@@ -37,20 +37,14 @@ export const META = { effective: src.EFFECTIVE, mail: src.MAIL };
 export function parts(kind) {
   const zh = kind === 'privacy' ? src.ZH : src.SUPPORT_ZH;
   const en = kind === 'privacy' ? src.EN : src.SUPPORT_EN;
-  // Support page: 3 languages only (繁體 = Hong Kong text, 简体, English).
-  if (kind === 'support') return [['zh-hk', 'zh-HK', '繁體中文', zh], ['zh-cn', 'zh-CN', '简体中文', cnFix(zh)], ['en', 'en', 'English', en]];
-  return [['zh-hk', 'zh-HK', '繁體中文（香港）', zh], ['zh-tw', 'zh-TW', '繁體中文（台灣）', twFix(zh)], ['zh-cn', 'zh-CN', '简体中文', cnFix(zh)], ['en', 'en', 'English', en]];
+  // Public pages: 3 languages only (繁體 = Hong Kong text, 简体, English).
+  return [['zh-hk', 'zh-HK', '繁體中文', zh], ['zh-cn', 'zh-CN', '简体中文', cnFix(zh)], ['en', 'en', 'English', en]];
 }
 export function privacy(termsHref) {
   return page({
     title: '世界之樹 World Tree — 私隱政策 / Privacy Policy',
-    nav: `<a href="#zh-hk">繁體中文（香港）</a><a href="#zh-tw">繁體中文（台灣）</a><a href="#zh-cn">简体中文</a><a href="#en">English</a>${termsHref ? `<a href="${termsHref}">使用條款 Terms</a>` : ''}`,
-    sections: [
-      ['zh-hk', 'zh-HK', '繁體中文（香港）', src.ZH],
-      ['zh-tw', 'zh-TW', '繁體中文（台灣）', twFix(src.ZH)],
-      ['zh-cn', 'zh-CN', '简体中文', cnFix(src.ZH)],
-      ['en', 'en', 'English', src.EN],
-    ],
+    nav: `<a href="#zh-hk">繁體中文</a><a href="#zh-cn">简体中文</a><a href="#en">English</a>${termsHref ? `<a href="${termsHref}">使用條款 Terms</a>` : ''}`,
+    sections: parts('privacy'),
   });
 }
 export function support(privacyHref) {
