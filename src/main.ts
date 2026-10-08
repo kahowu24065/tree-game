@@ -148,6 +148,7 @@ import { guideModal, type GuideTab } from './guide';
 import { Share } from '@capacitor/share';
 import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
+import { HEADSUP_KEY, headsUpEnabled } from './headsUp';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
 import { LOCALES, getHeightUnit, getLocale, isHeightUnit, loadHeightUnit, saveHeightUnit, saveLocale, switchLocale, t as tl, tName, useHeightUnit, type HeightUnit, type Locale } from './i18n';
@@ -1117,6 +1118,7 @@ function scheduleReminders(background: boolean): void {
       alive: state.started && !state.over,
       tree: state.over ? 'dead' : state.dying ? 'dying' : 'ok',
       resist: Math.round(state.resist),
+      headsUp: headsUpEnabled(),
     });
   const offset = virtualNow() - Date.now();
   applyNotifications(
@@ -2304,7 +2306,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-cal], [data-cal-nav]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -2382,6 +2384,12 @@ document.addEventListener('click', (event) => {
       const on = btn.dataset.notify === target.dataset.notify;
       btn.classList.toggle('on', on);
     });
+    return;
+  }
+  if (target.dataset.headsup === 'on' || target.dataset.headsup === 'off') {
+    kvSet(HEADSUP_KEY, target.dataset.headsup === 'on' ? '1' : '0');
+    scheduleReminders(false); // re-sends /state with the new choice
+    target.closest('.seg')?.querySelectorAll<HTMLElement>('button').forEach((btn) => btn.classList.toggle('on', btn.dataset.headsup === target.dataset.headsup));
     return;
   }
   if (target.dataset.quality === 'low' || target.dataset.quality === 'high') {
@@ -2943,7 +2951,7 @@ if (usesDeviceLocation()) {
 }
 for (const ev of ['pointerup', 'touchend', 'keydown'] as const) document.addEventListener(ev, kickAudio, { passive: true, capture: true });
 // 1.4.58 MeteoAlarm terms: re-used warnings must not lag more than 10 min, so in Europe the alerts (only) refresh
-// every 5 min while the game is open. Other feeds keep the normal weather refresh.
+// every 4 min while the game is open (1.4.60; was 5). Other feeds keep the normal weather refresh.
 let feedAlertsBusy = false;
 window.setInterval(() => {
   const a = weather.alerts;

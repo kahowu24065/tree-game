@@ -83,6 +83,8 @@ export function parseState(body, now = Date.now()) {
     tree: ['ok', 'dying', 'dead'].includes(body.tree) ? body.tree : body.alive === false ? 'dead' : 'ok',
     // Device language for push text (1.4.19); older apps send none → zh-HK.
     locale: LOCALES.includes(body.locale) ? body.locale : null,
+    // 1.4.60 weather heads-up pushes (app setting; only an explicit true opts in).
+    headsUp: body.headsUp === true,
     resist: Number.isFinite(Number(body.resist)) ? Math.max(0, Math.min(100, Math.round(Number(body.resist)))) : null,
     at: now,
   };

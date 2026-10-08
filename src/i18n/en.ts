@@ -1677,6 +1677,11 @@ const table: Record<string, string> = {
  "share.height": "Height {h}",
  "share.weather": "Weathered {name} × {n}",
  "share.saved": "Tree card downloaded.",
- "share.failed": "Couldn't make the tree card. Please try again later."
+ "share.failed": "Couldn't make the tree card. Please try again later.",
+ "headsup.row": "Weather heads-up",
+ "headsup.hint": "A note before forecast typhoons, rainstorms, heat or cold (never 22:00–08:00)",
+ "headsup.on": "On",
+ "headsup.off": "Off",
+ "guide.headsup": "Weather heads-up (Settings → Weather heads-up, with notifications on): when the forecast says storm winds, heavy rain, heat or cold may come tomorrow, you get an early note such as \"Tomorrow: storm winds possible. Remember to reinforce your tree.\" Hong Kong, Macau and Taiwan use the Observatory / SMG / CWA forecasts; the US, Canada, Japan and Europe use official alerts already issued for later; elsewhere MET Norway forecasts. At most one note per event, never between 22:00 and 08:00. A heads-up only helps you prepare: weather events, damage and achievements in the game still follow only official warnings in force."
 };
 export default table;

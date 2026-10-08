@@ -39,6 +39,8 @@ export interface PushState {
   resist: number;
   /** v1.4.19: game language (zh-TW / zh-HK / zh-CN / en) for the push texts. Filled in here. */
   locale?: string;
+  /** 1.4.60 天氣預告 opt-in: heads-ups before forecast typhoon / rainstorm / heat / cold. */
+  headsUp?: boolean;
 }
 
 let latest: PushState | null = null;

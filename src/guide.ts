@@ -341,6 +341,7 @@ function pushTab(): string {
   return [
     h(tl('guide.190')),
     p(tl('guide.191')),
+    p(tl('guide.headsup')),
     h(tl('guide.192')),
     table(
       [tl('guide.193'), tl('guide.194')],

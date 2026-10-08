@@ -1629,6 +1629,11 @@ const table: Record<string, string> = {
  "share.height": "樹高 {h}",
  "share.weather": "捱過{name} × {n}",
  "share.saved": "樹卡已經下載咗。",
- "share.failed": "樹卡整唔到，遲啲再試吓。"
+ "share.failed": "樹卡整唔到，遲啲再試吓。",
+ "headsup.row": "天氣預告",
+ "headsup.hint": "打風、暴雨、酷熱、寒冷之前提早講聲（22:00–08:00 唔會發）",
+ "headsup.on": "開",
+ "headsup.off": "關",
+ "guide.headsup": "天氣預告（設定 → 天氣預告，要開咗提醒通知）：預報話聽日可能打風、有大雨、好熱或者好凍，就會提早講聲，例如「聽日可能打風，記得加固」。香港、澳門、臺灣跟天文台／地球物理氣象局／中央氣象署嘅預報；美國、加拿大、日本同歐洲跟已經發出、遲啲先生效嘅官方警報；其他地方用 MET Norway 預報。每件事最多講一次，22:00 至 08:00 唔會發。預告只係提你準備，遊戲嘅天氣事件、損傷同成就照樣只跟官方正式生效嘅警告。"
 };
 export default table;
