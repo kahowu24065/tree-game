@@ -892,9 +892,10 @@ body.tree-fx .coach {
   color: var(--green);
 }
 
-/* Toast */
+/* Toast. 1.4.61: a sibling of #modal, not inside .hud (z-index 2), so a copy / share
+   confirmation paints over an open modal (10), the drawers (7) and the dev panel (61). */
 .toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
   bottom: calc(var(--dock-h) + 84px);
   transform: translate(-50%, 12px);
@@ -909,7 +910,7 @@ body.tree-fx .coach {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s ease, transform 0.25s ease;
-  z-index: 5;
+  z-index: 70;
 }
 
 .toast.show {
