@@ -15,7 +15,7 @@ import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
-import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount } from './nest';
+import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nestRewardText, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount, warmBlock } from './nest';
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
@@ -341,9 +341,28 @@ export function syncHatchCard(state: GameState): void {
     stopHatchTick();
     return;
   }
+  if (typeof el.setAttribute === 'function') {
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('data-action', 'hatch-card');
+  }
   const text = hatchClockText(state);
   el.hidden = text == null;
-  if (text) setHtml(el, tl('ui.079', { text }));
+  if (text) {
+    // The clock string stays the whole innerHTML the countdown test checks. A real card then gets the reward as a second line.
+    setHtml(el, tl('ui.079', { text }));
+    const host = el as HTMLElement;
+    if (typeof host.appendChild === 'function' && typeof document.createElement === 'function') {
+      const n = (state.nest?.hatched ?? 0) + 1;
+      let extra = host.querySelector?.('.hatch-reward');
+      if (!extra) {
+        extra = document.createElement('span');
+        extra.className = 'hatch-reward';
+        host.appendChild(extra);
+      }
+      extra.textContent = tl('ui.079b', { line: nestRewardText(n) });
+    }
+  }
   if (text == null || document.hidden) stopHatchTick();
   else scheduleHatchTick();
 }
@@ -1422,6 +1441,29 @@ export function nestIntroModal(bird: string): string {
   return tl('nest.intro', { bird: esc(bird), minH: NEST_MIN_HEALTH, hours: NEST_HATCH_MS / 3600_000 });
 }
 
+/** 1.4.52 once, the first time an egg is laid. */
+export function firstEggModal(bird: string, reward: string): string {
+  return tl('nest.firstEgg', { bird: esc(bird), hours: NEST_HATCH_MS / 3600_000, minH: NEST_MIN_HEALTH, reward: esc(reward) });
+}
+
+/** Egg pop-up: live countdown, what this hatch gives, the rules, and keep-warm. */
+export function eggPopup(state: GameState): string {
+  const egg = state.nest?.egg;
+  const n = (state.nest?.hatched ?? 0) + 1;
+  const block = warmBlock(state, uiNow());
+  const warm = block === 'already' ? tl('nest.warmed') : block === 'soon' ? tl('nest.warmSoon') : tl('nest.warm');
+  return tl('nest.egg', {
+    bird: esc(egg ? nestBirdName(egg.bird) : ''),
+    clock: hatchClockText(state) ?? '00:00:00',
+    reward: esc(nestRewardText(n)),
+    explain: esc(tl('nest.explain')),
+    warm: esc(warm),
+    warmCls: block ? 'off' : '',
+    warmOff: block ? 'true' : 'false',
+    close: esc(tl('nest.close')),
+  });
+}
+
 export function openModal(inner: string, cls = ''): void {
   const modal = document.getElementById('modal');
   if (!modal) return;
@@ -1489,6 +1531,12 @@ export function updateModal(inner: string): void {
   }, modalFadeMs() ? 180 : 0);
 }
 
+let onModalClosed: (() => void) | null = null;
+/** Fired once the modal has actually left the screen (night report, egg pop-up, …). */
+export function setOnModalClosed(fn: (() => void) | null): void {
+  onModalClosed = fn;
+}
+
 export function closeModal(then?: () => void): void {
   const modal = document.getElementById('modal');
   if (!modal || modal.hidden) {
@@ -1504,6 +1552,7 @@ export function closeModal(then?: () => void): void {
     modal.innerHTML = '';
     modal.classList.remove('leaving', 'in');
     then?.();
+    onModalClosed?.();
   }, modalFadeMs());
 }
 

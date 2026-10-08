@@ -9,8 +9,9 @@ import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { addNearFade, buildTree, healthUniforms, peekUniform, skinUniforms, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
-import type { NestBuildKind } from '../nest';
 import { buildNestDecor } from './nestDecor3d';
+import { HatchFx, RevealFx } from './eggFx3d';
+import type { NestBuildKind } from '../nest';
 import { healthLook } from '../treeLook';
 import { animalById } from '../data/animals';
 import type { SpeciesId } from '../data/species';
@@ -46,6 +47,22 @@ function overcastOf(input: SceneInput): number {
   else if (c.code >= 51) o = c.code >= 63 && c.code !== 71 ? 0.85 : 0.7;
   if (c.raining) o = Math.max(o, 0.7);
   return o;
+}
+
+const BROOD_STORM = new Set(['heavy-rain', 'gale', 'typhoon']);
+
+function broodBird(input: SceneInput): string {
+  if (input.nest !== 'egg') return '';
+  if (!input.cond.stormKind || !BROOD_STORM.has(input.cond.stormKind)) return '';
+  const id = input.nestBird || '';
+  if (!id) return 'sparrow';
+  if (id === 'magpierobin' || input.residents.includes(id)) return id;
+  return 'sparrow';
+}
+
+function birdTint(id: string): { body: string; belly: string; beak: string } {
+  const c = animalById(id)?.look.c ?? [];
+  return { body: c[0] || '#c4a574', belly: c[1] || '#f3e6cf', beak: c[3] || '#e07a2f' };
 }
 
 function rainOf(input: SceneInput): number {
@@ -115,6 +132,20 @@ export class Scene3D {
   private nestBlades: THREE.Object3D[] = [];
   private nestObstacles: { x: number; z: number; r: number }[] = [];
   private nestKey = '';
+  /** 1.4.52 egg tap, hatch flight and decoration reveal. */
+  onEggTap: (() => void) | null = null;
+  private hatchFx: HatchFx | null = null;
+  private revealFx: RevealFx | null = null;
+  private revealQueued: { kind: NestBuildKind; index: number; bird: string; onDone: () => void } | null = null;
+  private pendingHatch: string | null = null;
+  private nestSeen = false;
+  private prevNest: 'empty' | 'egg' | 'chick' | null = null;
+  private readonly camOut = new THREE.Vector3();
+  private readonly lookOut = new THREE.Vector3();
+  private readonly camBase = new THREE.Vector3();
+  private readonly lookBase = new THREE.Vector3();
+  private readonly hatchFrom = new THREE.Vector3();
+  private readonly hatchTo = new THREE.Vector3();
   private rain: THREE.LineSegments;
   private rainSeeds: Float32Array;
   private sea: THREE.Mesh;
@@ -811,6 +842,11 @@ export class Scene3D {
     const c = this.canvas;
     c.style.touchAction = 'none';
     c.addEventListener('pointerdown', (e) => {
+      if (this.revealFx) {
+        this.revealFx.skip();
+        this.settleReveal();
+        return;
+      }
       if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro') return;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
@@ -1203,11 +1239,17 @@ export class Scene3D {
     if (y > top) this.panGoal.y = top - this.camTargetY;
   }
 
-  /** Tap: follow the animal under the finger (with a little slack for tiny ones). */
+  /** Tap: the egg first, then the animal under the finger (with a little slack for tiny ones). */
   private tapAt(x: number, y: number): void {
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
     const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height);
-    const hit = this.animals.pick(this.raycaster.ray, (d) => d * perPx * 26);
+    const tol = (d: number) => d * perPx * 26;
+    if (this.animals.pickClutch(this.raycaster.ray, tol)) {
+      this.animals.nudgeEggs();
+      this.onEggTap?.();
+      return;
+    }
+    const hit = this.animals.pick(this.raycaster.ray, tol);
     if (hit) {
       this.followRef = hit;
       this.follow = null;
@@ -1564,6 +1606,8 @@ export class Scene3D {
       this.animalsKey = akey;
     }
     this.animals.setClutch(input.nest ?? 'empty', input.nestBird ?? '');
+    this.noteNestPhase(input);
+    this.animals.setBrood(broodBird(input));
   }
 
   /** Ground height (island units) under (x, z), read from the rendered garden / habitat land meshes. */
@@ -1903,6 +1947,7 @@ export class Scene3D {
     this.ensureNav(tree, K, propK, Boolean(input.landmark), fire);
     this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
     this.animals.update(t, dt, night);
+    this.stepEggFx(input, dt);
 
     const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
     const islandStage = this.habitat?.stage ?? 0;
@@ -2031,7 +2076,7 @@ export class Scene3D {
     }
     if (this.seedPhase === 'pull') this.panOff.copy(this.panGoal);
     else this.panOff.lerp(this.panGoal, ez);
-    const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall;
+    const handsOff = !this.dragging && !this.pinch && !this.followRef && !this.follow && !this.fall && !this.revealFx;
     const planting = this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro';
     if (handsOff && !planting && performance.now() - this.lastDrag > IDLE_MS) {
       if (!this.isZoomed()) this.dragEl *= 1 - Math.min(1, dt * 0.6);
@@ -2112,13 +2157,26 @@ export class Scene3D {
       this.followCap = Infinity;
     }
     this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt, focus ? 'follow' : this.zoomGoal < 0.97 ? 'zoom' : null, dist);
-    this.camera.position.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
+    this.camBase.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
+    this.lookBase.copy(target);
+    if (this.revealFx && !this.revealFx.done) {
+      this.revealFx.frame(dt, this.camBase, this.lookBase, this.camOut, this.lookOut);
+      if (this.revealFx.done) {
+        this.camOut.copy(this.camBase);
+        this.lookOut.copy(this.lookBase);
+        this.settleReveal();
+      }
+    } else {
+      this.camOut.copy(this.camBase);
+      this.lookOut.copy(this.lookBase);
+    }
+    this.camera.position.copy(this.camOut);
     // Never put the camera under the ground when zoomed right in.
     if (this.isZoomed() || focus) {
       const gy = (this.habitat?.groundAt(this.camera.position.x, this.camera.position.z) ?? 0) + Math.min(0.12, dist * 0.2);
       if (this.camera.position.y < gy) this.camera.position.y = gy;
     }
-    this.camera.lookAt(target);
+    this.camera.lookAt(this.lookOut);
     this.traceCam(raw, dt);
     if (this.shake > 0.001 && !input.reducedMotion) {
       // v16 snap / impact shake: a small jitter of the camera position (the view direction stays).
@@ -2166,6 +2224,78 @@ export class Scene3D {
     this.stepSprout(tree, dt);
     this.renderer.render(this.scene, this.camera);
     this.drawRays(input, t);
+  }
+
+  /** Play the ground-break for one earned decoration. Reduced motion marks it revealed with no camera move. */
+  playNestReveal(opts: { kind: NestBuildKind; index: number; bird: string; reduced: boolean; onDone: () => void }): void {
+    if (opts.reduced) {
+      opts.onDone();
+      return;
+    }
+    if (this.hatchFx || this.pendingHatch) {
+      this.revealQueued = opts;
+      return;
+    }
+    if (this.revealFx) return;
+    this.startReveal(opts);
+  }
+
+  private startReveal(opts: { kind: NestBuildKind; index: number; bird: string; onDone: () => void }): void {
+    this.nestDecor.updateWorldMatrix(true, false);
+    if (!this.animals.nestPoint(this.hatchFrom)) {
+      const y = (this.tree?.height ?? 2) * 0.55;
+      this.hatchFrom.set(0.3, y, 0.2);
+    }
+    this.revealFx = new RevealFx(this.scene, this.nestDecor, {
+      kind: opts.kind,
+      index: opts.index,
+      tint: birdTint(opts.bird),
+      nestWorld: this.hatchFrom,
+      scale: this.islandK,
+      onDone: opts.onDone,
+    });
+  }
+
+  private settleReveal(): void {
+    const fx = this.revealFx;
+    if (!fx) return;
+    this.revealFx = null;
+    const done = fx.onDone;
+    fx.dispose();
+    // After the frame, so a reveal that ends mid-draw does not start the next shot re-entrantly.
+    queueMicrotask(done);
+  }
+
+  private noteNestPhase(input: SceneInput): void {
+    const phase = input.nest ?? 'empty';
+    if (this.nestSeen && this.prevNest === 'egg' && phase === 'chick' && !input.bare) {
+      if (!input.reducedMotion) this.pendingHatch = input.nestBird || 'sparrow';
+    }
+    this.prevNest = phase;
+    this.nestSeen = true;
+  }
+
+  private stepEggFx(input: SceneInput, dt: number): void {
+    if (this.pendingHatch && !this.hatchFx) {
+      const bird = this.pendingHatch;
+      this.pendingHatch = null;
+      if (this.animals.nestPoint(this.hatchFrom)) {
+        const lx = 1.5;
+        const lz = 0.9;
+        const K = this.islandK;
+        this.hatchTo.set(lx * K, this.groundFast(lx, lz) * K + 0.08, lz * K);
+        this.animals.setHatchHide(true);
+        this.hatchFx = new HatchFx(this.scene, this.hatchFrom, this.hatchTo, birdTint(bird));
+      }
+    }
+    if (this.hatchFx && !this.hatchFx.step(dt)) {
+      this.hatchFx = null;
+      this.animals.setHatchHide(false);
+      const queued = this.revealQueued;
+      this.revealQueued = null;
+      if (queued && !input.reducedMotion) this.startReveal(queued);
+      else queued?.onDone();
+    }
   }
 
   /** Hatch decorations (風車、銅像、屋仔、涼亭) on the garden, rebuilt only when the earned list changes. */

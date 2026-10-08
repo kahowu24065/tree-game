@@ -321,6 +321,8 @@ export interface MetaState {
   nest?: MetaNest[];
   /** 1.4.29 the one-time 雀鳥生蛋 rules pop-up was shown (first bird in the encyclopedia). */
   nestIntro?: boolean;
+  /** 1.4.52 the one-time first-egg explanation was shown, or skipped for a player who already hatched. */
+  firstEggIntro?: boolean;
 }
 
 /** Kept after visiting or planting on the second island. */
@@ -349,6 +351,10 @@ export interface NestState {
   egg: NestEgg | null;
   /** Calendar date the current clutch was laid, so a day only has one species. */
   laidOn: string;
+  /** How many entries of `nestBuilds(hatched)` have played their ground-break reveal. Missing on an old save means all of them. */
+  revealedBuilds?: number;
+  /** Parent bird for each decoration, in `nestBuilds` order, so the reveal chick matches the egg. */
+  revealBirds?: string[];
 }
 
 export interface NestAward {
@@ -362,8 +368,10 @@ export interface NestEgg {
   /** Which bird laid it. */
   bird: string;
   laidAt: number;
-  /** Set once `laidAt` plus 6 hours has passed. Null while it is still an egg. */
+  /** Set once the hatch time has passed (6 h, or 5 h after keep-warm). Null while it is still an egg. */
   hatchedAt: number | null;
+  /** Kept warm once: the hatch is one hour earlier. Missing on an old save means not warmed. */
+  warmed?: boolean;
 }
 
 /** Weather achievement kept across trees. */

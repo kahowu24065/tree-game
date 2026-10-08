@@ -221,6 +221,17 @@ body.sheet-open .hud > .sheet-backdrop {
   font-weight: 600;
   line-height: 1.2;
   color: var(--ink);
+  cursor: pointer;
+}
+.hatch-card .hatch-reward {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.modal-card button.off {
+  opacity: 0.55;
 }
 .hatch-card b {
   font-variant-numeric: tabular-nums;

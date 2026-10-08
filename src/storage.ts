@@ -8,6 +8,7 @@ import { formatHeight } from './util';
 import { getLocale, t as tl } from './i18n';
 import { parseAny } from './i18n/msg';
 import { kvSet, kvRemove } from './native/kv';
+import { migrateNest } from './nest';
 
 /** Fields of saves made before v14 (seasons). */
 type LegacySave = GameState & { season?: string; completed?: null | { date: string; tiers: (1 | 2 | 3)[]; days: number; heightCm: number; booked?: boolean } };
@@ -210,11 +211,8 @@ export function parseSave(raw: string): GameState | null {
     migrateV16(data);
     migrateWx(data);
     migrateLogI18n(data);
-    data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '' };
-    if (data.nest) {
-      data.nest.laidOn ??= '';
-      if (data.nest.egg && !data.nest.egg.bird) data.nest.egg.bird = 'magpierobin';
-    }
+    data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '', revealedBuilds: 0, revealBirds: [] };
+    if (data.nest) migrateNest(data.nest);
     return data;
   } catch {
     return null;
