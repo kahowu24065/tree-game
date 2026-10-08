@@ -4784,3 +4784,16 @@ html[lang='en'] .emerg > span {
   width: 18px;
   height: 18px;
 }
+
+/* ---------- 1.4.60 天氣預告 row ---------- */
+.headsup-row > span small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.headsup-row.muted {
+  opacity: 0.55;
+}

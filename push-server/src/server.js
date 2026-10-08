@@ -26,7 +26,8 @@ import { TokenStore, parseState, validToken } from './tokens.js';
 import { warnsumFromSmg } from './smg.js';
 import { createSender } from './fcm.js';
 import { createOfficialClient, feedDropMessageFor, feedLevels, feedMessageFor } from './official.js';
-import { WARNING_SETS, createCwaClient, cwaWarnings, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
+import { WARNING_SETS, createCwaClient, cwaWarnings, forecastDays, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
+import { cwaHeadsUps, feedHeadsUps, headsUpMessage, hkoHeadsUps, localDate, metHeadsUps, planHeadsUps, smgHeadsUps } from './headsup.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -37,6 +38,8 @@ const CELL_ACTIVE_MS = 14 * 24 * 3600_000;
 const MAX_CELLS = Number(process.env.MAX_CELLS || 60);
 const TW_POLL_MS = Number(process.env.TW_POLL_MS || 5 * 60_000);
 const HKO = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc';
+const HKO_FND = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc';
+const HEADSUP_POLL_MS = Number(process.env.HEADSUP_POLL_MS || 10 * 60_000);
 const ALERTS_FILE = path.join(DATA, 'alerts.json');
 const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 
@@ -74,6 +77,8 @@ if (!alerts) {
 alerts.cells ??= {};
 alerts.mo ??= null;
 alerts.tw ??= {};
+// 1.4.60 heads-ups already sent: { [token]: { 'typhoon|2026-10-09': at } } (one per device per event).
+alerts.headsup ??= {};
 
 const isMoDevice = (r) => r.state?.isMO === true;
 const isTwDevice = (r) => r.state?.isTW === true && !isMoDevice(r);
@@ -111,6 +116,89 @@ async function push(records, kind, build, hk, localize = (m) => m) {
     const removed = store.remove(dead);
     console.log(`[push] ${msg.title} (${kind}) → sent ${sent}/${tokens.length}, removed ${removed} dead tokens`);
   }
+}
+
+/** 1.4.60 send the heads-ups due now (opt-in, quiet hours, one per event; see headsup.js). */
+async function sendHeadsUps(records, ups, levels, src) {
+  if (!ups.length) return;
+  const plan = planHeadsUps(records, ups, levels, alerts.headsup, Date.now());
+  if (!plan.length) return;
+  writeJson(ALERTS_FILE, alerts); // recorded before sending: never twice after a crash
+  const groups = new Map();
+  for (const { record, up, today } of plan) {
+    const msg = headsUpMessage(up, { loc: recordLocale(record), src, today, rUnlocked: record.state?.rUnlocked !== false });
+    const key = `${msg.title}\n${msg.body}`;
+    if (!groups.has(key)) groups.set(key, { msg, tokens: [] });
+    groups.get(key).tokens.push(record.token);
+  }
+  for (const { msg, tokens } of groups.values()) {
+    const { sent, dead } = await fcm.send(tokens, msg);
+    const removed = store.remove(dead);
+    console.log(`[heads-up] ${msg.title} (${src}) → sent ${sent}/${tokens.length}, removed ${removed} dead tokens`);
+  }
+}
+
+const textCache = new Map();
+async function cachedText(url, ms = 30 * 60_000) {
+  const hit = textCache.get(url);
+  if (hit && Date.now() - hit.at < ms) return hit.text;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
+  const text = await res.text();
+  textCache.set(url, { at: Date.now(), text });
+  return text;
+}
+
+const wantsHeadsUp = (r) => r.state?.headsUp === true;
+
+/** HK (HKO 9-day forecast), Macau (SMG 7-day forecast), Taiwan (CWA county week forecast). */
+async function pollHeadsUps() {
+  const recs = store.records().filter(wantsHeadsUp);
+  if (!recs.length) return;
+  const now = Date.now();
+  const hk = recs.filter(isHkDevice);
+  if (hk.length) {
+    try {
+      const fnd = JSON.parse(await cachedText(HKO_FND));
+      await sendHeadsUps(hk, hkoHeadsUps(fnd, localDate('Asia/Hong_Kong', now, 1)), alerts.hk?.levels, 'hko');
+    } catch (e) {
+      console.error('[heads-up hko]', String(e?.message ?? e));
+    }
+  }
+  const mo = recs.filter(isMoDevice);
+  if (mo.length) {
+    try {
+      const xml = await cachedText(`${SMG_HOST.xml}/c_7daysforecast.xml`);
+      await sendHeadsUps(mo, smgHeadsUps(xml, localDate('Asia/Macau', now, 1)), alerts.mo?.levels, 'smg');
+    } catch (e) {
+      console.error('[heads-up smg]', String(e?.message ?? e));
+    }
+  }
+  const tw = recs.filter(isTwDevice).filter((r) => r.state?.twCounty);
+  if (tw.length && cwa.enabled) {
+    try {
+      const sets = await cwa.sets(['week']);
+      const locs = sets.week?.records?.Locations?.[0]?.Location ?? [];
+      const byCounty = new Map();
+      for (const r of tw) {
+        if (!byCounty.has(r.state.twCounty)) byCounty.set(r.state.twCounty, []);
+        byCounty.get(r.state.twCounty).push(r);
+      }
+      for (const [county, records] of byCounty) {
+        const loc = locs.find((l) => l.LocationName === county);
+        if (!loc) continue;
+        const ups = cwaHeadsUps(forecastDays(loc), localDate('Asia/Taipei', now, 1));
+        const levels = { typhoon: 0, rain: 0, heat: 0, cold: 0 };
+        for (const [k, st] of Object.entries(alerts.tw)) if (k.startsWith(`${county}|`)) for (const c of Object.keys(levels)) levels[c] = Math.max(levels[c], st?.levels?.[c] ?? 0);
+        await sendHeadsUps(records, ups, levels, 'cwa');
+      }
+    } catch (e) {
+      console.error('[heads-up cwa]', String(e?.message ?? e));
+    }
+  }
+  // Forget devices that are gone.
+  const live = new Set(store.records().map((r) => r.token));
+  for (const tok of Object.keys(alerts.headsup)) if (!live.has(tok)) delete alerts.headsup[tok];
 }
 
 async function pollHko() {
@@ -201,6 +289,9 @@ async function pollCells() {
         for (const x of fresh) await push(records, 'issue', (l) => feedMessageFor(x, names, false, l), false);
         for (const x of drops) await push(records, 'drop', (l) => feedDropMessageFor(x, prev?.names, names, l), false);
         for (const x of reminders) await push(records, 'reminder', (l) => feedMessageFor(x, alerts.cells[sk].names, true, l), false);
+        // 1.4.60 official alerts already issued for later → heads-up (opted-in devices).
+        const fans = records.filter(wantsHeadsUp);
+        if (fans.length) await sendHeadsUps(fans, feedHeadsUps(found, validTz(fans[0].state?.tz), Date.now()), levels, found.source);
         continue;
       }
       const cell = cellKey(lat, lon);
@@ -229,6 +320,9 @@ async function pollCells() {
       for (const x of fresh) await push(records, 'issue', (l) => intlMessageFor(x, false, l), false);
       for (const x of drops) await push(records, 'drop', (l) => intlDropMessageFor(x, l), false);
       for (const x of reminders) await push(records, 'reminder', (l) => intlMessageFor(x, true, l), false);
+      // 1.4.60 no official feed here: MET Norway forecast for tomorrow → heads-up only (never an event).
+      const fans = records.filter(wantsHeadsUp);
+      if (fans.length) await sendHeadsUps(fans, metHeadsUps(await met.forecast(lat, lon, tz), localDate(tz, Date.now(), 1)), levels, 'met');
     } catch (e) {
       console.error('[cell]', cell, String(e?.message ?? e));
     }
@@ -290,8 +384,7 @@ const cwaAnswers = new Map();
 async function cwaAnswer(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
   const hit = cwaAnswers.get(key);
-  // 1.4.58 MeteoAlarm answers only 2 minutes (its terms cap re-use delay at 10 min, average under 5).
-  if (hit && Date.now() - hit.at < (hit.body?.source === 'meteoalarm' ? 2 : 5) * 60_000) return hit.body;
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.body;
   const body = await cwa.bundle(lat, lon);
   if (body) {
     if (cwaAnswers.size > 500) cwaAnswers.clear();
@@ -302,10 +395,12 @@ async function cwaAnswer(lat, lon) {
 
 // 1.4.26 GET /alerts answers (official NWS / ECCC / JMA / MeteoAlarm alerts): shared per ~2 km for 5 minutes (MeteoAlarm 2).
 const alertAnswers = new Map();
+const alertTtl = (body) => (body?.source === 'meteoalarm' ? 2 : 5) * 60_000;
 async function alertAnswer(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
   const hit = alertAnswers.get(key);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.body;
+  // 1.4.58 MeteoAlarm answers only 2 minutes (its terms cap re-use delay at 10 min, average under 5).
+  if (hit && Date.now() - hit.at < alertTtl(hit.body)) return hit.body;
   const found = await official.lookup(lat, lon);
   const body = found ?? { covered: false, alerts: [] };
   if (alertAnswers.size > 2000) alertAnswers.clear();
@@ -414,7 +509,8 @@ const server = http.createServer(async (req, res) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return send(res, 400, { ok: false, error: 'bad lat/lon' });
     try {
       const body = await alertAnswer(lat, lon);
-      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=120', ...CORS });
+      // MeteoAlarm: no extra HTTP caching on top of the 2-minute answer cache (10-minute delay cap).
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': body?.source === 'meteoalarm' ? 'no-cache' : 'public, max-age=120', ...CORS });
       return res.end(JSON.stringify(body));
     } catch (e) {
       return send(res, 502, { ok: false, error: String(e?.message ?? e) });
@@ -474,3 +570,5 @@ setTimeout(() => void pollCells(), 30_000);
 setTimeout(() => void pollTw(), 20_000);
 setInterval(() => void pollTw(), TW_POLL_MS);
 setInterval(() => void pollCells(), CELL_POLL_MS);
+setTimeout(() => void pollHeadsUps(), 45_000);
+setInterval(() => void pollHeadsUps(), HEADSUP_POLL_MS);

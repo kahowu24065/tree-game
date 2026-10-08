@@ -1696,6 +1696,11 @@ const table: Record<string, string> = {
  "share.height": "樹高 {h}",
  "share.weather": "撐過{name} × {n}",
  "share.saved": "樹卡已下載。",
- "share.failed": "樹卡無法產生，請稍後再試。"
+ "share.failed": "樹卡無法產生，請稍後再試。",
+ "headsup.row": "天氣預告",
+ "headsup.hint": "颱風、豪雨、酷熱、寒冷前提早通知（22:00–08:00 不發送）",
+ "headsup.on": "開",
+ "headsup.off": "關",
+ "guide.headsup": "天氣預告（設定 → 天氣預告，需先開啟提醒通知）：預報顯示明天可能有颱風、大雨、酷熱或寒冷時，會提早通知，例如「明天可能有颱風，記得幫樹加固」。香港、澳門、臺灣依天文台／地球物理氣象局／中央氣象署的預報；美國、加拿大、日本與歐洲依已發布、稍後才生效的官方警報；其他地區用 MET Norway 預報。每件事最多通知一次，22:00 至 08:00 不發送。預告只是提醒你準備，遊戲的天氣事件、損傷與成就仍只依官方正式生效的警報。"
 };
 export default table;

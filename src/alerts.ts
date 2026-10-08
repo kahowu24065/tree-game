@@ -108,5 +108,5 @@ export async function fetchOfficialAlerts(lat: number, lon: number): Promise<Off
   }
 }
 
-/** 1.4.58 MeteoAlarm's terms cap re-use delay at 10 min: while the game is open in Europe, alerts refresh every 5. */
-export const MA_REFRESH_MS = 5 * 60_000;
+/** 1.4.58 MeteoAlarm's terms cap re-use delay at 10 min: while the game is open in Europe, alerts refresh every 4 (worst case: 4 + 1 check + 2 answer cache + 2 feed cache = 9 min). */
+export const MA_REFRESH_MS = 4 * 60_000;

@@ -13,6 +13,7 @@ import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
 import { GOAL_REWARD_N, goalDone, goalLabel, goalProgress } from './goals';
+import { headsUpEnabled } from './headsUp';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
@@ -1679,7 +1680,7 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   const tourRow = `<div class="setting-row"><span>${esc(tl('tour.row'))}</span><button type="button" class="ghost" data-action="tour-replay">${esc(tl('tour.replay'))}</button></div>`;
   const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + (notify === null
         ? ''
-        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
+        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' }) + headsUpRow(notify)), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
     'data-action="disclaimer"',
     // 1.4.50 資料來源及授權 sits with the other legal links (before 免責聲明).
     `data-action="credits">${esc(tl('credits.link'))}</button><button type="button" data-action="disclaimer"`,
@@ -1687,6 +1688,12 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   if (!premiumCardHtml) return html;
   const at = html.indexOf('</h2>');
   return at < 0 ? premiumCardHtml + html : html.slice(0, at + 5) + premiumCardHtml + html.slice(at + 5);
+}
+
+/** 1.4.60 天氣預告 row (under 提醒通知; needs notifications on). */
+function headsUpRow(notify: boolean): string {
+  const on = headsUpEnabled();
+  return `<div class="setting-row headsup-row${notify ? '' : ' muted'}"><span>${esc(tl('headsup.row'))}<small>${esc(tl('headsup.hint'))}</small></span><div class="seg"><button type="button" class="${on ? 'on' : ''}" data-headsup="on">${esc(tl('headsup.on'))}</button><button type="button" class="${on ? '' : 'on'}" data-headsup="off">${esc(tl('headsup.off'))}</button></div></div>`;
 }
 
 /** 1.4.33 hidden diagnostics (long-press the version line in 設定). Developer readout, English only. */

@@ -1725,6 +1725,11 @@ const table: Record<string, string> = {
  "share.height": "树高 {h}",
  "share.weather": "挺过{name} × {n}",
  "share.saved": "树卡已下载。",
- "share.failed": "树卡无法生成，请稍后再试。"
+ "share.failed": "树卡无法生成，请稍后再试。",
+ "headsup.row": "天气预告",
+ "headsup.hint": "台风、暴雨、酷热、寒冷前提早通知（22:00–08:00 不发送）",
+ "headsup.on": "开",
+ "headsup.off": "关",
+ "guide.headsup": "天气预告（设置 → 天气预告，需先开启提醒通知）：预报显示明天可能有台风、大雨、酷热或寒冷时，会提早通知，例如“明天可能有台风，记得给树加固”。香港、澳门、台湾按天文台／地球物理气象局／中央气象署的预报；美国、加拿大、日本和欧洲按已发布、稍后才生效的官方预警；其他地区用 MET Norway 预报。每件事最多通知一次，22:00 至 08:00 不发送。预告只是提醒你准备，游戏的天气事件、损伤和成就仍只按官方正式生效的预警。"
 };
 export default table;
