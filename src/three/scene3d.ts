@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { SceneInput } from '../render';
 import { hashString, clamp, mulberry32 } from '../util';
-import { albumFigure, Animals3D, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
+import { albumFigure, Animals3D, NEST_FOCUS, NEST_FOCUS_ID, realScale, type AnimalArrival, type AnimalMarker, type EcoInfo, type EcoCaps } from './animals3d';
 import { buildHabitat, resolveObstacles, type Habitat } from './habitat3d';
 import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
@@ -1242,14 +1242,19 @@ export class Scene3D {
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
     const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height);
     const tol = (d: number) => d * perPx * 26;
+    // 1.4.57: a tap on the nest also flies the camera to a close-up of it. Eggs keep their popup on every tap;
+    // the chick only chirps once the nest is already in close-up (the first tap from afar just zooms in).
     if (this.animals.pickClutch(this.raycaster.ray, tol)) {
       this.animals.nudgeEggs();
+      this.focusNest();
       this.onEggTap?.();
       return;
     }
     if (this.animals.pickChick(this.raycaster.ray, tol)) {
-      this.animals.nudgeChick();
-      this.onChickTap?.();
+      if (this.nestFocused()) {
+        this.animals.nudgeChick();
+        this.onChickTap?.();
+      } else this.focusNest();
       return;
     }
     const hit = this.animals.pick(this.raycaster.ray, tol);
@@ -1290,8 +1295,28 @@ export class Scene3D {
     return true;
   }
 
+  /** 1.4.57: fly the follow cam to a close-up of the clutch nest (false when no nest is shown). 返回全景 resets it. */
+  focusNest(): boolean {
+    if (this.followRef === NEST_FOCUS) return true;
+    if (!this.animals.focusRef(NEST_FOCUS)) return false;
+    this.followRef = NEST_FOCUS;
+    this.follow = null;
+    this.followZoom = 1;
+    this.resetFollowCam();
+    this.noteView();
+    return true;
+  }
+
+  /** Whether the camera is in the nest close-up (focused on it, or already this near by pinch / zoom). */
+  nestFocused(): boolean {
+    const f = this.animals.focusRef(NEST_FOCUS);
+    if (!f) return false;
+    return this.followRef === NEST_FOCUS || this.camera.position.distanceTo(f.pos) < f.size * 7;
+  }
+
   /** uid of the group being followed (tap / marker / list), if any. */
   followingUid(): number | null {
+    if (this.followRef === NEST_FOCUS) return null;
     const h = this.followRef as { crew: { uid: number } } | null;
     return h && this.animals.refName(h) ? h.crew.uid : null;
   }
@@ -2159,7 +2184,7 @@ export class Scene3D {
       this.followBias = this.followBiasGoal = 0;
       this.followCap = Infinity;
     }
-    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && focus?.id === input.nestBird), dt, focus ? 'follow' : this.zoomGoal < 0.97 ? 'zoom' : null, dist);
+    this.applyNestPeek(Boolean(input.nest && input.nest !== 'empty' && (focus?.id === input.nestBird || focus?.id === NEST_FOCUS_ID)), dt, focus ? 'follow' : this.zoomGoal < 0.97 ? 'zoom' : null, dist);
     this.camBase.set(target.x + Math.sin(camAz) * Math.cos(camEl) * dist, target.y + Math.sin(camEl) * dist, target.z + Math.cos(camAz) * Math.cos(camEl) * dist);
     this.lookBase.copy(target);
     if (this.revealFx && !this.revealFx.done) {

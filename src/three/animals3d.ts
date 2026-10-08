@@ -1121,6 +1121,9 @@ export function pickFlyOrbit(time: number, motion: string, existing: FlyOrbit[],
 /** Slots around a flock leader, in gap-units, so members don't share one point. */
 /** Hover flyers (bee, sunbird, dragonfly) hop between nearby perches at most this far apart (metres). */
 export const HOVER_HOP_M = 3;
+/** 1.4.57: follow-cam handle for the clutch nest (not an animal), and the focus id it reports. */
+export const NEST_FOCUS: { readonly nest: true } = Object.freeze({ nest: true as const });
+export const NEST_FOCUS_ID = 'nest';
 
 /**
  * Pick the next hover spot: a random point within `maxDist` of `from` (but not right on top of it). With none in
@@ -1667,6 +1670,23 @@ export class Animals3D {
     this.root.add(g);
   }
 
+  private nestFocusPos = new THREE.Vector3();
+  private nestFocusScale = new THREE.Vector3();
+
+  /**
+   * 1.4.57: follow-cam data for the clutch nest (tap the nest → close-up). Framed from outside the crown like a perched
+   * bird; null once the nest is empty again (the follow cam then returns to the overview by itself).
+   */
+  private nestFocus(): { pos: THREE.Vector3; size: number; yaw: number; outward: boolean; group: number; id: string } | null {
+    const obj = this.clutchObject();
+    if (!obj) return null;
+    obj.updateWorldMatrix(true, false);
+    obj.getWorldPosition(this.nestFocusPos);
+    obj.getWorldScale(this.nestFocusScale);
+    const size = Math.max(0.12, Math.abs(this.nestFocusScale.x) * 0.9);
+    return { pos: this.nestFocusPos, size, yaw: 0, outward: true, group: 1, id: NEST_FOCUS_ID };
+  }
+
   private clutchObject(): THREE.Object3D | null {
     if (this.clutch === 'empty') return null;
     if (this.clutchBird === 'magpierobin') {
@@ -1769,6 +1789,7 @@ export class Animals3D {
 
   /** Follow-cam data for a picked animal, or null once it has left. v10: always one member (chase cam when flying). */
   focusRef(ref: unknown): { pos: THREE.Vector3; size: number; yaw: number; outward?: boolean; flying?: boolean; perched?: boolean; group?: number; id: string } | null {
+    if (ref === NEST_FOCUS) return this.nestFocus();
     const h = ref as { crew: Crew; member: Member } | null;
     if (!h || h.crew.gone || h.crew.leaving || !this.crews.includes(h.crew) || !h.crew.members.includes(h.member)) return null;
     const c = h.crew;
@@ -1790,6 +1811,7 @@ export class Animals3D {
   }
 
   refName(ref: unknown): string | null {
+    if (ref === NEST_FOCUS) return null;
     const h = ref as { crew: Crew } | null;
     return h && this.crews.includes(h.crew) ? h.crew.def.name : null;
   }
