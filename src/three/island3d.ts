@@ -430,6 +430,7 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
   tufts.count = placed;
   flowers.count = fplaced;
   tufts.receiveShadow = true;
+  flowers.name = 'flowers';
   out.add(tufts, flowers);
 
   // Bushes near the fence for a fuller rim (+ clumps inside the garden when drawn small).

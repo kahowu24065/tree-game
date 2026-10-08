@@ -82,7 +82,7 @@ export interface WeatherView {
   /** 1.4.26 who decides severe weather here (absent for manual weather). */
   mode?: EventMode;
   /** 1.4.26 national alert feed (US / Canada / Japan / Europe) when it covers the player. */
-  feed?: { source?: AlertSource; alerts: OfficialAlert[]; attribution: string; known: boolean; tz: string };
+  feed?: { source?: AlertSource; alerts: OfficialAlert[]; attribution: string; known: boolean; tz: string; link?: string; disclaimer?: string };
   error?: string;
   overridden: boolean;
 }
@@ -521,6 +521,23 @@ export function lessonModal(id: LessonId, page: number): string {
     ? tl('ui.106')
     : tl('ui.107');
   return tl('ui.108', { p0: esc(cur.title), p1: esc(cur.body), step, btn });
+}
+
+/** 1.4.58 welcome tour: water → fertilise → weather card → health 90+ / nest. Skippable; replay from 設定 / 玩法. */
+export const TOUR_PAGES = 4;
+
+export function tourModal(page: number): string {
+  const i = Math.max(0, Math.min(page, TOUR_PAGES - 1));
+  const n = i + 1;
+  const last = n === TOUR_PAGES;
+  const h = NEST_MIN_HEALTH;
+  return `<div class="tour" data-tour="${n}"><p class="eyebrow">${esc(tl('tour.eyebrow'))} · ${esc(tl('tour.step', { n, total: TOUR_PAGES }))}</p>`
+    + `<div class="tour-art" aria-hidden="true">${icon((['drop', 'sprout', 'wind', 'bird'] as const)[i]!)}</div>`
+    + `<h2>${esc(tl(`tour.t${n}`, { h }))}</h2><p>${esc(tl(`tour.b${n}`, { h }))}</p>`
+    + `<div class="tour-dots" aria-hidden="true">${Array.from({ length: TOUR_PAGES }, (_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>`
+    + `<div class="btn-stack"><button type="button" class="primary" data-action="${last ? 'tour-done' : 'tour-next'}">${esc(tl(last ? 'tour.done' : 'tour.next'))}</button>`
+    + (last ? '' : `<button type="button" class="ghost" data-action="tour-skip">${esc(tl('tour.skip'))}</button>`)
+    + `</div></div>`;
 }
 
 /** 1.4.30 wordless swipe bar above the growth log: two dots show where you are; swipe on the bar to switch. */
@@ -1151,13 +1168,18 @@ export function feedAlertsHtml(feed: NonNullable<WeatherView['feed']>, now = Dat
     const parts: string[] = [];
     if (when) parts.push(`<small class="wd-when">${esc(when)}${live ? '' : ` · ${esc(tl('ui.wNotYet'))}`}</small>`);
     if (a.area) parts.push(`<small class="wd-area">${esc(a.area)}</small>`);
+    const issued = feedTime(a.issued ?? null, feed.tz);
+    if (issued || a.issuer) parts.push(`<small class="wd-issued">${esc([issued ? tl('alerts.issued', { p0: issued }) : '', a.issuer ?? ''].filter(Boolean).join(' · '))}</small>`);
     if (a.headline && a.headline !== a.name) parts.push(`<p>${esc(a.headline)}</p>`);
     const body = [a.description, a.instruction].filter(Boolean).map((x) => `<p class="wd-note">${esc(x)}</p>`).join('');
     if (body) parts.push(`<details><summary>${esc(tl('alerts.more'))}</summary>${body}</details>`);
     return `<li class="${tone}${live ? '' : ' later'}">${icon}<span><b>${esc(cat)}</b><small>${esc(raw)}</small><span class="warn-detail">${parts.join('')}</span></span></li>`;
   });
   const list = items.length ? `<ul class="hko-warns">${items.join('')}</ul>` : tl('ui.259');
-  const credit = `<p class="fine">${esc(tl('alerts.rawNote'))} ${esc(tl('alerts.attrib', { p0: feed.attribution }))}</p>`;
+  const link = feed.link ? ` <a href="${esc(feed.link)}" target="_blank" rel="noopener">${esc(feed.link.replace(/^https:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : '';
+  // 1.4.58 MeteoAlarm: its required disclaimer verbatim (English), after our own wording of it.
+  const disc = feed.disclaimer ? `<p class="fine">${esc(tl('alerts.delay'))}<br><span lang="en">${esc(feed.disclaimer)}</span></p>` : '';
+  const credit = `<p class="fine">${esc(tl('alerts.rawNote'))} ${esc(tl('alerts.attrib', { p0: feed.attribution }))}${link}</p>${disc}`;
   return list + credit;
 }
 
@@ -1637,7 +1659,8 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   // 1.4.55 高度單位: 厘米／米 (default) or 英寸／英尺; applied at once (main.ts applyHeightUnit).
   const hu = getHeightUnit();
   const unitRow = `<div class="setting-row"><span>${esc(tl('ui.heightUnit'))}</span><select class="lang-select" data-unit-select aria-label="${esc(tl('ui.heightUnit'))}">${HEIGHT_UNITS.map((u) => `<option value="${u}"${u === hu ? ' selected' : ''}>${esc(tl(`unit.${u}`))}</option>`).join('')}</select></div>`;
-  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + (notify === null
+  const tourRow = `<div class="setting-row"><span>${esc(tl('tour.row'))}</span><button type="button" class="ghost" data-action="tour-replay">${esc(tl('tour.replay'))}</button></div>`;
+  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + (notify === null
         ? ''
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
     'data-action="disclaimer"',

@@ -2,7 +2,7 @@ import './style.css';
 import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
 import { clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
 import { condForEvent, currentEvents, hoursOfDate, observedEvents, observedRainEvents, sceneCond, severeCountdown, tempEvents, type Countdown, type EventMode } from './events';
-import { alertEvents, fetchOfficialAlerts, likelyFeedRegion, type OfficialAlerts } from './alerts';
+import { MA_REFRESH_MS, alertEvents, fetchOfficialAlerts, likelyFeedRegion, type OfficialAlerts } from './alerts';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
 import { esc, formatHeight } from './util';
@@ -53,7 +53,8 @@ import {
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
-import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, saveCoach, type Coach } from './coach';
+import { sceneryCaption } from './scenery';
+import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
@@ -90,6 +91,8 @@ import {
   startModal,
   nameModal,
   lessonModal,
+  tourModal,
+  TOUR_PAGES,
   stormModal,
   windExplainerModal,
   coachCard,
@@ -295,6 +298,18 @@ try {
     playChirp();
     const line = chickTapLine(state.nest);
     if (line) toast(line);
+  };
+  // 1.4.58: tapping a rock / bush / flower / decoration / 養分地標: it wobbles (scene) and a one-line caption.
+  let sceneryTurn = 0;
+  let sceneryToastAt = 0;
+  scene3d.onSceneryTap = (hit) => {
+    playTok();
+    const now = Date.now();
+    if (now - sceneryToastAt < 900) return;
+    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++);
+    if (!line) return;
+    sceneryToastAt = now;
+    toast(line);
   };
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
@@ -638,7 +653,7 @@ function view(input: SceneInput): View {
       obs: manual() || weather.origin === 'offline' || (weather.provider === 'sim' && !weather.hko) ? undefined : { code: weather.current.code, windKmh: weather.current.windKmh, gustKmh: weather.current.gustKmh, precipMm: weather.current.precipMm },
       rainInHours: weather.rainInHours ?? null,
       mode: manual() ? undefined : eventMode(),
-      feed: !manual() && eventMode() === 'feed' ? { source: weather.alerts?.source, alerts: weather.alerts?.alerts ?? [], attribution: weather.alerts?.attribution ?? '', known: Boolean(weather.alerts?.covered), tz: weather.timezone } : undefined,
+      feed: !manual() && eventMode() === 'feed' ? { source: weather.alerts?.source, alerts: weather.alerts?.alerts ?? [], attribution: weather.alerts?.attribution ?? '', known: Boolean(weather.alerts?.covered), tz: weather.timezone, link: weather.alerts?.link, disclaimer: weather.alerts?.disclaimer } : undefined,
       error: weather.error,
       overridden: manual(),
     },
@@ -698,11 +713,30 @@ async function askPermissionsInOrder(): Promise<void> {
   }
 }
 
-function beginCoach(): void {
+/** Arms the first-plant coach; true when the 1.4.58 welcome tour should open (fresh save, never seen). */
+function beginCoach(): boolean {
   const next = armCoach(coach);
-  if (next === coach) return;
-  coach = next;
+  if (next === coach) return false;
+  const due = tourDue(coach, next) && meta.history.length === 0 && meta.milestones.length === 0 && (state.daysCared ?? 0) <= 1;
+  coach = due ? next : markTour(next);
   saveCoach(coach);
+  return due;
+}
+
+/** 1.4.58 welcome tour (page 0-based). Closing it any way counts as seen. */
+let tourPage: number | null = null;
+function openTour(page = 0): void {
+  tourPage = page;
+  openModal(tourModal(page), 'tour-card');
+}
+function endTour(): void {
+  tourPage = null;
+  const next = markTour(coach);
+  if (next !== coach) {
+    coach = next;
+    saveCoach(coach);
+  }
+  closeModal();
 }
 
 /** 1.4.41: the scene's day / night (same threshold as the 3D animals), for 圖鑑 unlocks. */
@@ -1715,9 +1749,10 @@ function revealHud(): void {
   document.documentElement.classList.add('hud-in');
   banner(true, AFTER_OPENING_MS);
   window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
-  beginCoach();
+  const tourNow = beginCoach();
   render();
   toast(coachOpen(coach) ? tl('main.046', { treeName: state.treeName }) : tl('main.026', { treeName: state.treeName }));
+  if (tourNow && !pendingNote) window.setTimeout(() => openTour(0), 900);
   if (pendingNote) {
     const message = pendingNote;
     pendingNote = '';
@@ -1988,6 +2023,18 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'back-species':
       openModal(startModal(plantingSecond ? tl('main.023') : tl('sim.001'), meta, false, pick));
+      return;
+    case 'tour-next':
+      if (tourPage === null) return;
+      tourPage = Math.min(TOUR_PAGES - 1, tourPage + 1);
+      updateModal(tourModal(tourPage));
+      return;
+    case 'tour-skip':
+    case 'tour-done':
+      endTour();
+      return;
+    case 'tour-replay':
+      openTour(0);
       return;
     case 'lesson-next':
       if (!lesson) return;
@@ -2964,6 +3011,23 @@ if (usesDeviceLocation()) {
   void refreshWeather(false);
 }
 for (const ev of ['pointerup', 'touchend', 'keydown'] as const) document.addEventListener(ev, kickAudio, { passive: true, capture: true });
+// 1.4.58 MeteoAlarm terms: re-used warnings must not lag more than 10 min, so in Europe the alerts (only) refresh
+// every 5 min while the game is open. Other feeds keep the normal weather refresh.
+let feedAlertsBusy = false;
+window.setInterval(() => {
+  const a = weather.alerts;
+  if (feedAlertsBusy || refreshing || document.hidden || manual() || a?.source !== 'meteoalarm' || weather.origin !== 'live') return;
+  if (Date.now() - a.fetchedAt < MA_REFRESH_MS) return;
+  feedAlertsBusy = true;
+  const at = { lat: weather.lat, lon: weather.lon };
+  void fetchOfficialAlerts(at.lat, at.lon)
+    .then((next) => {
+      if (next && !refreshing && weather.lat === at.lat && weather.lon === at.lon) applyWeather({ ...weather, alerts: next });
+    })
+    .finally(() => {
+      feedAlertsBusy = false;
+    });
+}, 60_000);
 
 /**
  * 1.4.33 preload: the swaying-sapling screen stays up while the scene's shaders compile, the music for the time

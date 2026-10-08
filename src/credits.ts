@@ -14,7 +14,7 @@ export const DATA_SOURCES: [string, string, string][] = [
   ['credits.eccc', 'credits.ecccLic', 'https://eccc-msc.github.io/open-data/licence/readme_en/'],
   ['credits.jma', 'credits.jmaLic', 'https://www.jma.go.jp/jma/kishou/info/coment.html'],
   ['credits.wbgt', 'credits.wbgtLic', 'https://www.wbgt.env.go.jp/tos.php'],
-  ['credits.meteoalarm', 'credits.meteoalarmLic', 'https://feeds.meteoalarm.org/'],
+  ['credits.meteoalarm', 'credits.meteoalarmLic', 'https://www.meteoalarm.org/'],
   ['credits.bdc', 'credits.bdcLic', 'https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api'],
 ];
 

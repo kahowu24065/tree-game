@@ -14,12 +14,14 @@ export interface Coach {
   /** The carbon line in 樹木狀態 has been explained. */
   carbon: boolean;
   done: boolean;
+  /** 1.4.58 the welcome tour (water → fertilise → weather card → health 90+ / nest) has been seen or skipped. */
+  tour: boolean;
 }
 
 export const COACH_KEY = 'sekai-tree-coach';
 
 export function freshCoach(): Coach {
-  return { armed: false, water: false, feed: false, health: false, carbon: false, done: false };
+  return { armed: false, water: false, feed: false, health: false, carbon: false, done: false, tour: false };
 }
 
 export function coachTasks(c: Coach): { id: 'water' | 'feed'; label: string; done: boolean }[] {
@@ -51,7 +53,7 @@ export function armCoach(c: Coach): Coach {
 export function markCoach(c: Coach, step: 'water' | 'feed' | 'health' | 'carbon' | 'skip'): Coach {
   if (step === 'skip') {
     if (c.done && c.carbon) return c;
-    return { ...c, armed: true, water: true, feed: true, health: true, carbon: true, done: true };
+    return { ...c, armed: true, water: true, feed: true, health: true, carbon: true, done: true, tour: true };
   }
   if (step === 'carbon') {
     if (c.carbon) return c;
@@ -63,6 +65,15 @@ export function markCoach(c: Coach, step: 'water' | 'feed' | 'health' | 'carbon'
   return next;
 }
 
+/** 1.4.58 the welcome tour should open: a tree was just planted on a fresh save and the tour was never seen. */
+export function tourDue(before: Coach, after: Coach): boolean {
+  return !before.armed && after.armed && !after.done && !after.tour;
+}
+
+export function markTour(c: Coach): Coach {
+  return c.tour ? c : { ...c, tour: true };
+}
+
 export function loadCoach(): Coach {
   try {
     if (typeof localStorage === 'undefined') return freshCoach();
@@ -71,8 +82,8 @@ export function loadCoach(): Coach {
     const data = JSON.parse(raw) as Partial<Coach> & { weather?: boolean; zoom?: boolean };
     // Older coach (weather / zoom tasks). A finished one stays finished; a half-done one starts the new lessons.
     if (!('feed' in data) && !('health' in data)) {
-      if (data.done) return { armed: true, water: true, feed: true, health: true, carbon: true, done: true };
-      if (data.armed) return { ...freshCoach(), armed: true };
+      if (data.done) return { armed: true, water: true, feed: true, health: true, carbon: true, done: true, tour: true };
+      if (data.armed) return { ...freshCoach(), armed: true, tour: true };
       return freshCoach();
     }
     return {
@@ -82,6 +93,8 @@ export function loadCoach(): Coach {
       health: Boolean(data.health),
       carbon: Boolean(data.carbon),
       done: Boolean(data.done),
+      // A coach saved before 1.4.58 belongs to an existing player: never show them the welcome tour.
+      tour: 'tour' in data ? Boolean((data as { tour?: unknown }).tour) : true,
     };
   } catch {
     return freshCoach();
