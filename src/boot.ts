@@ -13,7 +13,10 @@ let started = false;
 const go = () => {
   if (started) return;
   started = true;
-  void import('./main');
+  // 1.4.62: iOS ATT before the game module, the preload screen and onboarding. Other platforms resolve immediately.
+  void import('./native/banner').then(({ requestAttAtLaunch }) => requestAttAtLaunch()).finally(() => {
+    void import('./main');
+  });
 };
 requestAnimationFrame(() => requestAnimationFrame(() => window.setTimeout(go, 30)));
 // A hidden page never runs rAF: start anyway.

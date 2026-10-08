@@ -709,7 +709,7 @@ async function askPermissionsInOrder(): Promise<void> {
     if (isNative()) {
       await syncPush(notifyEnabled());
       scheduleReminders(false);
-      // iOS: the ad consent / App Tracking Transparency prompt comes last, after location and notifications.
+      // iOS: Google UMP (when required) comes after location and notifications. ATT already ran at launch (1.4.62).
       retryConsent();
     }
   } catch {
@@ -1412,7 +1412,7 @@ function syncNest(): void {
   if (!opening) flushNestToast();
 }
 
-/** 1.4.33: ads (and on iOS the consent / ATT prompts they trigger) wait ~1 s after the opening. */
+/** 1.4.33: the banner (and on iOS the UMP form it may trigger) waits ~1 s after the opening. ATT is at launch. */
 let bannerTimer = 0;
 function banner(on: boolean, delayMs = 0): void {
   window.clearTimeout(bannerTimer);

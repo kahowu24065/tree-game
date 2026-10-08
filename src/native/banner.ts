@@ -1,6 +1,7 @@
 import { registerPlugin } from '@capacitor/core';
 import { isNative, platformName } from './platform';
 import { permsReady } from './permGate';
+import { shouldRequestAtt } from './att';
 
 interface TreeBannerPlugin {
   setVisible(options: { visible: boolean }): Promise<void>;
@@ -55,11 +56,12 @@ async function iosBanner(on: boolean): Promise<void> {
 }
 
 /**
- * Once per launch: Google UMP consent form when required (EEA / UK etc.), then on iOS the App Tracking Transparency
- * prompt (NSUserTrackingUsageDescription). Refusing either still shows (non-personalised) ads. Members skip it.
+ * Once per launch, after onboarding: Google UMP consent form when required (EEA / UK etc.).
+ * Refusing still shows non-personalised ads. Members skip it.
+ * 1.4.62: the iOS ATT prompt is NOT here. It runs at launch (requestAttAtLaunch), before this and before AdMob starts.
  */
 async function gatherConsent(): Promise<void> {
-  // 1.4.45: no consent / ATT prompt before onboarding is over (retryConsent() runs it after the other prompts).
+  // 1.4.45: no UMP form before onboarding is over (retryConsent() runs it after the other prompts).
   if (consentStarted || !isNative() || premium || !permsReady()) return;
   consentStarted = true;
   try {
@@ -67,15 +69,74 @@ async function gatherConsent(): Promise<void> {
     if (platformName() === 'ios') await AdMob.initialize({});
     const info = await AdMob.requestConsentInfo();
     if (info.isConsentFormAvailable && info.status === AdmobConsentStatus.REQUIRED) await AdMob.showConsentForm();
-    if (platformName() === 'ios') {
-      const t = await AdMob.trackingAuthorizationStatus();
-      if (t.status === 'notDetermined') await AdMob.requestTrackingAuthorization();
-    }
   } catch {
     /* consent SDK unavailable: Google serves limited ads by itself */
   }
   consentDone = true;
   apply();
+}
+
+let attStarted = false;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** ATT is ignored (and its callback may never fire) unless the app is already active. */
+async function waitUntilActive(): Promise<void> {
+  try {
+    const { App } = await import('@capacitor/app');
+    if ((await App.getState()).isActive && document.visibilityState === 'visible') return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const timer = window.setTimeout(done, 2500);
+      void App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) done();
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') done();
+      });
+    });
+  } catch {
+    /* plugin missing: the two frames below are enough */
+  }
+}
+
+/**
+ * 1.4.62: iOS App Tracking Transparency at launch, before the first screen and before any ad SDK starts.
+ * Once per install (only while the status is notDetermined). The HTML splash is hidden so it cannot cover the dialog.
+ * One retry covers the case where iOS drops a request made a moment too early.
+ */
+export async function requestAttAtLaunch(): Promise<void> {
+  if (attStarted || !isNative() || !shouldRequestAtt(platformName(), 'notDetermined')) return;
+  attStarted = true;
+  const preload = document.getElementById('preload');
+  const visibility = preload?.style.visibility ?? '';
+  try {
+    await waitUntilActive();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    if (preload) preload.style.visibility = 'hidden';
+    const { AdMob } = await import('@capacitor-community/admob');
+    const ask = async () => {
+      const t = await AdMob.trackingAuthorizationStatus();
+      if (shouldRequestAtt('ios', t.status)) await AdMob.requestTrackingAuthorization();
+    };
+    await ask();
+    if ((await AdMob.trackingAuthorizationStatus()).status === 'notDetermined') {
+      await delay(600);
+      await ask();
+    }
+  } catch {
+    /* no ATT on this device: carry on, still without starting the ad SDK here */
+  } finally {
+    if (preload) preload.style.visibility = visibility;
+  }
 }
 
 /** Show or hide the banner (hidden during the opening / modals that cover it). Browsers keep the empty slot. */
@@ -85,7 +146,7 @@ export function syncBanner(visible: boolean): void {
   apply();
 }
 
-/** 1.4.45: onboarding just finished — run the consent / ATT step now if the banner is wanted. */
+/** 1.4.45: onboarding just finished — run the UMP step now if the banner is wanted. ATT already ran at launch. */
 export function retryConsent(): void {
   if (want) void gatherConsent();
 }
