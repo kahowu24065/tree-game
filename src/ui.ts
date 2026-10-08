@@ -12,6 +12,7 @@ import { hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
+import { GOAL_REWARD_N, goalDone, goalLabel, goalProgress } from './goals';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
@@ -910,10 +911,25 @@ export function renderSheet(state: GameState, today: string): void {
   if (!body) return;
   if (title) title.textContent = tl('ui.185');
   if (!calMonth || calMonth > today.slice(0, 7)) calMonth = today.slice(0, 7);
-  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}`;
+  const goals = goalsCardHtml(state, today);
+  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}|${goals}`;
   if (key === sheetKey) return;
   sheetKey = key;
-  body.innerHTML = logCalendarHtml(state.log, today, calMonth, calDay, state.health);
+  body.innerHTML = goals + logCalendarHtml(state.log, today, calMonth, calDay, state.health);
+}
+
+/** 1.4.59 每日小目標 card at the top of 成長日誌. Empty until today's goals exist. */
+export function goalsCardHtml(state: GameState, today: string): string {
+  const g = state.goals;
+  if (!state.started || state.over || !g || g.date !== today || !g.ids.length) return '';
+  const rows = g.ids.map((id) => {
+    const [a, b] = goalProgress(state, g, id);
+    const done = a >= b;
+    return `<li class="${done ? 'done' : ''}"><span class="goal-tick" aria-hidden="true">${done ? '✓' : ''}</span><span>${esc(goalLabel(id))}</span>${b > 1 ? `<small>${Math.min(a, b)}/${b}</small>` : ''}</li>`;
+  });
+  const n = g.ids.filter((id) => goalDone(state, g, id)).length;
+  const foot = g.claimed ? tl('goals.claimed', { n: GOAL_REWARD_N }) : tl('goals.hint', { n: GOAL_REWARD_N });
+  return `<section class="goals-card${g.claimed ? ' claimed' : ''}"><div class="goals-head"><b>${esc(tl('goals.title'))}</b><span class="chip ${g.claimed ? 'green' : 'gray'}">${n}/${g.ids.length}</span></div><ul class="goals-list">${rows.join('')}</ul><p class="goals-foot">${esc(foot)}</p></section>`;
 }
 
 function logRow(entry: LogEntry): string {
@@ -962,7 +978,8 @@ function body(view: View): string {
     case 'album':
       return albumTab(view);
     case 'milestones':
-      return milestoneTab(view);
+      // 1.4.59 分享樹卡 (image card → share sheet / download).
+      return `<button type="button" class="ghost share-card-btn" data-action="share-card">${icon('sparkle')}<span>${esc(tl('share.button'))}</span></button>${milestoneTab(view)}`;
     case 'achievements':
       return achievementTab(view);
     default:

@@ -239,6 +239,8 @@ export interface GameState {
   lastCollapse?: LastCollapse | null;
   /** Magpie-robin clutch. Missing on saves from before the nest. */
   nest?: NestState;
+  /** 1.4.59 每日小目標 (today's three tasks). Missing until the first look of a day. */
+  goals?: import('./goals').DailyGoals;
 }
 
 /** v16: the latest collapse, as the scene needs it. */
@@ -426,6 +428,8 @@ export interface DayCond {
   cold?: boolean;
   raining: boolean;
   stormKind: StormKind | null;
+  /** 1.4.59 a 雷暴 warning is in force (lightning in the scene even without a thunderstorm weather code). */
+  thunder?: boolean;
 }
 
 export type TimeMode = 'auto' | 'day' | 'night';

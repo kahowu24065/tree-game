@@ -1,5 +1,5 @@
 import './style.css';
-import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId } from './balance';
+import { EVENT_ORDER, PREPS, WEATHER_EVENTS, type PrepId, type WeatherEventId, type WeatherTrackId } from './balance';
 import { clockMinutes, daysBetween, formatDateInTz, isoMinutes } from './dates';
 import { condForEvent, currentEvents, hoursOfDate, observedEvents, observedRainEvents, sceneCond, severeCountdown, tempEvents, type Countdown, type EventMode } from './events';
 import { MA_REFRESH_MS, alertEvents, fetchOfficialAlerts, likelyFeedRegion, type OfficialAlerts } from './alerts';
@@ -11,7 +11,7 @@ import { bookGameEnd, bookMilestones, bookNest, bookWeather, loadMeta, newGame, 
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
 import { mulchLaid } from './campfire';
-import { eventLabel, setLabelRegion } from './labels';
+import { eventLabel, setLabelRegion, weatherTrackCopy } from './labels';
 import { findPlace, migratePlaceId, pushRegionFlags, weatherRegion, type WeatherRegion } from './presets';
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
@@ -54,6 +54,8 @@ import {
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { sceneryCaption } from './scenery';
+import { GOAL_REWARD_N, claimGoals, ensureGoals, noteGoal } from './goals';
+import { drawShareCard, shareCardImage } from './shareCard';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
@@ -108,7 +110,7 @@ import {
   diagModal,
 } from './ui';
 import { ANIMALS } from './data/animals';
-import { defaultSpecies, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
+import { defaultSpecies, speciesDef, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import {
   WEATHER_STALE_MS,
   WEATHER_TTL_MS,
@@ -310,6 +312,7 @@ try {
     if (!line) return;
     sceneryToastAt = now;
     toast(line);
+    noteDailyGoal('scenery');
   };
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
@@ -749,6 +752,7 @@ function render(): void {
   const v = view(input);
   renderChrome(v);
   syncCoach();
+  syncGoals();
   renderSheet(state, today());
   if (drawer && !drawer.hidden) renderPanel(v);
   if (wxPage && !wxPage.hidden) renderWeatherPage(v);
@@ -1832,8 +1836,50 @@ function renderWeatherPage(v: View): void {
   panel.scrollTop = scroll;
 }
 
+/** 1.4.59 每日小目標: pick today's three on the first look, pay +3 養分 once all are done. */
+function syncGoals(): void {
+  if (!state.started || state.over || manual()) return;
+  const d = today();
+  ensureGoals(state, d, { pest: state.pest.active, cold: todayEvents().includes('cold') });
+  if (claimGoals(state, d)) {
+    toast(tl('goals.toast', { n: GOAL_REWARD_N }));
+    queueMicrotask(() => persist('goals'));
+  }
+}
+
+/** 1.4.59 分享樹卡: capture the island, draw the card, open the share sheet (web: download). */
+let sharingCard = false;
+async function shareTreeCard(): Promise<void> {
+  if (sharingCard || !state.started) return;
+  sharingCard = true;
+  try {
+    const order: WeatherTrackId[] = ['t8', 'black', 'storm', 'rain', 'heat', 'cold'];
+    const weather = order
+      .map((id) => ({ id, n: state.wx?.counts?.[id] ?? 0 }))
+      .filter((w) => w.n > 0)
+      .slice(0, 3)
+      .map((w) => tl('share.weather', { name: weatherTrackCopy(w.id).name, n: w.n }));
+    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather };
+    const card = await drawShareCard(data, scene3d?.captureView() ?? null);
+    const how = await shareCardImage(card);
+    if (how === 'downloaded') toast(tl('share.saved'));
+    else if (how === 'failed') toast(tl('share.failed'));
+  } finally {
+    sharingCard = false;
+  }
+}
+
+function noteDailyGoal(id: 'weather' | 'scenery'): void {
+  if (!state.started || state.over || manual()) return;
+  if (noteGoal(state, today(), id)) {
+    persist('goal-note');
+    render();
+  }
+}
+
 function openWeather(): void {
   if (!wxPage || !wxBackdrop) return;
+  noteDailyGoal('weather');
   closeDrawer();
   setSheet(false);
   const close = document.getElementById('wx-close');
@@ -2035,6 +2081,9 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'tour-replay':
       openTour(0);
+      return;
+    case 'share-card':
+      void shareTreeCard();
       return;
     case 'lesson-next':
       if (!lesson) return;

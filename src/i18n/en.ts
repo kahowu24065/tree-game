@@ -1725,6 +1725,25 @@ const table: Record<string, string> = {
  "scene.flower2": "Sweet-smelling. A bee might drop by.",
  "scene.flower3": "It springs right back up.",
  "alerts.issued": "Issued {p0}",
- "alerts.delay": "Alerts here may lag slightly behind meteoalarm.org."
+ "alerts.delay": "Alerts here may lag slightly behind meteoalarm.org.",
+ "goals.title": "Today's small goals",
+ "goals.water2": "Water twice (counts as done if the soil is saturated)",
+ "goals.feed": "Feed once",
+ "goals.deworm": "Get rid of the pests",
+ "goals.warm": "It's cold: keep the roots warm",
+ "goals.weather": "Check the weather page",
+ "goals.scenery": "Tap a rock, flower or building on the island",
+ "goals.hint": "Finish all three: Nutrients +{n} (once a day, resets at midnight)",
+ "goals.claimed": "All done for today! Nutrients +{n} added.",
+ "goals.toast": "Today's goals done: Nutrients +{n}!",
+ "goals.logTitle": "Daily goals",
+ "goals.logText": "All three of today's small goals done.",
+ "goals.reward": "Nutrients +{n}",
+ "share.button": "Share tree card",
+ "share.app": "World Tree",
+ "share.height": "Height {h}",
+ "share.weather": "Weathered {name} × {n}",
+ "share.saved": "Tree card downloaded.",
+ "share.failed": "Couldn't make the tree card. Please try again later."
 };
 export default table;
