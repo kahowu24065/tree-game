@@ -137,6 +137,13 @@ jobs:
           pod --version || sudo gem install cocoapods
           # pod downloads sometimes hit a CDN 5xx: retry once.
           npx cap sync ios || { sleep 30; npx cap sync ios; }
+      - name: iCloud capability on the App ID (key-value storage, 1.4.54)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        # Idempotent. If the API key's role cannot change capabilities this fails with Apple's message; enable iCloud
+        # on the App ID by hand (developer.apple.com → Identifiers → app.sekaitree.game → iCloud) and re-run.
+        run: ruby ios/ci/asc_icloud.rb
       - name: Archive (signed at export)
         working-directory: ios/App
         env:
@@ -149,6 +156,9 @@ jobs:
           VERSION=$(sed -n "s/.*APP_VERSION = '\(.*\)'.*/\1/p" ../../src/version.ts)
           BUILD=$(( ${{ github.run_number }} + 100 ))
           echo "version $VERSION build $BUILD"
+          # 1.4.54: the ad-hoc archive has no team, so spell out the iCloud KVS identifier ($(TeamIdentifierPrefix) would be empty).
+          sed -i '' "s/\$(TeamIdentifierPrefix)/$TEAM./" App/App.entitlements
+          grep -q "$TEAM.\$(CFBundleIdentifier)" App/App.entitlements || { echo "::error::iCloud KVS identifier not set"; exit 1; }
           # Ad-hoc ("-") archive: automatic signing at archive time would want a development profile (needs a
           # registered device). The ad-hoc signature keeps the push entitlement; distribution signing + the
           # App Store profile happen at export via the API key (cloud-managed certificate).
@@ -156,7 +166,10 @@ jobs:
             -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
             MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" $ADMOB_ARG \
             $ADHOC archive | tail -n 40
-          codesign -d --entitlements - build/App.xcarchive/Products/Applications/App.app 2>&1 | grep -q aps-environment
+          codesign -d --entitlements - build/App.xcarchive/Products/Applications/App.app > /tmp/ent.txt 2>&1
+          grep -q aps-environment /tmp/ent.txt
+          grep -q "ubiquity-kvstore-identifier" /tmp/ent.txt && grep -q "$TEAM.app.sekaitree.game" /tmp/ent.txt || { echo "::error::iCloud KVS entitlement not embedded"; cat /tmp/ent.txt; exit 1; }
+          echo "iCloud KVS entitlement embedded"
           # The real AdMob app ID must be in the built Info.plist when the secret is set (else Google's test app ID).
           GAD=$(/usr/libexec/PlistBuddy -c 'Print :GADApplicationIdentifier' build/App.xcarchive/Products/Applications/App.app/Info.plist)
           if [ -n "$ADMOB_APP" ]; then [ "$GAD" = "$ADMOB_APP" ] || { echo "::error::GADApplicationIdentifier not injected"; exit 1; }; echo "AdMob app ID injected"; else echo "::warning::ADMOB_IOS_APP_ID not set - Google test app ID"; fi
