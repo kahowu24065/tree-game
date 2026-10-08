@@ -1,4 +1,4 @@
-import { t as tl } from './i18n';
+import { getHeightUnit, t as tl } from './i18n';
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
@@ -23,15 +23,18 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/**
+ * Tree height: 「45 厘米」 below 1 m, 「1.2 米」 from 1 m (en cm / m). 1.4.55: t() converts to 英寸／英尺 when the player
+ * picked imperial (設定 → 高度單位); the metres then carry 2 decimals so inches stay precise.
+ */
 export function formatHeight(cm: number): string {
   if (cm < 100) return tl('ui.308', { p0: Math.round(cm) });
   const meters = cm / 100;
-  return tl('main.014', { p0: meters.toFixed(meters >= 100 ? 1 : 1) });
+  return tl('main.014', { p0: meters.toFixed(getHeightUnit() === 'imperial' ? 2 : 1) });
 }
 
 export function formatMeters(meters: number): string {
-  if (meters < 1) return tl('ui.308', { p0: Math.round(meters * 100) });
-  return tl('main.014', { p0: meters.toFixed(meters >= 20 ? 1 : 1) });
+  return formatHeight(meters * 100);
 }
 
 export function percentOf(part: number, whole: number): string {

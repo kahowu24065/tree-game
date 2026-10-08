@@ -273,3 +273,15 @@ export function eggPopupAvailable(nest: NestState | null | undefined): boolean {
   const egg = nest?.egg;
   return Boolean(egg && egg.hatchedAt == null);
 }
+
+/**
+ * 1.4.55 tap on the nest chick. The chick stays until the next midnight settlement, which counts the egg and empties
+ * the nest (settleNest). On a decoration night (1st hatch, every 10th) the chick then leads the reveal flight down to
+ * the island; on other nights it simply leaves the nest, so the line says only that.
+ */
+export function chickTapLine(nest: NestState | undefined): string | null {
+  const egg = nest?.egg;
+  if (!egg || egg.hatchedAt == null) return null;
+  const bird = nestBirdName(egg.bird);
+  return tl(nestBuildAt((nest?.hatched ?? 0) + 1) ? 'nest.chickFly' : 'nest.chickLeave', { bird });
+}

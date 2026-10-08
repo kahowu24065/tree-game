@@ -130,6 +130,108 @@ export function format(text: string, params?: Params): string {
   return out;
 }
 
+/* ---------- 1.4.55 height / length unit ---------- */
+
+/**
+ * 高度單位: `metric` (default) shows 厘米 below 1 m and 米 from 1 m (en cm / m); `imperial` shows inches below 1 ft and
+ * feet + inches above (「5 英尺 3 英寸」, en "5 ft 3 in"). Every table string writes lengths as `<number> 厘米|米`
+ * (`cm|m`), so t() converts its finished output in one place: HUD, stats, milestones, badges, log, share text, guide
+ * and notifications all follow, and a change applies instantly (live tables are rebuilt like a language change).
+ * A word joiner (U+2060) right after a number keeps it as written (e.g. 「取最接近嘅 10 米」, a rule stated in metres).
+ * Other units (毫米 rain, °C, km/h…) are never touched.
+ */
+export type HeightUnit = 'metric' | 'imperial';
+export const HEIGHT_UNITS: readonly HeightUnit[] = ['metric', 'imperial'];
+export const UNIT_KEY = 'sekai-tree-height-unit';
+
+export function isHeightUnit(x: unknown): x is HeightUnit {
+  return x === 'metric' || x === 'imperial';
+}
+
+/** The saved choice (default metric). */
+export function loadHeightUnit(): HeightUnit {
+  if (typeof localStorage === 'undefined') return 'metric';
+  try {
+    const v = localStorage.getItem(UNIT_KEY);
+    return isHeightUnit(v) ? v : 'metric';
+  } catch {
+    return 'metric';
+  }
+}
+
+let unit: HeightUnit = loadHeightUnit();
+
+export function getHeightUnit(): HeightUnit {
+  return unit;
+}
+
+/** Switch the unit (no storage write). Callers rebuild live tables / re-render (see main.ts applyHeightUnit). */
+export function useHeightUnit(u: HeightUnit): void {
+  unit = u;
+}
+
+export function saveHeightUnit(u: HeightUnit): void {
+  try {
+    kvSet(UNIT_KEY, u);
+  } catch {
+    /* ignore */
+  }
+}
+
+const UNIT_WORDS: Record<Locale, { cm: string; m: string; inch: string; ft: string; sep: string }> = {
+  'zh-HK': { cm: '厘米', m: '米', inch: '英寸', ft: '英尺', sep: ' ' },
+  'zh-TW': { cm: '厘米', m: '米', inch: '英吋', ft: '英呎', sep: ' ' },
+  'zh-CN': { cm: '厘米', m: '米', inch: '英寸', ft: '英尺', sep: ' ' },
+  en: { cm: 'cm', m: 'm', inch: 'in', ft: 'ft', sep: ' ' },
+};
+
+function trim0(n: number, digits: number): string {
+  return n.toFixed(digits).replace(/\.0+$/, '');
+}
+
+/** A length in the given unit and language: metric 「45 厘米」/「1.2 米」, imperial 「5.9 英寸」/「5 英尺 3 英寸」/「394 英尺」. */
+export function formatLength(cm: number, u: HeightUnit = unit, l: Locale = current): string {
+  const w = UNIT_WORDS[l];
+  if (u === 'metric') return cm < 100 ? `${Math.round(cm)}${w.sep}${w.cm}` : `${(cm / 100).toFixed(1)}${w.sep}${w.m}`;
+  return imperial(cm, w);
+}
+
+function imperial(cm: number, w: (typeof UNIT_WORDS)[Locale]): string {
+  const inches = cm / 2.54;
+  if (Math.abs(inches) < 11.95) return `${trim0(inches, Math.abs(inches) < 10 ? 1 : 0)}${w.sep}${w.inch}`;
+  const total = Math.round(inches);
+  if (total >= 1200) return `${Math.round(inches / 12)}${w.sep}${w.ft}`;
+  const ft = Math.floor(total / 12);
+  const rest = total - ft * 12;
+  return rest === 0 ? `${ft}${w.sep}${w.ft}` : `${ft}${w.sep}${w.ft} ${rest}${w.sep}${w.inch}`;
+}
+
+const NUM = String.raw`(\d+(?:\.\d+)?)`;
+const LEN_RE: Record<'zh' | 'en', RegExp> = {
+  // 毫米 / 公里 can't match: the unit has to follow the number directly (optionally one space).
+  zh: new RegExp(String.raw`${NUM}(?:\s?([–~-])\s?${NUM})?\s?(厘米|米)`, 'g'),
+  en: new RegExp(String.raw`${NUM}(?:\s?([–-])\s?${NUM})?[ \u00a0](cm|m|metres?|meters?)(?![\w²³/])`, 'g'),
+};
+
+/** Convert every `<number> 厘米|米` (`cm|m`) in finished text to the unit (metric: 100 厘米 and up become 米). */
+export function convertLengths(text: string, u: HeightUnit = unit, l: Locale = current): string {
+  if (!/\d/.test(text)) return text;
+  const w = UNIT_WORDS[l];
+  return text.replace(LEN_RE[l === 'en' ? 'en' : 'zh'], (all, a: string, dash: string | undefined, b: string | undefined, word: string) => {
+    const toCm = (x: string) => Number(x) * (word === w.cm || word === 'cm' ? 1 : 100);
+    if (u === 'metric') {
+      if (b !== undefined || !(word === 'cm' || word === w.cm)) return all;
+      const cm = toCm(a);
+      return cm >= 100 ? `${(cm / 100).toFixed(1)}${w.sep}${w.m}` : all;
+    }
+    if (b === undefined) return imperial(toCm(a), w);
+    const lo = toCm(a) / 2.54;
+    const hi = toCm(b) / 2.54;
+    if (hi < 11.95) return `${trim0(lo, lo < 10 ? 1 : 0)}${dash}${trim0(hi, hi < 10 ? 1 : 0)}${w.sep}${w.inch}`;
+    return `${Math.round(lo / 12)}${dash}${Math.round(hi / 12)}${w.sep}${w.ft}`;
+  });
+}
+
 export function has(key: string, l: Locale = current): boolean {
   return key in TABLES[l];
 }
@@ -147,7 +249,7 @@ export function traceOf(s: string, l: Locale = current): { k: string; p?: Params
 
 export function t(key: string, params?: Params): string {
   const text = TABLES[current][key] ?? zhHK[key] ?? key;
-  const out = format(text, params);
+  const out = convertLengths(format(text, params));
   if (out.length <= TRACE_MAX_LEN) {
     if (traced.size >= TRACE_MAX) traced.clear();
     traced.set(`${current}\u0000${out}`, { k: key, p: params });

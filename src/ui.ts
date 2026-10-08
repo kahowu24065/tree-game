@@ -22,7 +22,7 @@ import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
 import { APP_VERSION } from './version';
 import { PRIVACY_URL, TERMS_URL } from './legal';
-import { LOCALES, LOCALE_NAMES, getLocale, isChinese, t as tl, tables, live } from './i18n';
+import { HEIGHT_UNITS, LOCALES, LOCALE_NAMES, getHeightUnit, getLocale, isChinese, t as tl, tables, live } from './i18n';
 import { localize, logTexts } from './i18n/msg';
 import { PLACES, PLACE_GROUPS } from './presets';
 
@@ -1634,7 +1634,10 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   const loc = getLocale();
   // Each language is named in itself, so the picker reads the same whatever the current language is.
   const langRow = `<div class="setting-row"><span>${esc(tl('ui.language'))}</span><select class="lang-select" data-lang-select aria-label="${esc(tl('ui.language'))} / Language">${LOCALES.map((l) => `<option value="${l}"${l === loc ? ' selected' : ''}>${esc(LOCALE_NAMES[l])}</option>`).join('')}</select></div>`;
-  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + (notify === null
+  // 1.4.55 高度單位: 厘米／米 (default) or 英寸／英尺; applied at once (main.ts applyHeightUnit).
+  const hu = getHeightUnit();
+  const unitRow = `<div class="setting-row"><span>${esc(tl('ui.heightUnit'))}</span><select class="lang-select" data-unit-select aria-label="${esc(tl('ui.heightUnit'))}">${HEIGHT_UNITS.map((u) => `<option value="${u}"${u === hu ? ' selected' : ''}>${esc(tl(`unit.${u}`))}</option>`).join('')}</select></div>`;
+  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + (notify === null
         ? ''
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' })), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
     'data-action="disclaimer"',
@@ -1684,9 +1687,13 @@ export function backupModal(platform: 'ios' | 'android' | 'web'): string {
     <p class="eyebrow">${esc(tl('backup.eyebrow'))}</p>
     <h2>${esc(tl('backup.title'))}</h2>
     <p>${esc(note)}</p>
-    <button type="button" class="primary" data-action="export-save-code">${esc(tl('backup.show'))}</button>
-    <button type="button" class="ghost" data-action="import-save">${esc(tl('backup.restore'))}</button>
-    <button type="button" class="ghost" data-action="close-modal">${esc(tl('nest.close'))}</button>
+    <div class="btn-stack">
+      <button type="button" class="primary" data-action="export-save-code">${esc(tl('backup.show'))}</button>
+      <div class="btn-row">
+        <button type="button" class="ghost" data-action="import-save">${esc(tl('backup.restore'))}</button>
+        <button type="button" class="ghost" data-action="close-modal">${esc(tl('nest.close'))}</button>
+      </div>
+    </div>
   `;
 }
 
@@ -1697,8 +1704,10 @@ export function cloudAskModal(info: { tree: string; height: string; when: string
     <h2>${esc(tl('cloud.askTitle'))}</h2>
     <p>${esc(tl('cloud.askBody', { tree: info.tree, height: info.height, when: info.when }))}</p>
     <p class="muted">${esc(tl('cloud.keepNote'))}</p>
-    <button type="button" class="primary" data-action="cloud-restore">${esc(tl('cloud.restore'))}</button>
-    <button type="button" class="ghost" data-action="cloud-keep">${esc(tl('cloud.keep'))}</button>
+    <div class="btn-stack">
+      <button type="button" class="primary" data-action="cloud-restore">${esc(tl('cloud.restore'))}</button>
+      <button type="button" class="ghost" data-action="cloud-keep">${esc(tl('cloud.keep'))}</button>
+    </div>
   `;
 }
 
