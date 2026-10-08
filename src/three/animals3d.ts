@@ -303,6 +303,8 @@ function nestFig(): THREE.Group {
   k.add('bowl', new THREE.CylinderGeometry(0.42, 0.26, 0.2, 9, 1, true), '#8a6440', [0, 0.1, 0]);
   k.add('bowl', new THREE.TorusGeometry(0.4, 0.08, 4, 10), '#a07448', [0, 0.2, 0], [Math.PI / 2, 0, 0]);
   k.add('bowl', new THREE.CircleGeometry(0.3, 9), '#6d4e31', [0, 0.05, 0], [-Math.PI / 2, 0, 0]);
+  // 1.4.56: two tiny twigs woven into the underside, part of the nest itself (it rests on a real branch of the tree).
+  for (const a of [0.45, -0.6]) k.add('bowl', new THREE.CylinderGeometry(0.018, 0.012, 0.66, 4), '#6d4e31', [0, 0.02, 0], [Math.PI / 2, a, 0]);
   for (let i = 0; i < 3; i++) {
     const a = i * 2.1;
     k.add('eggs', E(0.1, 0.13, 0.1), '#9fd3e6', [Math.cos(a) * 0.13, 0.15, Math.sin(a) * 0.13], [0, 0, 0.3 * (i - 1)]);
@@ -2646,7 +2648,8 @@ export class Animals3D {
           break;
         }
         case 'nest': {
-          if (tree.nest) tree.group.localToWorld(m.pos.copy(tree.nest.pos).add(new THREE.Vector3(0, tree.trunkRadius * 0.3, 0)));
+          // 1.4.56: tree.nest is already on top of a real branch (or against the trunk), so no lift into the air.
+          if (tree.nest) tree.group.localToWorld(m.pos.copy(tree.nest.pos));
           else this.perchWorld(0, m.pos);
           const show = this.clutchBird === 'magpierobin' ? this.clutch : 'empty';
           m.obj.traverse((o) => {
