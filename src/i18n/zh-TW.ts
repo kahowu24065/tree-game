@@ -1610,6 +1610,25 @@ const table: Record<string, string> = {
  "scene.flower2": "香噴噴的，蜜蜂也許會來拜訪。",
  "scene.flower3": "花兒彈了回來，很有精神。",
  "alerts.issued": "{p0} 發布",
- "alerts.delay": "這裡顯示的警報可能比 meteoalarm.org 稍有延遲；最新資訊請見 www.meteoalarm.org。"
+ "alerts.delay": "這裡顯示的警報可能比 meteoalarm.org 稍有延遲；最新資訊請見 www.meteoalarm.org。",
+ "goals.title": "今日小目標",
+ "goals.water2": "澆兩次水（土壤飽和就算完成）",
+ "goals.feed": "施一次肥",
+ "goals.deworm": "幫樹除蟲",
+ "goals.warm": "天氣冷：幫樹根保暖",
+ "goals.weather": "打開天氣概況看看",
+ "goals.scenery": "點一下島上的石頭、花或建築",
+ "goals.hint": "全部完成：養分 +{n}（每天一次，午夜重新開始）",
+ "goals.claimed": "今天全部完成！養分 +{n} 已經加上。",
+ "goals.toast": "今日小目標全部完成，養分 +{n}！",
+ "goals.logTitle": "今日小目標",
+ "goals.logText": "今天三個小目標全部完成。",
+ "goals.reward": "養分 +{n}",
+ "share.button": "分享樹卡",
+ "share.app": "世界之樹",
+ "share.height": "樹高 {h}",
+ "share.weather": "撐過{name} × {n}",
+ "share.saved": "樹卡已下載。",
+ "share.failed": "樹卡無法產生，請稍後再試。"
 };
 export default table;

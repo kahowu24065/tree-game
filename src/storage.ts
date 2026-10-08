@@ -1,4 +1,5 @@
 import { speciesDef, speciesTargetCm } from './data/species';
+import { parseGoals } from './goals';
 import { daysBetween } from './dates';
 import { START } from './balance';
 import type { GameState } from './types';
@@ -213,6 +214,8 @@ export function parseSave(raw: string): GameState | null {
     migrateLogI18n(data);
     data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '', revealedBuilds: 0, revealBirds: [] };
     if (data.nest) migrateNest(data.nest);
+    // 1.4.59 每日小目標: drop anything malformed (re-picked on the next look).
+    if (data.goals !== undefined) data.goals = parseGoals(data.goals);
     return data;
   } catch {
     return null;

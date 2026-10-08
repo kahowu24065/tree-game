@@ -322,6 +322,7 @@ export function condForEvent(base: DayCond, event: WeatherEventId): DayCond {
       c.windKmh = Math.max(c.windKmh, 45);
       c.gustKmh = Math.max(c.gustKmh, 75);
       c.stormKind = 'gale';
+      c.thunder = true;
       break;
     case 'landslip':
       // 山泥傾瀉警告唔等於落緊雨，場景跟返本來嘅天氣。

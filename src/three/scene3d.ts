@@ -10,6 +10,7 @@ import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shor
 import { addNearFade, buildTree, healthUniforms, peekUniform, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
 import { buildNestDecor, nestSite } from './nestDecor3d';
+import { WeatherFx, weatherLook } from './weatherFx3d';
 import { HatchFx, RevealFx } from './eggFx3d';
 import type { NestBuildKind } from '../nest';
 import { healthLook } from '../treeLook';
@@ -68,14 +69,6 @@ function broodBird(input: SceneInput): string {
 function birdTint(id: string): { body: string; belly: string; beak: string } {
   const c = animalById(id)?.look.c ?? [];
   return { body: c[0] || '#c4a574', belly: c[1] || '#f3e6cf', beak: c[3] || '#e07a2f' };
-}
-
-function rainOf(input: SceneInput): number {
-  const c = input.cond;
-  // 風球、山泥傾瀉、狂風雷暴唔自動落雨；有雨先出雨絲。
-  if (c.stormKind === 'heavy-rain' || c.precipMm >= 25 || c.code === 65 || c.code === 82) return 0.9;
-  if (c.raining || (c.code >= 51 && c.code <= 67) || (c.code >= 80 && c.code <= 82)) return c.code >= 63 ? 0.6 : 0.35;
-  return 0;
 }
 
 function cloudCluster(rand: () => number, size: number): THREE.BufferGeometry {
@@ -171,6 +164,9 @@ export class Scene3D {
   /** 1.4.33 diagnostics: draws whose timestamp did not move forward (they now change nothing). */
   zeroDtFrames = 0;
   private flash = 0;
+  /** 1.4.59 weather extras (wet ground, splashes, flying leaves, mist, frost) and clear-day light shafts. */
+  private wx = new WeatherFx();
+  private sunnyK = 0;
   private nextFlash = 0;
   private dragAz = 0;
   private dragEl = 0;
@@ -433,6 +429,7 @@ export class Scene3D {
     this.rain.frustumCulled = false;
     this.rain.visible = false;
     this.scene.add(this.rain);
+    this.scene.add(this.wx.root);
 
     this.land.add(this.careFx.root);
     // v15.2: the campfire's point light stays on the island (intensity 0 by day): no shader recompiles.
@@ -2019,7 +2016,8 @@ export class Scene3D {
     const day = clamp(input.daylight, 0, 1);
     const night = 1 - day;
     const over = overcastOf(input);
-    const rain = Math.max(rainOf(input), this.fxStorm * 0.8);
+    const look = weatherLook(input.cond, clamp(input.sway, 0, 1));
+    const rain = Math.max(look.rain, this.fxStorm * 0.8);
     const storming = input.cond.stormKind === 'typhoon' || input.cond.code >= 95;
     const stormy = storming || !!input.cond.stormKind;
     // v16: the collapse replay darkens the sky like a storm (fxStorm is last frame's value; it eases in and out).
@@ -2038,8 +2036,16 @@ export class Scene3D {
     this.skyMat.uniforms.top!.value.copy(top);
     this.skyMat.uniforms.mid!.value.copy(mid);
     this.skyMat.uniforms.bottom!.value.copy(mid.clone().lerp(new THREE.Color('#ffffff'), 0.12 * day));
+    // 1.4.59 黑雨-class downpour: a heavier gloom on top of the storm sky.
+    const bk = this.wx.blackK;
+    if (bk > 0.002) {
+      this.skyMat.uniforms.top!.value.lerp(new THREE.Color('#262c34'), 0.35 * bk);
+      this.skyMat.uniforms.mid!.value.lerp(new THREE.Color('#3b434d'), 0.3 * bk);
+    }
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(mid).lerp(new THREE.Color('#ffffff'), 0.2 * day);
+    // Fog / haze: a paler grey veil; cold: a cool tint.
+    if (this.wx.fogK > 0.002) fog.color.lerp(new THREE.Color('#d6dbdf').multiplyScalar(0.35 + 0.65 * day), 0.6 * this.wx.fogK);
 
     const hotNow = Boolean(input.cond.hot) && day > 0.3;
     this.heatK += ((hotNow ? 1 : 0) - this.heatK) * (1 - Math.exp(-dt * 0.8));
@@ -2054,9 +2060,17 @@ export class Scene3D {
     this.hemi.groundColor.copy(new THREE.Color('#4a5c56').lerp(new THREE.Color('#78905a'), day));
     this.hemi.intensity = (1.05 + day * 0.35) * (1 - 0.28 * sk);
     this.fill.intensity = 0.42 + day * 0.08;
+    const ck = this.wx.coldK;
+    if (ck > 0.002) {
+      // 寒冷: cooler, paler light (the page also gets its frosty CSS filter).
+      this.hemi.color.lerp(new THREE.Color('#d2e2f6'), 0.35 * ck);
+      this.sun.color.lerp(new THREE.Color('#dfe9ff'), 0.3 * ck);
+    }
+    this.sun.intensity *= 1 - 0.25 * bk;
+    this.sunnyK += (look.sunny * day - this.sunnyK) * (1 - Math.exp(-dt * 0.5));
 
     // Lightning in typhoons and thunderstorms.
-    if (storming && !input.reducedMotion) {
+    if ((storming || look.lightning) && !input.reducedMotion) {
       if (t > this.nextFlash) {
         this.flash = 1;
         this.nextFlash = t + 3 + Math.random() * 5;
@@ -2389,6 +2403,12 @@ export class Scene3D {
     this.camera.updateProjectionMatrix();
     fog.near = Math.max(dist, this.camDist) * 1.15;
     fog.far = Math.max(Math.max(dist, this.camDist) * 2.6 + 40 * this.islandK, dist + this.isleGap * 2.7);
+    if (this.wx.fogK > 0.002) {
+      // Fog / haze closes in: the far island fades out and the near one softens a little.
+      const fk = this.wx.fogK;
+      fog.near *= 1 - 0.45 * fk;
+      fog.far = Math.max(fog.near * 1.6, fog.far * (1 - 0.55 * fk));
+    }
 
     // Sun from the upper left-front, shadow box sized to the subject.
     const sunDir = new THREE.Vector3(-0.55, 0.8 - goldenish * 0.3, 0.45).normalize();
@@ -2416,9 +2436,58 @@ export class Scene3D {
 
     this.updateCareFx(input, tree, t, dt, night, camAz);
     this.updateRain(rain, wind, dt, target);
+    const KW = this.islandK;
+    this.wx.update({
+      t,
+      dt,
+      look: { ...look, rain },
+      centre: new THREE.Vector3(0, 0.18 * KW, 0),
+      radius: islandR,
+      groundAt: (x, z) => this.groundFast(x / KW, z / KW) * KW,
+      gust: this.gust,
+      wind: level,
+      span: Math.max(3 * KW, this.camDist * 0.7),
+      reduced: input.reducedMotion,
+      ground: [this.island.grass, this.island.dirt, ...(this.habitat?.ground ?? [])],
+    });
     this.stepSprout(tree, dt);
     this.renderer.render(this.scene, this.camera);
     this.drawRays(input, t);
+  }
+
+  /**
+   * 1.4.59 分享樹卡: the view as it is now, rendered once more at the card's size and aspect and copied straight away
+   * (same task, so no preserveDrawingBuffer); the canvas size and camera are restored before the browser paints.
+   */
+  captureView(w = 1200, h = 950): HTMLCanvasElement | null {
+    const r = this.renderer;
+    const cam = this.camera;
+    const size = r.getSize(new THREE.Vector2());
+    const pr = r.getPixelRatio();
+    const aspect = cam.aspect;
+    const view = cam.view ? { ...cam.view } : null;
+    try {
+      r.setPixelRatio(1);
+      r.setSize(w, h, false);
+      cam.aspect = w / h;
+      cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+      r.render(this.scene, cam);
+      const cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      cv.getContext('2d')?.drawImage(r.domElement, 0, 0, w, h);
+      return cv;
+    } catch {
+      return null;
+    } finally {
+      r.setPixelRatio(pr);
+      r.setSize(size.x, size.y, false);
+      cam.aspect = aspect;
+      if (view?.enabled) cam.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
+      cam.updateProjectionMatrix();
+      r.render(this.scene, cam);
+    }
   }
 
   /** Play the ground-break for one earned decoration. Reduced motion marks it revealed with no camera move. */
@@ -2619,9 +2688,11 @@ export class Scene3D {
   private drawRays(input: SceneInput, t: number): void {
     const age = t - this.swellT;
     const swell = age >= 0 && age < 6 ? Math.sin((age / 6) * Math.PI) : 0;
-    const k = Math.max(this.heatK, swell * 0.9);
+    const heat = Math.max(this.heatK, swell * 0.9);
+    // 1.4.59 clear days get the same light shafts, much softer.
+    const k = Math.max(heat, this.sunnyK * 0.4);
     const { glow, haze, shafts } = this.rays;
-    this.renderer.toneMappingExposure = 0.95 + k * 0.03;
+    this.renderer.toneMappingExposure = 0.95 + heat * 0.03;
     if (k < 0.01) {
       glow.visible = haze.visible = false;
       shafts.forEach((m) => (m.visible = false));
@@ -2735,9 +2806,10 @@ export class Scene3D {
     this.rain.geometry.setDrawRange(0, active * 2);
     const span = Math.max(14, this.camDist * 0.9);
     const hgt = span * 1.2;
-    const len = span * 0.035;
+    // 1.4.59 heavier rain: longer, faster streaks.
+    const len = span * 0.035 * (0.75 + 0.55 * intensity);
     const slant = Math.min(0.9, wind * 0.012);
-    const speed = span * 1.4;
+    const speed = span * 1.4 * (0.8 + 0.45 * intensity);
     const s = this.rainSeeds;
     const now = this.lastTime;
     for (let i = 0; i < active; i++) {
