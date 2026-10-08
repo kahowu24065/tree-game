@@ -243,9 +243,10 @@ export function mountAnimalHud(scene: HudScene, isFresh: (id: string) => boolean
     const out: Rect[] = [];
     for (const id of ids) {
       const el = document.getElementById(id);
-      if (!el || el.hidden || el.offsetParent === null) continue;
+      if (!el || el.hidden) continue;
+      // #toast is position:fixed (1.4.61), so offsetParent is null even while it shows.
+      if (id === 'toast' ? !el.classList.contains('show') : el.offsetParent === null) continue;
       if (id === 'view-reset' && !el.classList.contains('on')) continue;
-      if (id === 'toast' && !el.classList.contains('show')) continue;
       const r = el.getBoundingClientRect();
       if (r.width && r.height) out.push({ l: r.left - 4, t: r.top - 4, r: r.right + 4, b: r.bottom + 4 });
     }
