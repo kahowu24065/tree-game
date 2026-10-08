@@ -134,6 +134,8 @@ export class Scene3D {
   private nestKey = '';
   /** 1.4.52 egg tap, hatch flight and decoration reveal. */
   onEggTap: (() => void) | null = null;
+  /** 1.4.55: the nest chick was tapped. */
+  onChickTap: (() => void) | null = null;
   private hatchFx: HatchFx | null = null;
   private revealFx: RevealFx | null = null;
   private revealQueued: { kind: NestBuildKind; index: number; bird: string; onDone: () => void } | null = null;
@@ -1235,7 +1237,7 @@ export class Scene3D {
     if (y > top) this.panGoal.y = top - this.camTargetY;
   }
 
-  /** Tap: the egg first, then the animal under the finger (with a little slack for tiny ones). */
+  /** Tap: the egg (or the chick) first, then the animal under the finger (with a little slack for tiny ones). */
   private tapAt(x: number, y: number): void {
     this.raycaster.setFromCamera(this.ndc(x, y), this.camera);
     const perPx = (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height);
@@ -1243,6 +1245,11 @@ export class Scene3D {
     if (this.animals.pickClutch(this.raycaster.ray, tol)) {
       this.animals.nudgeEggs();
       this.onEggTap?.();
+      return;
+    }
+    if (this.animals.pickChick(this.raycaster.ray, tol)) {
+      this.animals.nudgeChick();
+      this.onChickTap?.();
       return;
     }
     const hit = this.animals.pick(this.raycaster.ray, tol);

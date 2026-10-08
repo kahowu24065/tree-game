@@ -450,6 +450,15 @@ export function animalCue(category: AnimalCategory, motion: Motion): { id: strin
   return null;
 }
 
+/** 1.4.55 tap on the nest chick: the soft bird call clip (same as a bird arriving), quieter. */
+export function playChirp(): void {
+  if (!soundEnabled()) return;
+  void resume().then((ok) => {
+    if (!ok) return;
+    shot('call', 0.5);
+  });
+}
+
 /**
  * Soft "tok tok" when an egg is tapped. Two quiet knocks ~120 ms apart, synthesised here
  * (no clip file): a short damped sine, mixed on the same sfx bus as the other effects,

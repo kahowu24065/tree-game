@@ -16,11 +16,11 @@ import { findPlace, migratePlaceId, pushRegionFlags, weatherRegion, type Weather
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
-import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, playTok, preloadAudio, releaseAudioExtras, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, playChirp, playTok, preloadAudio, releaseAudioExtras, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
 import { diag, frameReport, noteFrame, noteIntro, resetFrameClock } from './diag';
 import { frames, hidePreload, runPreload } from './preload';
 import { APP_VERSION } from './version';
-import { NEST_MIN_HEALTH, eggHatchAt, eggPopupAvailable, firstEggDecision, freshNest, isNestHeightCount, markNestRevealed, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, nestRewardText, pendingNestReveals, revealedNestBuilds, tickNest, warmBlock, warmEgg } from './nest';
+import { NEST_MIN_HEALTH, chickTapLine, eggHatchAt, eggPopupAvailable, firstEggDecision, freshNest, isNestHeightCount, markNestRevealed, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, nestRewardText, pendingNestReveals, revealedNestBuilds, tickNest, warmBlock, warmEgg } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -145,7 +145,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
-import { LOCALES, getLocale, saveLocale, switchLocale, t as tl, tName, type Locale } from './i18n';
+import { LOCALES, getHeightUnit, getLocale, isHeightUnit, loadHeightUnit, saveHeightUnit, saveLocale, switchLocale, t as tl, tName, useHeightUnit, type HeightUnit, type Locale } from './i18n';
 import { kvSet } from './native/kv';
 import { bootCloud, cloudDiagLines, flushCloud, resumeCloud, startCloud, type CloudSave } from './native/cloud';
 
@@ -158,6 +158,11 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 await hydrateNative();
 // 1.4.54 iPhone: adopt the iCloud copy before the save is read (fresh install / newer elsewhere). Other platforms: no-op.
 await bootCloud();
+// 1.4.55: the height unit may only now be in localStorage (native Preferences / iCloud restore).
+if (loadHeightUnit() !== getHeightUnit()) {
+  useHeightUnit(loadHeightUnit());
+  switchLocale(getLocale());
+}
 
 // 1.4.43 diagnostics: persistent save / load / lifecycle log (diagnostics panel; survives a kill).
 const slog = createSaveLog();
@@ -273,6 +278,12 @@ try {
   scene3d.onEggTap = () => {
     playTok();
     openEggModal();
+  };
+  // 1.4.55: tapping the chick: a soft chirp and who it is / when it leaves (tonight's settlement).
+  scene3d.onChickTap = () => {
+    playChirp();
+    const line = chickTapLine(state.nest);
+    if (line) toast(line);
   };
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
@@ -2160,6 +2171,25 @@ document.addEventListener('change', (event) => {
   if (!sel || !isLocaleId(sel.value) || sel.value === getLocale()) return;
   applyLocale(sel.value);
 });
+
+// 1.4.55 高度單位 (設定): applied in place like a language change — the import-time tables (species facts, labels) are
+// rebuilt so their lengths follow, then everything visible re-renders.
+document.addEventListener('change', (event) => {
+  const sel = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>('select[data-unit-select]');
+  if (!sel || !isHeightUnit(sel.value) || sel.value === getHeightUnit()) return;
+  applyHeightUnit(sel.value);
+});
+
+function applyHeightUnit(u: HeightUnit): void {
+  saveHeightUnit(u);
+  useHeightUnit(u);
+  switchLocale(getLocale());
+  localizeStatic();
+  render();
+  doAction('settings', document.body);
+  // Reminder texts that mention heights are rebuilt in the new unit.
+  scheduleReminders(false);
+}
 
 function applyLocale(l: Locale): void {
   saveLocale(l);

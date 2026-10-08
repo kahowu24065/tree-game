@@ -307,8 +307,27 @@ function nestFig(): THREE.Group {
     const a = i * 2.1;
     k.add('eggs', E(0.1, 0.13, 0.1), '#9fd3e6', [Math.cos(a) * 0.13, 0.15, Math.sin(a) * 0.13], [0, 0, 0.3 * (i - 1)]);
   }
-  k.add('chick', E(0.16, 0.14, 0.16), '#f2c14e', [0, 0.18, 0]);
-  k.add('chick', E(0.06, 0.05, 0.05), '#e07a2f', [0.12, 0.24, 0]);
+  // 1.4.55 a baby bird, not a yellow ball: fluffy body with stubby wings, a head with black eyes (white glint), a tuft
+  // and a big orange beak whose lower half opens while it begs. Everything hangs under the 'chick' part, so the
+  // clutch visibility (setClutch / hatchHide toggle objects named 'chick') still shows or hides all of it.
+  const yellow = '#f2c14e';
+  k.part('chick', [0, 0.1, 0]);
+  k.add('chick', E(0.15, 0.13, 0.15), yellow, [0, 0.18, 0]);
+  k.add('chick', E(0.1, 0.07, 0.11), '#f7d77e', [0.06, 0.15, 0]);
+  for (const [name, s] of [['chickWingP', 1], ['chickWingN', -1]] as const) {
+    k.part(name, [0, 0.22, s * 0.12], 'solid', 'chick');
+    k.add(name, E(0.08, 0.05, 0.035), '#e0a93a', [-0.02, 0.19, s * 0.15], [0, 0, 0.5]);
+  }
+  k.part('chickHead', [0.03, 0.28, 0], 'solid', 'chick');
+  k.add('chickHead', E(0.1, 0.095, 0.1), yellow, [0.05, 0.35, 0]);
+  for (const s of [-1, 1]) {
+    k.add('chickHead', new THREE.IcosahedronGeometry(0.024, 0), '#111111', [0.128, 0.37, s * 0.05]);
+    k.add('chickHead', new THREE.IcosahedronGeometry(0.009, 0), '#ffffff', [0.148, 0.38, s * 0.046]);
+  }
+  for (let i = -1; i <= 1; i++) k.add('chickHead', new THREE.ConeGeometry(0.02, 0.08, 4), '#f5cf62', [0.04 - i * 0.012, 0.47, i * 0.02], [i * 0.35, 0, 0.25 - i * 0.1]);
+  k.add('chickHead', new THREE.ConeGeometry(0.042, 0.1, 4), '#f08a24', [0.19, 0.35, 0], [0, 0, -Math.PI / 2]);
+  k.part('chickBeak', [0.14, 0.33, 0], 'solid', 'chickHead');
+  k.add('chickBeak', new THREE.ConeGeometry(0.032, 0.075, 4), '#e07a2f', [0.18, 0.322, 0], [0, 0, -Math.PI / 2]);
   const g = k.build();
   g.children.forEach((m) => {
     const mesh = m as THREE.Mesh;
@@ -1302,6 +1321,9 @@ export class Animals3D {
   private clutchNest: THREE.Group | null = null;
   /** 1.4.52 egg tap: elapsed seconds of the wobble, or -1 when still. */
   private eggWobble = -1;
+  /** 1.4.55 chick idle clock (seconds) and tap beg (elapsed seconds, -1 when idle). */
+  private chickT = 0;
+  private chickTap = -1;
   private readonly clutchPick = new THREE.Vector3();
   private readonly broodScale = new THREE.Vector3();
   /** Hide the nest chick while the hatch flight is playing. */
@@ -1550,7 +1572,20 @@ export class Animals3D {
    * True only while the clutch is still an egg.
    */
   pickClutch(ray: THREE.Ray, tolAt: (d: number) => number): boolean {
-    if (this.clutch !== 'egg') return false;
+    return this.clutch === 'egg' && this.nearClutch(ray, tolAt);
+  }
+
+  /** 1.4.55: the chick in the nest under a tap (only while it is shown). */
+  pickChick(ray: THREE.Ray, tolAt: (d: number) => number): boolean {
+    return this.clutch === 'chick' && !this.hatchHide && this.nearClutch(ray, tolAt);
+  }
+
+  /** 1.4.55: tapped chick: a short excited beg (beak, wings, head up). */
+  nudgeChick(): void {
+    this.chickTap = 0;
+  }
+
+  private nearClutch(ray: THREE.Ray, tolAt: (d: number) => number): boolean {
     let best = 1;
     const consider = (obj: THREE.Object3D | null | undefined) => {
       if (!obj || !obj.visible) return;
@@ -1643,6 +1678,43 @@ export class Animals3D {
       return null;
     }
     return this.clutchNest && this.clutchNest.visible ? this.clutchNest : null;
+  }
+
+  /**
+   * 1.4.55 chick idle: a slow bob, now and then a head tilt, then a short beg (head up, beak opening) as if waiting to
+   * be fed; a tap adds a quick excited beg with wing flaps. Runs only while a chick is actually shown.
+   */
+  private stepChick(dt: number): void {
+    if (this.clutch !== 'chick' || this.hatchHide) return;
+    const roots: THREE.Object3D[] = [];
+    if (this.clutchNest?.visible) roots.push(this.clutchNest);
+    if (this.clutchBird === 'magpierobin') for (const c of this.crews) if (c.def.motion === 'nest') for (const m of c.members) roots.push(m.obj);
+    if (!roots.length) return;
+    this.chickT += dt;
+    const T = this.chickT;
+    const cyc = T % 4.6;
+    const tilt = cyc < 1.4 ? Math.sin((cyc / 1.4) * Math.PI) * 0.32 : 0;
+    const bob = Math.sin(T * 2.3) * 0.04;
+    let beg = cyc > 2.4 && cyc < 3.4 ? Math.max(0, Math.sin((cyc - 2.4) * Math.PI * 4)) : 0;
+    let flap = 0;
+    let lift = 0;
+    if (this.chickTap >= 0) {
+      this.chickTap += dt;
+      const u = Math.min(1, this.chickTap / 0.9);
+      const s = Math.abs(Math.sin(this.chickTap * 18));
+      beg = Math.max(beg, s);
+      flap = s * 0.7 * (1 - u);
+      lift = Math.sin(u * Math.PI) * 0.25;
+      if (u >= 1) this.chickTap = -1;
+    }
+    for (const r of roots) {
+      r.traverse((o) => {
+        if (o.name === 'chickHead') o.rotation.set(tilt, 0, bob + beg * 0.18 + lift);
+        else if (o.name === 'chickBeak') o.rotation.z = -0.5 * beg;
+        else if (o.name === 'chickWingP') o.rotation.x = -flap;
+        else if (o.name === 'chickWingN') o.rotation.x = flap;
+      });
+    }
   }
 
   private stepEggs(dt: number): void {
@@ -2250,6 +2322,7 @@ export class Animals3D {
     this.updateHints(t, dt);
     this.syncClutchNest();
     this.stepEggs(dt);
+    this.stepChick(dt);
     this.placeBrood();
   }
 
