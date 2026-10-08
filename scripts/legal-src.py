@@ -1,4 +1,4 @@
-# 1.4.51 source of public/privacy.html (and the Akar · Apps copy). zh-HK + en written by hand; zh-TW / zh-CN via OpenCC.
+# 1.4.51 (1.4.54: iCloud / Google backup) source of public/privacy.html (and the Akar · Apps copy). zh-HK + en written by hand; zh-TW / zh-CN via OpenCC.
 EFFECTIVE = '2026-10-08'
 MAIL = 'akar.554426@gmail.com'
 ZH = f'''
@@ -14,7 +14,7 @@ ZH = f'''
 <tr><td>購買記錄、匿名用戶編號、收據</td><td>你購買或恢復 世界之樹 Premium 時</td><td>核實購買、解鎖權益（應用程式功能）</td></tr>
 <tr><td>診斷及效能資料（例如當機、載入時間）</td><td>由 Google 的 SDK 自動收集</td><td>維持廣告及推送服務運作；本應用本身不使用另外的當機分析服務</td></tr>
 </table>
-<p>樹木、成長日誌、圖鑑及設定等遊戲資料<b>只儲存在你的裝置上</b>，不會上傳。「匯出存檔」產生的存檔碼只會在你自行複製或分享時離開裝置。</p>
+<p>樹木、成長日誌、圖鑑及設定等遊戲資料儲存在你的裝置上，<b>不會上傳到我們的伺服器</b>。為了換機或重新安裝後可以恢復：iOS 版會把存檔同步到<b>你自己的 iCloud</b>（Apple iCloud 鍵值儲存）；Android 版會納入<b>你自己的 Google 帳戶備份</b>（Android 自動備份）。這些備份由 Apple／Google 按其私隱政策保存在你的帳戶內，我們無法存取。你可以在系統設定關閉（iOS「設定 › 你的名字 › iCloud」中關閉本應用；Android「設定 › 系統 › 備份」）。網頁版的存檔只保存在你的瀏覽器。「備份存檔」產生的存檔碼只會在你自行複製或分享時離開裝置。</p>
 
 <h3>2. 位置如何傳送</h3>
 <ul>
@@ -30,6 +30,7 @@ ZH = f'''
 <li><b>Google Firebase Cloud Messaging</b> 及 <b>Apple 推送通知服務</b>：遞送通知。</li>
 <li><b>RevenueCat</b>：核實 App Store／Google Play 購買。<a href="https://www.revenuecat.com/privacy/" target="_blank" rel="noopener">RevenueCat 私隱政策</a></li>
 <li><b>Apple App Store／Google Play</b>：處理付款；我們不會收到你的付款資料。</li>
+<li><b>Apple iCloud（iOS）／Google 備份（Android）</b>：在你自己的帳戶內備份存檔；我們無法存取。</li>
 <li><b>BigDataCloud</b>：地名（反向地理編碼）。</li>
 <li><b>我們的推送及天氣伺服器</b>：位於 Oracle Cloud 日本東京區域。</li>
 <li><b>氣象資料來源</b>（只會收到伺服器發出的概略坐標）：香港天文台、澳門地球物理氣象局、中央氣象署、國家災害防救科技中心、日本氣象廳及環境省、MET Norway、美國國家氣象局、加拿大環境及氣候變化部、MeteoAlarm。</li>
@@ -49,6 +50,7 @@ ZH = f'''
 <li>伺服器存取日誌（IP 位址、時間及請求網址，網址可能含四捨五入的坐標）：最多 14 日，只用作保安、防濫用及除錯，之後自動刪除。</li>
 <li>購買記錄：由 Apple／Google 及 RevenueCat 按其政策及法律要求保留。</li>
 <li>裝置上的遊戲資料：直至你刪除應用程式或清除網站資料。</li>
+<li>iCloud／Google 備份中的存檔：由你的帳戶保存，直至你在系統設定刪除或關閉備份（Apple／Google 亦可能按其政策刪除長期未使用的備份）。</li>
 </ul>
 
 <h3>7. 你的權利</h3>
@@ -76,7 +78,7 @@ EN = f'''
 <tr><td>Purchase history, anonymous user ID, receipts</td><td>When you buy or restore World Tree Premium</td><td>Verify purchases and unlock benefits (app functionality)</td></tr>
 <tr><td>Diagnostics and performance data (e.g. crashes, load times)</td><td>Collected automatically by Google SDKs</td><td>Keeping ads and push delivery working; the app itself uses no separate crash-analytics service</td></tr>
 </table>
-<p>Your tree, growth log, field guide and settings are <b>stored only on your device</b> and never uploaded. A save code from “Export save” only leaves the device if you copy or share it.</p>
+<p>Your tree, growth log, field guide and settings are stored on your device and <b>never uploaded to our servers</b>. So that a new phone or a reinstall can restore them, the iOS app syncs the save to <b>your own iCloud</b> (Apple iCloud key-value storage) and the Android app includes it in <b>your own Google account backup</b> (Android Auto Backup). These backups are kept in your account by Apple / Google under their privacy policies; we cannot access them. You can turn them off in system settings (iOS Settings › your name › iCloud; Android Settings › System › Backup). On the web the save stays in your browser only. A save code from “Back up save” only leaves the device if you copy or share it.</p>
 
 <h3>2. How location is sent</h3>
 <ul>
@@ -92,6 +94,7 @@ EN = f'''
 <li><b>Google Firebase Cloud Messaging</b> and <b>Apple Push Notification service</b>: notification delivery.</li>
 <li><b>RevenueCat</b>: verifies App Store / Google Play purchases. <a href="https://www.revenuecat.com/privacy/" target="_blank" rel="noopener">RevenueCat privacy policy</a></li>
 <li><b>Apple App Store / Google Play</b>: payments; we never receive your payment details.</li>
+<li><b>Apple iCloud (iOS) / Google backup (Android)</b>: back up your save inside your own account; we cannot access it.</li>
 <li><b>BigDataCloud</b>: place names (reverse geocoding).</li>
 <li><b>Our push and weather server</b>: Oracle Cloud, Tokyo (Japan) region.</li>
 <li><b>Weather data sources</b> (receive only coarse coordinates from our server): Hong Kong Observatory, Macao SMG, Taiwan CWA and NCDR, Japan Meteorological Agency and Ministry of the Environment, MET Norway, US National Weather Service, Environment and Climate Change Canada, MeteoAlarm.</li>
@@ -111,6 +114,7 @@ EN = f'''
 <li>Server access logs (IP address, time and request URL, which may contain rounded coordinates): up to 14 days, for security, abuse prevention and debugging only, then deleted automatically.</li>
 <li>Purchase records: kept by Apple / Google and RevenueCat under their policies and the law.</li>
 <li>Game data on your device: until you delete the app or clear site data.</li>
+<li>Saves in iCloud / Google backup: kept in your account until you delete them or turn backup off in system settings (Apple / Google may also delete long-unused backups under their policies).</li>
 </ul>
 
 <h3>7. Your rights</h3>
@@ -129,7 +133,7 @@ SUPPORT_ZH = f'''<p>多謝你玩「世界之樹」！如有問題、建議或發
 <h3>常見問題</h3>
 <ul>
 <li><b>天氣同我見到嘅唔同？</b>本遊戲整理官方公開資料，可能有延遲；惡劣天氣請以當地氣象部門為準。</li>
-<li><b>點樣搬存檔去新手機？</b>設定 › 匯出存檔，喺新裝置 設定 › 匯入存檔 貼上存檔碼。</li>
+<li><b>點樣搬存檔去新手機？</b>iPhone 會自動用你自己嘅 iCloud 備份，Android 會用 Google 備份，換同一類手機或者重裝會自動恢復。iPhone 同 Android 之間轉機：設定 › 備份存檔 複製存檔碼，喺新裝置 設定 › 用存檔碼還原 貼上。</li>
 <li><b>收唔到通知？</b>確認系統設定已允許通知，並喺遊戲 設定 › 提醒通知 開啟。</li>
 <li><b>恢復購買／取消訂閱？</b>遊戲 設定 › 世界之樹 Premium › 恢復購買；取消請到 App Store 或 Google Play 帳戶的訂閱設定。退款由 Apple／Google 處理。</li>
 <li><b>刪除資料？</b>關閉提醒通知即刪除伺服器資料；其他要求請電郵我們。</li>
@@ -138,7 +142,7 @@ SUPPORT_EN = f'''<p>Thanks for playing World Tree! For questions, suggestions or
 <h3>FAQ</h3>
 <ul>
 <li><b>The weather differs from what I see?</b> The game compiles official public data and may lag; in severe weather follow your local weather service.</li>
-<li><b>Move my save to a new phone?</b> Settings › Export save, then Settings › Import save on the new device and paste the code.</li>
+<li><b>Move my save to a new phone?</b> iPhone backs it up automatically to your own iCloud and Android to your Google backup, so a new phone of the same kind or a reinstall restores it. Between iPhone and Android: Settings › Back up save, copy the code, then Settings › Restore from code on the new device.</li>
 <li><b>No notifications?</b> Allow notifications in system settings and turn on Settings › Notifications in the game.</li>
 <li><b>Restore purchases / cancel?</b> Settings › World Tree Premium › Restore purchases; cancel in your App Store or Google Play subscription settings. Refunds are handled by Apple / Google.</li>
 <li><b>Delete my data?</b> Turning notifications off deletes server data; for anything else, email us.</li>

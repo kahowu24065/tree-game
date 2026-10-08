@@ -14,6 +14,7 @@ export interface KvMirror {
 type KvStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 let mirror: KvMirror | null = null;
+let listener: ((key: string) => void) | null = null;
 let store: KvStore | null = null;
 
 const target = (): KvStore => store ?? localStorage;
@@ -21,6 +22,11 @@ const target = (): KvStore => store ?? localStorage;
 /** Install the native mirror (native app only). */
 export function setKvMirror(m: KvMirror | null): void {
   mirror = m;
+}
+
+/** 1.4.54: told about every write / removal (iCloud sync schedules an upload). */
+export function setKvListener(fn: ((key: string) => void) | null): void {
+  listener = fn;
 }
 
 /** Tests: use a given Storage instead of the global localStorage. */
@@ -32,11 +38,13 @@ export function setKvStore(s: KvStore | null): void {
 export function kvSet(key: string, value: string): void {
   target().setItem(key, value);
   mirror?.set(key, value);
+  listener?.(key);
 }
 
 export function kvRemove(key: string): void {
   target().removeItem(key);
   mirror?.remove(key);
+  listener?.(key);
 }
 
 export function kvGet(key: string): string | null {

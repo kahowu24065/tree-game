@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  1.4.54 Android Auto Backup (Android 6–11). Only the game save goes to the user's own Google backup:
+  Capacitor Preferences (CapacitorStorage.xml) holds the native copy of every saved key, and on a reinstall the app
+  copies it back into the WebView (src/native/persist.ts). Caches, WebView data, Firebase / FCM token files and
+  ad SDK data are not backed up (a restored FCM token would be stale).
+-->
+<full-backup-content>
+    <include domain="sharedpref" path="CapacitorStorage.xml" />
+</full-backup-content>

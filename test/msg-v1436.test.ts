@@ -92,7 +92,7 @@ describe('1.4.36 log lines follow the current language', () => {
     }
     console.log(`[1.4.36] old log lines migrated: ${migrated}/${total}\n  ${report.join('\n  ')}`);
     expect(migrated).toBe(total);
-  });
+  }, 30000); // heavy (1920 lines × 4 languages); slow on a busy box
 
   it('lines nobody can match stay exactly as written; a save keeps them', async () => {
     const { storage, msg, i18n } = await inLocale('en');

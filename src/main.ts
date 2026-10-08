@@ -5,7 +5,8 @@ import { condForEvent, currentEvents, hoursOfDate, observedEvents, observedRainE
 import { alertEvents, fetchOfficialAlerts, likelyFeedRegion, type OfficialAlerts } from './alerts';
 import { DEV_PANEL } from './flags';
 import { ICONS } from './icons';
-import { esc } from './util';
+import { esc, formatHeight } from './util';
+import { Capacitor } from '@capacitor/core';
 import { bookGameEnd, bookMilestones, bookNest, bookWeather, loadMeta, newGame, saveMeta } from './meta';
 import { Scene, daylightFactor, type SceneInput } from './render';
 import { pickEvent } from './rules';
@@ -83,6 +84,8 @@ import {
   settingsModal,
   disclaimerModal,
   exportSaveModal,
+  backupModal,
+  cloudAskModal,
   importSaveModal,
   startModal,
   nameModal,
@@ -144,6 +147,7 @@ import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
 import { LOCALES, getLocale, saveLocale, switchLocale, t as tl, tName, type Locale } from './i18n';
 import { kvSet } from './native/kv';
+import { bootCloud, cloudDiagLines, flushCloud, resumeCloud, startCloud, type CloudSave } from './native/cloud';
 
 const isLocaleId = (x: string): x is Locale => (LOCALES as readonly string[]).includes(x);
 
@@ -152,6 +156,8 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 
 // Android app: load the save from native Preferences into localStorage before anything reads it (web: no-op).
 await hydrateNative();
+// 1.4.54 iPhone: adopt the iCloud copy before the save is read (fresh install / newer elsewhere). Other platforms: no-op.
+await bootCloud();
 
 // 1.4.43 diagnostics: persistent save / load / lifecycle log (diagnostics panel; survives a kill).
 const slog = createSaveLog();
@@ -899,6 +905,41 @@ async function importSave(): Promise<void> {
 /** Set while an imported save is being written, so nothing overwrites it before the reload. */
 let importing = false;
 
+function backupPlatform(): 'ios' | 'android' | 'web' {
+  if (!isNative()) return 'web';
+  return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+}
+
+let cloudAnswer: ((restore: boolean) => void) | null = null;
+
+/** 1.4.54: iCloud holds a different save than this device — ask (after the opening, when no other window is up). */
+function askCloud(cloud: CloudSave): Promise<boolean> {
+  return new Promise((resolve) => {
+    const show = () => {
+      const modal = document.getElementById('modal');
+      if (opening || (modal && !modal.hidden)) {
+        window.setTimeout(show, 1200);
+        return;
+      }
+      let tree = tl('main.015');
+      let height = '-';
+      try {
+        const s = JSON.parse(cloud.keys[SAVE_KEY] ?? 'null') as GameState | null;
+        if (s) {
+          tree = s.treeName || tree;
+          height = formatHeight(s.heightCm);
+        }
+      } catch {
+        /* unreadable: generic labels */
+      }
+      const when = cloud.at ? new Date(cloud.at).toLocaleString() : '-';
+      cloudAnswer = resolve;
+      openModal(cloudAskModal({ tree, height, when }));
+    };
+    show();
+  });
+}
+
 function syncGrove(): void {
   if (isle === 0 || !second) home = state;
   else second = state;
@@ -917,6 +958,7 @@ function saveNow(trigger = 'saveNow'): void {
   saveMeta(meta);
   const t0 = Date.now();
   if (hydrateInfo.native) slog.add(`flush start (${trigger}) · queue pending ${nativeQueue.pending}${nativeQueue.busySince ? ` busy ${Date.now() - nativeQueue.busySince}ms` : ''}`, 'flush');
+  void flushCloud();
   void flushPersist().then(() => {
     if (hydrateInfo.native) slog.add(`flush done (${trigger}) ${Date.now() - t0}ms · pending ${nativeQueue.pending}`, 'flush');
   });
@@ -1859,8 +1901,21 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(guideModal((target?.dataset.tab as GuideTab | undefined) ?? 'play'));
       return;
     case 'export-save':
+      // 1.4.54 「備份存檔」: the platform note shows every time, then the code.
+      openModal(backupModal(backupPlatform()));
+      return;
+    case 'export-save-code':
       void exportSave();
       return;
+    case 'cloud-restore':
+    case 'cloud-keep': {
+      const answer = cloudAnswer;
+      cloudAnswer = null;
+      if (action === 'cloud-restore') importing = true;
+      closeModal();
+      answer?.(action === 'cloud-restore');
+      return;
+    }
     case 'diag-copy':
       void copyText(diagText()).then((ok) => toast(ok ? tl('main.049') : tl('main.050')));
       return;
@@ -2684,6 +2739,7 @@ document.addEventListener('visibilitychange', () => {
   resetFrameClock();
   loop();
   runCatchup('visible');
+  resumeCloud();
   maybeNestReveal();
   if (usesDeviceLocation()) {
     relocateNow();
@@ -2732,6 +2788,14 @@ document.getElementById('hatch-card')?.addEventListener('keydown', (event) => {
 });
 
 const startedAtBoot = state.started;
+// 1.4.54 iCloud: ask about a conflicting cloud save once the UI can show it; upload once linked.
+startCloud({
+  ask: askCloud,
+  reload: () => {
+    importing = true;
+    void flushPersist().then(() => location.reload());
+  },
+});
 if (!startedAtBoot) beginSpeciesPick();
 else holdOpening();
 runCatchup('launch');
@@ -2798,6 +2862,7 @@ function diagText(): string {
     `permission prompts: ${permsReady() ? 'allowed' : 'waiting for onboarding'}`,
     `now ${new Date().toString().slice(0, 33)} · tz ${timezone} · today ${today()} · isle ${isle}`,
     `state ${sumState(state)}`,
+    ...cloudDiagLines(),
     `stamp local ${stampText(localStorage.getItem(STAMP_KEY) ?? undefined)} · native queue ${hydrateInfo.native ? `${nativeQueue.busySince ? `BUSY ${Math.round((Date.now() - nativeQueue.busySince) / 1000)}s` : 'idle'} · pending ${nativeQueue.pending} · batches ${nativeQueue.batches} · failed ${nativeQueue.fails}` : 'n/a (web)'}`,
     '--- save / load log (newest last) ---',
     slog.text(),
