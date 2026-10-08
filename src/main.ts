@@ -15,11 +15,11 @@ import { findPlace, migratePlaceId, pushRegionFlags, weatherRegion, type Weather
 import { Scene3D, type Quality } from './three/scene3d';
 import type { EcoCaps } from './three/animals3d';
 import { mountAnimalHud, type AnimalHud } from './animalHud';
-import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, preloadAudio, releaseAudioExtras, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
+import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, playTok, preloadAudio, releaseAudioExtras, setPageAudible, setSoundEnabled, syncAmbience } from './audio';
 import { diag, frameReport, noteFrame, noteIntro, resetFrameClock } from './diag';
 import { frames, hidePreload, runPreload } from './preload';
 import { APP_VERSION } from './version';
-import { freshNest, isNestHeightCount, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, tickNest } from './nest';
+import { NEST_MIN_HEALTH, eggHatchAt, firstEggDecision, freshNest, isNestHeightCount, markNestRevealed, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, nestRewardText, pendingNestReveals, revealedNestBuilds, tickNest, warmBlock, warmEgg } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -63,12 +63,16 @@ import {
   noteNext,
   noteToggle,
   nestIntroModal,
+  eggPopup,
+  firstEggModal,
+  setOnModalClosed,
   openModal,
   overModal,
   milestoneModal,
   weatherModal,
   renderChrome,
   syncHatchCard,
+  hatchClockText,
   renderPanel,
   weatherPageHtml,
   renderSheet,
@@ -260,6 +264,10 @@ let scene3d: Scene3D | null = null;
 let scene2d: Scene | null = null;
 try {
   scene3d = new Scene3D(canvas, quality);
+  scene3d.onEggTap = () => {
+    playTok();
+    openEggModal();
+  };
   setThumbnailer(
     (id, unlocked) => scene3d?.thumbnail(id, unlocked) ?? null,
     (species, stage, cm) => scene3d?.speciesThumb(species, stage, cm) ?? null,
@@ -532,7 +540,7 @@ function sceneInput(): SceneInput {
     animals: bare ? [] : [...state.residents, ...visitors],
     nest: bare ? 'empty' : nestPhase(state.nest),
     nestBird: bare ? '' : (state.nest?.egg?.bird ?? ''),
-    nestBuilds: bare ? [] : nestBuilds(state.nest?.hatched ?? 0),
+    nestBuilds: bare ? [] : revealedNestBuilds(state.nest),
     cond,
     daylight: daylightFactor(minute, sunrise, sunset, timeMode),
     minute: timeMode === 'day' ? sunrise + 180 : timeMode === 'night' ? 23 * 60 : minute,
@@ -684,6 +692,7 @@ function render(): void {
   loop();
   devRender?.();
   queueNestIntro();
+  queueFirstEggIntro();
 }
 
 let nestIntroTimer = 0;
@@ -700,6 +709,132 @@ function queueNestIntro(): void {
     saveMeta(meta);
     openModal(nestIntroModal(nestBirdName(bird)));
   }, 900);
+}
+
+let firstEggTimer = 0;
+let firstEggDue = false;
+
+/** Set the one-time flag without a pop-up when this player has already hatched eggs. */
+function noteFirstEgg(justLaid: boolean): void {
+  const choice = firstEggDecision(meta, state.nest, justLaid || firstEggDue);
+  if (choice === 'silent') {
+    meta.firstEggIntro = true;
+    firstEggDue = false;
+    saveMeta(meta);
+    return;
+  }
+  if (choice === 'show') firstEggDue = true;
+}
+
+/** After the lay toast, once no other window is up. Retries while the opening or a modal is in the way. */
+function queueFirstEggIntro(): void {
+  if (!firstEggDue || meta.firstEggIntro || firstEggTimer || !state.started || state.over) return;
+  firstEggTimer = window.setTimeout(() => {
+    firstEggTimer = 0;
+    const modal = document.getElementById('modal');
+    if (meta.firstEggIntro || opening || (modal && !modal.hidden)) return;
+    const egg = state.nest?.egg;
+    if (!egg || egg.hatchedAt != null) {
+      firstEggDue = false;
+      return;
+    }
+    meta.firstEggIntro = true;
+    firstEggDue = false;
+    saveMeta(meta);
+    const n = (state.nest?.hatched ?? 0) + 1;
+    openModal(firstEggModal(nestBirdName(egg.bird), nestRewardText(n)));
+  }, 900);
+}
+
+let eggModalTimer = 0;
+
+function stopEggModalTick(): void {
+  if (eggModalTimer) window.clearTimeout(eggModalTimer);
+  eggModalTimer = 0;
+}
+
+/** Keep the open egg pop-up's countdown and keep-warm button in step, without replaying the modal animation. */
+function refreshEggModal(): void {
+  if (!document.querySelector('#modal [data-egg]')) return;
+  const b = document.querySelector('#egg-clock b');
+  const text = hatchClockText(state);
+  if (b && text) b.textContent = text;
+  const btn = document.querySelector<HTMLButtonElement>('#modal [data-action="warm-egg"]');
+  if (!btn) return;
+  const block = warmBlock(state, virtualNow());
+  btn.textContent = block === 'already' ? tl('nest.warmed') : block === 'soon' ? tl('nest.warmSoon') : tl('nest.warm');
+  const off = block != null;
+  btn.setAttribute('aria-disabled', off ? 'true' : 'false');
+  btn.classList.toggle('off', off);
+}
+
+function armEggModalTick(): void {
+  stopEggModalTick();
+  const tick = () => {
+    if (!document.querySelector('#modal [data-egg]')) {
+      eggModalTimer = 0;
+      return;
+    }
+    refreshEggModal();
+    eggModalTimer = window.setTimeout(tick, 1000);
+  };
+  eggModalTimer = window.setTimeout(tick, 1000);
+}
+
+function openEggModal(): void {
+  const egg = state.nest?.egg;
+  if (!egg || egg.hatchedAt != null || opening) return;
+  const modal = document.getElementById('modal');
+  if (modal && !modal.hidden) return;
+  openModal(eggPopup(state));
+  armEggModalTick();
+}
+
+let revealBusy = false;
+
+function nestCovered(): boolean {
+  if (opening) return true;
+  const modal = document.getElementById('modal');
+  if (modal && !modal.hidden) return true;
+  if (wxPage && !wxPage.hidden) return true;
+  return false;
+}
+
+/** Decoration earned at settlement stays hidden until this shot, once per building. */
+function maybeNestReveal(): void {
+  if (revealBusy || !state.started || state.over) return;
+  if (!scene3d) {
+    // 2D fallback has no reveal shot: show earned decorations straight away.
+    const nest = state.nest;
+    if (nest && pendingNestReveals(nest).length) {
+      while (pendingNestReveals(nest).length) markNestRevealed(nest);
+      persist();
+      render();
+    }
+    return;
+  }
+  if (nestCovered()) return;
+  const nest = state.nest;
+  if (!nest) return;
+  const pending = pendingNestReveals(nest);
+  if (!pending.length) return;
+  const index = nest.revealedBuilds ?? 0;
+  const kind = pending[0]!;
+  const bird = nest.revealBirds?.[index] || 'sparrow';
+  revealBusy = true;
+  scene3d.playNestReveal({
+    kind,
+    index,
+    bird,
+    reduced: reducedMotion,
+    onDone: () => {
+      markNestRevealed(nest);
+      revealBusy = false;
+      persist();
+      render();
+      maybeNestReveal();
+    },
+  });
 }
 
 function drawScene(input: SceneInput, time: number): void {
@@ -1025,13 +1160,17 @@ function showReport(report: CatchupReport): void {
     return;
   }
   const rest = () => {
-    if (handleOver()) return;
+    if (handleOver()) {
+      maybeNestReveal();
+      return;
+    }
     if (report.messages.length) {
       const message = report.messages.join(' ');
       if (!state.started) pendingNote = message;
       else openModal(stormModal(message));
     }
     maybeExplainWind();
+    maybeNestReveal();
     const names = report.animals.map(animalName);
     if (names.length) toast(tl('main.031', { p0: names.join(tl('ui.206')) }));
   };
@@ -1058,7 +1197,11 @@ let nestPending = { laid: false, hatched: false };
 function flushNestToast(): void {
   const bird = state.nest?.egg?.bird;
   const name = bird ? animalName(bird) : tl('main.032');
-  if (nestPending.laid) toast(tl('main.033', { name }));
+  if (nestPending.laid) {
+    const egg = state.nest?.egg;
+    const hours = egg ? Math.max(1, Math.round((eggHatchAt(egg) - virtualNow()) / 3600_000)) : 6;
+    toast(tl('nest.lay', { minH: NEST_MIN_HEALTH, bird: name, hours }));
+  }
   if (nestPending.hatched) {
     const next = (state.nest?.hatched ?? 0) + 1;
     const build = nestBuildAt(next);
@@ -1076,6 +1219,7 @@ function syncNest(): void {
   if (ev.laid) nestPending.laid = true;
   if (ev.hatched) nestPending.hatched = true;
   persist();
+  noteFirstEgg(ev.laid);
   if (!opening) flushNestToast();
 }
 
@@ -1106,6 +1250,7 @@ function finishOpening(): void {
   const report = deferredReport;
   deferredReport = null;
   if (report) showReport(report);
+  else maybeNestReveal();
 }
 
 /** Existing tree, at boot: keep the interface hidden (and night cards waiting) while the preload screen is up. */
@@ -1786,6 +1931,32 @@ function doAction(action: string, target: HTMLElement): void {
       closeModal();
       maybeExplainWind();
       return;
+    case 'hatch-card': {
+      const bird = state.nest?.egg?.bird;
+      if (!bird || nestPhase(state.nest) === 'empty') return;
+      openModal(nestIntroModal(nestBirdName(bird)));
+      return;
+    }
+    case 'nest-intro': {
+      const id = state.nest?.egg?.bird;
+      openModal(nestIntroModal(id ? nestBirdName(id) : tl('main.032')));
+      return;
+    }
+    case 'warm-egg': {
+      const res = warmEgg(state, virtualNow());
+      if (!res.ok) {
+        refreshEggModal();
+        return;
+      }
+      persist();
+      syncHatchCard(state);
+      scheduleReminders(false);
+      const bird = state.nest?.egg ? nestBirdName(state.nest.egg.bird) : tl('main.032');
+      toast(tl('nest.warmToast', { bird }));
+      refreshEggModal();
+      render();
+      return;
+    }
     case 'wind-explained':
       state.windExplained = true;
       persist();
@@ -2516,6 +2687,7 @@ document.addEventListener('visibilitychange', () => {
   resetFrameClock();
   loop();
   runCatchup('visible');
+  maybeNestReveal();
   if (usesDeviceLocation()) {
     relocateNow();
     return;
@@ -2550,6 +2722,18 @@ if (isNative()) {
   scheduleReminders(false);
   void syncPush(notifyEnabled());
 }
+noteFirstEgg(false);
+setOnModalClosed(() => {
+  stopEggModalTick();
+  maybeNestReveal();
+});
+document.getElementById('hatch-card')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  const card = event.currentTarget;
+  if (card instanceof HTMLElement) doAction('hatch-card', card);
+});
+
 const startedAtBoot = state.started;
 if (!startedAtBoot) beginSpeciesPick();
 else holdOpening();

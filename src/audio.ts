@@ -450,6 +450,46 @@ export function animalCue(category: AnimalCategory, motion: Motion): { id: strin
   return null;
 }
 
+/**
+ * Soft "tok tok" when an egg is tapped. Two quiet knocks ~120 ms apart, synthesised here
+ * (no clip file): a short damped sine, mixed on the same sfx bus as the other effects,
+ * so mute and the sfx volume still apply.
+ */
+export function playTok(): void {
+  if (!soundEnabled()) return;
+  void resume().then((ok) => {
+    if (!ok) return;
+    knock(0);
+    knock(0.12);
+  });
+}
+
+function knock(delay: number): void {
+  if (!ac || !sfx || ac.state !== 'running' || !soundEnabled()) return;
+  const t = ac.currentTime + delay;
+  const osc = ac.createOscillator();
+  const filter = ac.createBiquadFilter();
+  const gain = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(210, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.07);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(420, t);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.16, t + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(sfx);
+  osc.start(t);
+  osc.stop(t + 0.1);
+  osc.onended = () => {
+    osc.disconnect();
+    filter.disconnect();
+    gain.disconnect();
+  };
+}
+
 /** Short confirmation when a milestone or weather achievement card opens. */
 export function playCelebrate(): void {
   if (!soundEnabled()) return;
