@@ -1677,6 +1677,31 @@ export function exportSaveModal(code: string, copied: boolean, canShare: boolean
   return tl('ui.361', { p0: copied ? tl('ui.358') : tl('ui.359'), p1: esc(code), p2: canShare ? tl('ui.360') : '' });
 }
 
+/** 1.4.54 「備份存檔」: first a platform-specific note (automatic iCloud / Google backup, or none on the web), then the code. */
+export function backupModal(platform: 'ios' | 'android' | 'web'): string {
+  const note = platform === 'ios' ? tl('backup.ios') : platform === 'android' ? tl('backup.android') : tl('backup.web');
+  return `
+    <p class="eyebrow">${esc(tl('backup.eyebrow'))}</p>
+    <h2>${esc(tl('backup.title'))}</h2>
+    <p>${esc(note)}</p>
+    <button type="button" class="primary" data-action="export-save-code">${esc(tl('backup.show'))}</button>
+    <button type="button" class="ghost" data-action="import-save">${esc(tl('backup.restore'))}</button>
+    <button type="button" class="ghost" data-action="close-modal">${esc(tl('nest.close'))}</button>
+  `;
+}
+
+/** 1.4.54 iCloud has a different save than this device: ask, never overwrite silently. */
+export function cloudAskModal(info: { tree: string; height: string; when: string }): string {
+  return `
+    <p class="eyebrow">${esc(tl('cloud.eyebrow'))}</p>
+    <h2>${esc(tl('cloud.askTitle'))}</h2>
+    <p>${esc(tl('cloud.askBody', { tree: info.tree, height: info.height, when: info.when }))}</p>
+    <p class="muted">${esc(tl('cloud.keepNote'))}</p>
+    <button type="button" class="primary" data-action="cloud-restore">${esc(tl('cloud.restore'))}</button>
+    <button type="button" class="ghost" data-action="cloud-keep">${esc(tl('cloud.keep'))}</button>
+  `;
+}
+
 /** 匯入存檔: paste box; `error` shows the last validation problem. */
 export function importSaveModal(error = ''): string {
   return tl('ui.362', { p0: error ? `<p class="save-error">${esc(error)}</p>` : '' });
