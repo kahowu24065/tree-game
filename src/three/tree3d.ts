@@ -231,6 +231,67 @@ interface Spot {
   col?: THREE.Color;
 }
 
+interface Limb {
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  r0: number;
+  r1: number;
+}
+
+/**
+ * 1.4.56 where the clutch nest sits: always on wood that is really drawn. Picks an existing branch of this tree (a
+ * branch-to-trunk junction first, else a sturdy segment) at a sensible height (30–85 % of the trunk, below a storm
+ * break), on the camera side when possible, and rests the nest on top of the bark just clear of the trunk. The tree is
+ * never changed for the nest. No such branch (seedling, young tree, a conifer drawn without limbs): the top of the
+ * trunk for small trees, else against the trunk at mid height. Recomputed with every tree build, so it follows growth,
+ * regrowth and breaks.
+ */
+export function pickNestPerch(
+  limbs: readonly Limb[],
+  t: { trunkTop: number; trunkRadius: number; trunkRTop: number; at: (y: number) => THREE.Vector3; stage: number; cut: number | null },
+): Perch {
+  const top = Math.min(t.trunkTop, t.cut ?? Infinity);
+  const lo = top * 0.3;
+  const hi = Math.min(top * 0.85, t.cut !== null ? t.cut * 0.88 : Infinity);
+  const R = t.trunkRadius;
+  let best: { s: number; p: Perch } | null = null;
+  const d = new V3();
+  for (const L of limbs) {
+    d.subVectors(L.b, L.a);
+    const len = d.length();
+    if (len < 1e-4) continue;
+    d.divideScalar(len);
+    // Hanging down hard (roots, drooping twigs) or nearly upright (a leader, a stem): nothing to sit on.
+    if (d.y < -0.25 || d.y > 0.92) continue;
+    const ax = t.at(L.a.y);
+    const fromAxis = Math.hypot(L.a.x - ax.x, L.a.z - ax.z);
+    const junction = fromAxis <= R * 1.8;
+    if (L.r0 < R * (junction ? 0.1 : 0.2)) continue;
+    const horiz = Math.max(0.2, Math.hypot(d.x, d.z));
+    const clear = junction ? Math.max(0, R * 1.3 - fromAxis) / horiz : 0;
+    const k = clamp(Math.max(clear / len, 0.22), 0.15, 0.55);
+    const pos = L.a.clone().addScaledVector(d, len * k);
+    if (pos.y < lo || pos.y > hi) continue;
+    pos.y += (L.r0 + (L.r1 - L.r0) * k) * 0.85;
+    const out = new V3(d.x, 0, d.z);
+    if (out.lengthSq() < 1e-4) out.set(0.3, 0, 1);
+    out.normalize();
+    const s = (junction ? 2 : 0) + (out.z > 0.1 ? 1.2 : 0) + out.x * 0.2 - Math.abs(pos.y / Math.max(1e-4, top) - 0.55) * 2.5 + (1 - Math.abs(d.y)) * 0.6 + Math.min(1, L.r0 / R);
+    if (!best || s > best.s + 1e-9) best = { s, p: { pos, out } };
+  }
+  if (best) return best.p;
+  const out = new V3(0.3, 0, 1).normalize();
+  if (t.stage <= 1) {
+    const q = t.at(top);
+    return { pos: new V3(q.x, top, q.z), out };
+  }
+  const y = top * 0.55;
+  const q = t.at(y);
+  const r = R + (t.trunkRTop - R) * (y / Math.max(1e-4, t.trunkTop));
+  // Pressed against the bark (its own twigs underneath), not sunk into the trunk.
+  return { pos: new V3(q.x + out.x * r, y, q.z + out.z * r), out };
+}
+
 class Ctx {
   rand: () => number;
   V: number;
@@ -249,6 +310,8 @@ class Ctx {
   crownY = 0;
   nest: Perch | null = null;
   hollow: Perch | null = null;
+  /** 1.4.56 every branch segment drawn with limb() (model units), so the nest can be put on a real one. */
+  limbs: Limb[] = [];
   extraHeight = 0;
   p: TreeParams;
   constructor(p: TreeParams) {
@@ -310,6 +373,7 @@ class Ctx {
 
   limb(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, colour: string, sides = 5): void {
     this.bark.push(paint(limb(a, b, r0, r1, sides), col(colour)));
+    this.limbs.push({ a: a.clone(), b: b.clone(), r0, r1 });
   }
 
   /** Low health thins the crown: some optional foliage pieces are left out. */
@@ -539,7 +603,6 @@ function branchOut(c: Ctx, opts: {
     const tilt = opts.tilt[0] + rand() * (opts.tilt[1] - opts.tilt[0]);
     const dir = new V3(Math.cos(a) * Math.cos(tilt), Math.sin(tilt), Math.sin(a) * Math.cos(tilt)).normalize();
     grow(base, dir, opts.len * (0.85 + rand() * 0.3), opts.radius, 0);
-    if (!c.nest && Math.sin(a) > 0.1 && c.stage >= 2) c.nest = { pos: base.clone().addScaledVector(dir, opts.len * 0.28), out: new V3(dir.x, 0, dir.z).normalize() };
   }
 }
 
@@ -615,7 +678,6 @@ function tieredCotton(c: Ctx): void {
       const tip = mid.clone().add(new V3(dir.x * len * 0.25, len * 0.12, dir.z * len * 0.25));
       c.limb(from, mid, tr * 0.32, tr * 0.14, bark);
       c.limb(mid, tip, tr * 0.14, tr * 0.08, bark);
-      if (!c.nest && Math.sin(a) > 0.2 && t === 0) c.nest = { pos: mid.clone(), out: new V3(dir.x, 0, dir.z) };
       // Palmate leaf clumps (fewer when flowering, like the real tree in spring).
       const clumps = flowers ? 1 : 2;
       for (let k = 0; k < clumps; k++) {
@@ -883,7 +945,6 @@ function eucalypt(c: Ctx): void {
     const len = V * (0.16 + rand() * 0.06);
     const to = from.clone().addScaledVector(dir, len);
     c.limb(from, to, tr * 0.38, tr * 0.14, '#d9d4c5', 5);
-    if (!c.nest && i === 0 && stage >= 2) c.nest = { pos: from.clone().addScaledVector(dir, len * 0.3), out: new V3(dir.x, 0, dir.z).normalize() };
     // Open, drooping leaf clumps.
     const clumps = 3 + Math.round(stage * 1.5);
     for (let k = 0; k < clumps; k++) {
@@ -1066,6 +1127,8 @@ export function buildTree(p: TreeParams): TreeBuild {
   else FORMS[form](c);
   if (c.stage >= 1) lushen(c, form);
   const { V, rand } = c;
+  // The tree's own branches (storm stubs added below are not a place for a nest).
+  const formLimbs = c.limbs.length;
 
   // Storm scars: broken stubs.
   if (c.stage >= 1) for (let i = 0; i < Math.min(4, p.scars); i++) {
@@ -1171,7 +1234,6 @@ export function buildTree(p: TreeParams): TreeBuild {
     }
     // Nest / crown height stay below the break.
     c.crownY = Math.min(c.crownY, cut * 0.86);
-    if (c.nest && c.nest.pos.y > cut * 0.92) c.nest.pos.y = cut * 0.88;
   }
 
   const group = new THREE.Group();
@@ -1224,7 +1286,15 @@ export function buildTree(p: TreeParams): TreeBuild {
       out.normalize();
       return { pos: s.c.clone().addScaledVector(out, s.r * 0.55).add(new V3(0, s.r * 0.7, 0)), out };
     });
-  if (!c.nest && c.stage >= 2) c.nest = { pos: top.clone().setY(c.crownY), out: new V3(0.3, 0, 1).normalize() };
+  // 1.4.56: the nest always sits on a branch that is really drawn (or the trunk), never in mid-air.
+  c.nest = pickNestPerch(c.limbs.slice(0, formLimbs), {
+    trunkTop: c.trunkTop || V,
+    trunkRadius: c.trunkRadius,
+    trunkRTop: c.trunkRTop || c.trunkRadius * 0.5,
+    at: (y) => (c.trunkPts.length >= 2 ? c.trunkAt(y / Math.max(1e-4, c.trunkTop || V)) : new V3(0, y, 0)),
+    stage: c.stage,
+    cut: cutLocal,
+  });
 
   // Reinforcement: stakes and ropes.
   if (p.reinforce?.stakes || p.reinforce?.ropes) {
