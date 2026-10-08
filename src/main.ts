@@ -19,7 +19,7 @@ import { audioDiag, beginAmbience, kickAudio, playCelebrate, playControl, playTo
 import { diag, frameReport, noteFrame, noteIntro, resetFrameClock } from './diag';
 import { frames, hidePreload, runPreload } from './preload';
 import { APP_VERSION } from './version';
-import { NEST_MIN_HEALTH, eggHatchAt, firstEggDecision, freshNest, isNestHeightCount, markNestRevealed, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, nestRewardText, pendingNestReveals, revealedNestBuilds, tickNest, warmBlock, warmEgg } from './nest';
+import { NEST_MIN_HEALTH, eggHatchAt, eggPopupAvailable, firstEggDecision, freshNest, isNestHeightCount, markNestRevealed, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestCandidates, nestHatchAt, nestPhase, nestRewardText, pendingNestReveals, revealedNestBuilds, tickNest, warmBlock, warmEgg } from './nest';
 import { FEATURE_LABEL, habitatDef, habitatFeatures, islandRadius } from './data/habitat';
 import {
   advanceVirtualDay,
@@ -795,8 +795,7 @@ function armEggModalTick(): void {
 }
 
 function openEggModal(): void {
-  const egg = state.nest?.egg;
-  if (!egg || egg.hatchedAt != null || opening) return;
+  if (!eggPopupAvailable(state.nest) || opening) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return;
   openModal(eggPopup(state));
@@ -2041,12 +2040,10 @@ function doAction(action: string, target: HTMLElement): void {
       closeModal();
       maybeExplainWind();
       return;
-    case 'hatch-card': {
-      const bird = state.nest?.egg?.bird;
-      if (!bird || nestPhase(state.nest) === 'empty') return;
-      openModal(nestIntroModal(nestBirdName(bird)));
+    case 'hatch-card':
+      // 1.4.53: the countdown card opens the egg pop-up (countdown, reward, keep warm); the rules are a button inside it.
+      openEggModal();
       return;
-    }
     case 'nest-intro': {
       const id = state.nest?.egg?.bird;
       openModal(nestIntroModal(id ? nestBirdName(id) : tl('main.032')));

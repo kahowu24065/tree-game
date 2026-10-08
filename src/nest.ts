@@ -267,3 +267,9 @@ export function firstEggDecision(
   if ((meta.nest?.length ?? 0) > 0 || (nest?.hatched ?? 0) > 0) return 'silent';
   return justLaid ? 'show' : 'none';
 }
+
+/** 1.4.53 the egg pop-up (from the 3D egg or the countdown card) only opens while there is an unhatched egg. */
+export function eggPopupAvailable(nest: NestState | null | undefined): boolean {
+  const egg = nest?.egg;
+  return Boolean(egg && egg.hatchedAt == null);
+}
