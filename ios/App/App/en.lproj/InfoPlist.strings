@@ -1,3 +1,4 @@
 /* Shown in the iOS permission prompts. */
 "NSLocationWhenInUseUsageDescription" = "Your approximate location is used to show local weather and warnings for your tree.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Your approximate location is used to show local weather and warnings for your tree.";
 "NSUserTrackingUsageDescription" = "Allowing tracking lets the free version show ads that are more relevant to you. Tree care and warnings work the same either way.";

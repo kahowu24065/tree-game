@@ -1,2 +1,3 @@
 "NSLocationWhenInUseUsageDescription" = "使用你的大概位置来显示当地天气和预警，影响你的树。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "使用你的大概位置来显示当地天气和预警，影响你的树。";
 "NSUserTrackingUsageDescription" = "允许跟踪后，免费版可以显示与你更相关的广告。不允许也一样可以照顾树和接收预警。";
