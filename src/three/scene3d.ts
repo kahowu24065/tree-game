@@ -9,7 +9,7 @@ import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
 import { addNearFade, buildTree, healthUniforms, peekUniform, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
-import { buildNestDecor } from './nestDecor3d';
+import { buildNestDecor, nestSite } from './nestDecor3d';
 import { HatchFx, RevealFx } from './eggFx3d';
 import type { NestBuildKind } from '../nest';
 import { healthLook } from '../treeLook';
@@ -27,6 +27,11 @@ const PULL_S = 4.0;
 const SETTLE_S = 2.2;
 
 export type Quality = 'low' | 'high';
+
+/** 1.4.58 what a scenery tap landed on (decor: which island decoration, in earn order). */
+export type SceneryHit =
+  | { kind: 'decor'; decor: NestBuildKind; index: number }
+  | { kind: 'landmark' | 'rock' | 'bush' | 'flower'; index: number };
 
 const ELEVATION = Math.PI / 4;
 const BASE_AZIMUTH = 0.32;
@@ -136,6 +141,12 @@ export class Scene3D {
   onEggTap: (() => void) | null = null;
   /** 1.4.55: the nest chick was tapped. */
   onChickTap: (() => void) | null = null;
+  /** 1.4.58 a tap on the scenery (rock, bush, flower, island decoration, 養分地標): the caller shows a caption. */
+  onSceneryTap: ((hit: SceneryHit) => void) | null = null;
+  private sceneryFx: { kind: SceneryHit['kind']; obj: THREE.Object3D | null; index: number; t: number; base?: THREE.Matrix4 } | null = null;
+  private puff: THREE.Points | null = null;
+  private puffT = -1;
+  private puffSeeds = new Float32Array(0);
   private hatchFx: HatchFx | null = null;
   private revealFx: RevealFx | null = null;
   private revealQueued: { kind: NestBuildKind; index: number; bird: string; onDone: () => void } | null = null;
@@ -1275,7 +1286,162 @@ export class Scene3D {
       const d = Math.min(Math.hypot(m.x + r.left - x, m.y + r.top - y), Math.hypot(m.x + r.left - x, m.y - 30 + r.top - y));
       if (d < 48 && (!best || d < best.d)) best = { uid: m.uid, d };
     }
-    if (best) this.followCrew(best.uid);
+    if (best) {
+      this.followCrew(best.uid);
+      return;
+    }
+    this.tapScenery(this.raycaster.ray, tol);
+  }
+
+  /**
+   * 1.4.58 tappable scenery: the decoration / landmark / rock / bush / flower whose centre the tap ray passes closest to
+   * (within its size plus the usual finger slack). Positions come from the island data, so nothing new is ray-cast
+   * per frame and tiny props stay cheap.
+   */
+  private tapScenery(ray: THREE.Ray, tol: (d: number) => number): void {
+    const cands: { hit: SceneryHit; pos: THREE.Vector3; r: number; obj: THREE.Object3D | null; index: number }[] = [];
+    const K = this.islandK;
+    const toWorld = (x: number, y: number, z: number) => this.island.group.localToWorld(new THREE.Vector3(x, y, z));
+    const builds = this.nestKey ? (this.nestKey.split(',') as NestBuildKind[]) : [];
+    const decorRoot = this.nestDecor.children[0];
+    builds.forEach((kind, i) => {
+      const site = nestSite(i);
+      const pos = this.nestDecor.localToWorld(new THREE.Vector3(site.x, site.y + 0.7, site.z));
+      cands.push({ hit: { kind: 'decor', decor: kind, index: i }, pos, r: 0.75 * K, obj: decorRoot?.children[i] ?? null, index: i });
+    });
+    if (this.landmark.visible) cands.push({ hit: { kind: 'landmark', index: 0 }, pos: this.landmark.localToWorld(new THREE.Vector3(0, 0.8, 0)), r: 0.8 * K, obj: this.landmark, index: 0 });
+    const propK = propUniforms.uPropK.value as number;
+    this.island.obstacles().forEach((o, i) => {
+      if (o.kind !== 'rock' && o.kind !== 'bush') return;
+      const dome = 0.18 * (1 - Math.min(1, Math.hypot(o.x, o.z) / ISLAND_R) ** 2);
+      cands.push({ hit: { kind: o.kind as 'rock' | 'bush', index: i }, pos: toWorld(o.x, dome + o.r * 0.35 * propK, o.z), r: o.r * propK * K, obj: null, index: i });
+    });
+    const flowers = this.island.group.getObjectByName('flowers') as THREE.InstancedMesh | undefined;
+    if (flowers) {
+      const m = new THREE.Matrix4();
+      const v = new THREE.Vector3();
+      for (let i = 0; i < flowers.count; i++) {
+        flowers.getMatrixAt(i, m);
+        v.setFromMatrixPosition(m);
+        cands.push({ hit: { kind: 'flower', index: i }, pos: toWorld(v.x, v.y + 0.12 * propK, v.z), r: 0.12 * propK * K, obj: flowers, index: i });
+      }
+    }
+    let best: (typeof cands)[number] | null = null;
+    let bestScore = Infinity;
+    const treeHit = this.tree ? this.raycaster.intersectObject(this.pivot, true).find((h) => (h.object as THREE.Mesh).isMesh) : undefined;
+    for (const c of cands) {
+      const along = c.pos.clone().sub(ray.origin).dot(ray.direction);
+      if (along <= 0) continue;
+      if (treeHit && treeHit.distance < along - c.r) continue;
+      const slack = c.r + tol(along) * 0.6;
+      const d = Math.sqrt(ray.distanceSqToPoint(c.pos));
+      if (d > slack) continue;
+      // Prefer the bigger, closer-to-centre things (decorations over the flower in front of them).
+      const score = d / slack + (c.hit.kind === 'flower' ? 0.35 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    if (!best) return;
+    this.reactScenery(best.hit.kind, best.obj, best.index, best.pos);
+    this.onSceneryTap?.(best.hit);
+  }
+
+  private reactScenery(kind: SceneryHit['kind'], obj: THREE.Object3D | null, index: number, at: THREE.Vector3): void {
+    this.endSceneryFx();
+    let base: THREE.Matrix4 | undefined;
+    if (kind === 'flower' && obj) {
+      base = new THREE.Matrix4();
+      (obj as THREE.InstancedMesh).getMatrixAt(index, base);
+    }
+    this.sceneryFx = { kind, obj, index, t: 0, base };
+    // Sparkle puff: one small reusable point burst.
+    if (!this.puff) {
+      const n = 16;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      this.puffSeeds = new Float32Array(n * 3);
+      for (let i = 0; i < n * 3; i++) this.puffSeeds[i] = Math.random();
+      this.puff = new THREE.Points(geo, new THREE.PointsMaterial({ color: '#fff4c2', size: 5, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      this.puff.frustumCulled = false;
+      this.scene.add(this.puff);
+    }
+    this.puff.position.copy(at);
+    this.puff.userData.r = Math.max(0.05, at.distanceTo(this.camera.position) * 0.03);
+    this.puffT = 0;
+  }
+
+  private endSceneryFx(): void {
+    const fx = this.sceneryFx;
+    if (!fx) return;
+    if (fx.kind === 'flower' && fx.obj && fx.base) {
+      const im = fx.obj as THREE.InstancedMesh;
+      if (fx.index < im.count) {
+        im.setMatrixAt(fx.index, fx.base);
+        im.instanceMatrix.needsUpdate = true;
+      }
+    } else if (fx.obj) {
+      fx.obj.rotation.x = 0;
+      fx.obj.rotation.z = 0;
+      fx.obj.position.y = fx.obj.userData.baseY ?? fx.obj.position.y;
+      delete fx.obj.userData.baseY;
+    }
+    this.sceneryFx = null;
+  }
+
+  /** Wobble / bounce of the tapped piece (~0.7 s) and the sparkle puff. */
+  private stepScenery(dt: number, reduced: boolean): void {
+    const fx = this.sceneryFx;
+    if (fx) {
+      fx.t += dt;
+      const T = 0.7;
+      if (fx.t >= T) this.endSceneryFx();
+      else {
+        const k = (1 - fx.t / T) * (reduced ? 0.3 : 1);
+        const w = Math.sin(fx.t * 26) * k;
+        if (fx.kind === 'flower' && fx.obj && fx.base) {
+          const im = fx.obj as THREE.InstancedMesh;
+          if (fx.index < im.count) {
+            const p = new THREE.Vector3();
+            const q = new THREE.Quaternion();
+            const sc = new THREE.Vector3();
+            fx.base.decompose(p, q, sc);
+            const bounce = 1 + Math.abs(w) * 0.45;
+            im.setMatrixAt(fx.index, new THREE.Matrix4().compose(p, q, sc.set(sc.x / Math.sqrt(bounce), sc.y * bounce, sc.z / Math.sqrt(bounce))));
+            im.instanceMatrix.needsUpdate = true;
+          }
+        } else if (fx.obj) {
+          if (fx.obj.userData.baseY === undefined) fx.obj.userData.baseY = fx.obj.position.y;
+          fx.obj.rotation.z = w * 0.07;
+          fx.obj.rotation.x = Math.cos(fx.t * 22) * k * 0.03;
+          fx.obj.position.y = fx.obj.userData.baseY + Math.abs(w) * 0.06;
+        }
+      }
+    }
+    if (this.puff && this.puffT >= 0) {
+      this.puffT += dt;
+      const T = 0.8;
+      const mat = this.puff.material as THREE.PointsMaterial;
+      if (this.puffT >= T) {
+        this.puffT = -1;
+        mat.opacity = 0;
+        this.puff.visible = false;
+        return;
+      }
+      this.puff.visible = true;
+      const u = this.puffT / T;
+      const r = (this.puff.userData.r as number) * (0.3 + u * 1.7);
+      const pos = this.puff.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const s = this.puffSeeds;
+      for (let i = 0; i < pos.count; i++) {
+        const a = s[i * 3]! * Math.PI * 2;
+        const e = s[i * 3 + 1]! * 1.2;
+        pos.setXYZ(i, Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r + u * r * 0.6, Math.sin(a) * Math.cos(e) * r);
+      }
+      pos.needsUpdate = true;
+      mat.opacity = 0.95 * (1 - u);
+    }
   }
 
   /** v9: overview markers (one per visiting group), in CSS px of the canvas. */
@@ -1976,6 +2142,7 @@ export class Scene3D {
     this.animals.setView(this.camera.position, (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.max(1, this.height), this.renderer.getPixelRatio());
     this.animals.update(t, dt, night);
     this.stepEggFx(input, dt);
+    this.stepScenery(dt, input.reducedMotion);
 
     const islandR = (this.habitat?.radius ?? ISLAND_R) * this.islandK;
     const islandStage = this.habitat?.stage ?? 0;

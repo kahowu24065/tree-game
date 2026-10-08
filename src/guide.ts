@@ -75,6 +75,7 @@ import { emergencyName, eventLabel, labelRegion, regionalize, weatherTrackCopy }
 import { emergencyBonus } from './rules';
 import { eventTableHtml } from './ui';
 import { t as tl, live } from './i18n';
+import { esc } from './util';
 
 export type GuideTab = 'play' | 'calc' | 'weather' | 'push';
 export const GUIDE_TABS: { id: GuideTab; label: string }[] = live(() => ([
@@ -355,5 +356,5 @@ function pushTab(): string {
 
 export function guideModal(tab: GuideTab = 'play'): string {
   const body = tab === 'calc' ? calcTab() : tab === 'weather' ? weatherTab() : tab === 'push' ? pushTab() : playTab();
-  return tl('guide.212', { p0: GUIDE_TABS.map((t) => `<button type="button" class="${t.id === tab ? 'on' : ''}" data-guide="${t.id}">${t.label}</button>`).join(''), p1: tab === 'weather' || tab === 'push' ? body : regionalize(body) });
+  return tl('guide.212', { p0: GUIDE_TABS.map((t) => `<button type="button" class="${t.id === tab ? 'on' : ''}" data-guide="${t.id}">${t.label}</button>`).join(''), p1: (tab === 'weather' || tab === 'push' ? body : regionalize(body)) + (tab === 'play' ? `<button type="button" class="texty" data-action="tour-replay">${esc(tl('tour.guideReplay'))}</button>` : '') });
 }

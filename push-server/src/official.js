@@ -17,13 +17,19 @@ import { feedStr, intlLabel, normLocale, str } from './i18n.js';
 
 const UA = 'sekai-tree-push (github.com/kahowu24065/tree-game)';
 const FEED_TTL = 5 * 60_000;
+// 1.4.58 MeteoAlarm terms (operational re-use, real-time): average delay under 5 min, never over 10 min. Feed cache
+// 2 min + /alerts answer cache 2 min (server.js) + the app's 5-min alert refresh while open in Europe.
+export const MA_TTL = 2 * 60_000;
+/** Verbatim disclaimer required by the MeteoAlarm terms and conditions (section 5). */
+export const MA_DISCLAIMER =
+  'Time delays between this website and the www.meteoalarm.org website are possible. For the most up-to-date awareness information as published by the participating National Meteorological and Hydrological Services, please refer to www.meteoalarm.org.';
 const MAX_TEXT = 1500;
 
 export const ATTRIBUTION = {
   nws: 'U.S. National Weather Service (NOAA) — api.weather.gov',
   eccc: 'Environment and Climate Change Canada — MSC GeoMet, Open Government Licence – Canada',
   jma: 'Japan Meteorological Agency 気象庁 — www.jma.go.jp; heatstroke alerts: Ministry of the Environment 環境省 — www.wbgt.env.go.jp (municipality lookup: GSI 国土地理院)',
-  meteoalarm: 'MeteoAlarm (EUMETNET) / national meteorological services — CC BY 4.0',
+  meteoalarm: 'EUMETNET – MeteoAlarm (www.meteoalarm.org) and the issuing national meteorological services — CC BY 4.0',
 };
 const LINKS = { nws: 'https://www.weather.gov/', eccc: 'https://weather.gc.ca/', jma: 'https://www.jma.go.jp/bosai/warning/', meteoalarm: 'https://meteoalarm.org/' };
 
@@ -294,7 +300,7 @@ export function parseMeteoalarm(body, { codes = [], lat, lon }, now) {
     const colour = level.split(';')[1]?.trim() ?? '';
     const active = inForce(en.onset ?? en.effective, en.expires, now);
     const key = `${type}|${colour}|${en.onset}|${en.expires}`;
-    const item = { id: String(a.identifier ?? w.uuid ?? key), event, name: local?.event ?? en.event ?? '', nameEn: en.event ?? '', level: colour, onset: en.onset ?? null, ends: en.expires ?? null, headline: clip(en.headline), description: clip(en.description), instruction: clip(en.instruction), area: clip(areas.map((ar) => ar.areaDesc).join(', ')).slice(0, 300), active };
+    const item = { id: String(a.identifier ?? w.uuid ?? key), event, name: local?.event ?? en.event ?? '', nameEn: en.event ?? '', level: colour, onset: en.onset ?? null, ends: en.expires ?? null, headline: clip(en.headline), description: clip(en.description), instruction: clip(en.instruction), area: clip(areas.map((ar) => ar.areaDesc).join(', ')).slice(0, 300), active, issued: a.sent ?? en.effective ?? null, issuer: String(en.senderName ?? '').slice(0, 120) };
     if (!out.has(key)) out.set(key, item);
   }
   return [...out.values()];
@@ -353,7 +359,7 @@ export function createOfficialClient({ fetchImpl = globalThis.fetch, now = () =>
     if (!res.ok) throw new Error(`${new URL(url).host} HTTP ${res.status}`);
     return res.json();
   }
-  const answer = (source, alerts) => ({ covered: true, source, attribution: ATTRIBUTION[source], link: LINKS[source], alerts: tidyAlerts(alerts, now()) });
+  const answer = (source, alerts) => ({ covered: true, source, attribution: ATTRIBUTION[source], link: LINKS[source], alerts: tidyAlerts(alerts, now()), ...(source === 'meteoalarm' ? { disclaimer: MA_DISCLAIMER } : {}) });
 
   async function nws(lat, lon) {
     const body = await cached(`nws:${lat.toFixed(3)},${lon.toFixed(3)}`, FEED_TTL, () => getJson(`https://api.weather.gov/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}`, { allow400: true }));
@@ -386,7 +392,7 @@ export function createOfficialClient({ fetchImpl = globalThis.fetch, now = () =>
     const codes = areas.map((a) => a.code);
     const alerts = [];
     for (const c of countries) {
-      const body = await cached(`ma:${c}`, FEED_TTL, () => getJson(`https://feeds.meteoalarm.org/api/v1/warnings/feeds-${MA_SLUGS[c]}`));
+      const body = await cached(`ma:${c}`, MA_TTL, () => getJson(`https://feeds.meteoalarm.org/api/v1/warnings/feeds-${MA_SLUGS[c]}`));
       alerts.push(...parseMeteoalarm(body, { codes, lat, lon }, now()));
     }
     return answer('meteoalarm', alerts);

@@ -28,6 +28,9 @@ export interface OfficialAlert {
   active: boolean;
   /** 1.4.27 'jp-heat' / 'jp-heat-special' (環境省 熱中症警戒アラート / 特別警戒アラート) — shown with our translated name. */
   kind?: string;
+  /** 1.4.58 time of issue and the issuing service (MeteoAlarm: CAP sent / senderName), shown with the alert. */
+  issued?: string | null;
+  issuer?: string;
 }
 
 export interface OfficialAlerts {
@@ -35,6 +38,8 @@ export interface OfficialAlerts {
   source?: AlertSource;
   attribution?: string;
   link?: string;
+  /** 1.4.58 a disclaimer the source requires verbatim (MeteoAlarm). */
+  disclaimer?: string;
   alerts: OfficialAlert[];
   fetchedAt: number;
 }
@@ -60,9 +65,12 @@ export function parseAlerts(body: unknown, now = Date.now()): OfficialAlerts | n
     area: s(a.area),
     active: a.active === true,
     ...(s(a.kind) ? { kind: s(a.kind) } : {}),
+    ...(s(a.issued) ? { issued: s(a.issued) } : {}),
+    ...(s(a.issuer) ? { issuer: s(a.issuer).slice(0, 120) } : {}),
   }));
   const source = ['nws', 'eccc', 'jma', 'meteoalarm'].includes(s(b.source)) ? (s(b.source) as AlertSource) : undefined;
-  return { covered: b.covered && Boolean(source), source, attribution: s(b.attribution), link: s(b.link), alerts, fetchedAt: now };
+  const link = /^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(s(b.link)) ? s(b.link) : '';
+  return { covered: b.covered && Boolean(source), source, attribution: s(b.attribution), link, ...(s(b.disclaimer) ? { disclaimer: s(b.disclaimer).slice(0, 600) } : {}), alerts, fetchedAt: now };
 }
 
 /** Still in force at `now` (the server's flag, re-checked against the end time for cached answers). */
@@ -99,3 +107,6 @@ export async function fetchOfficialAlerts(lat: number, lon: number): Promise<Off
     return null;
   }
 }
+
+/** 1.4.58 MeteoAlarm's terms cap re-use delay at 10 min: while the game is open in Europe, alerts refresh every 5. */
+export const MA_REFRESH_MS = 5 * 60_000;

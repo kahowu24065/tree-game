@@ -213,10 +213,26 @@ const LEN_RE: Record<'zh' | 'en', RegExp> = {
   en: new RegExp(String.raw`${NUM}(?:\s?([–-])\s?${NUM})?[ \u00a0](cm|m|metres?|meters?)(?![\w²³/])`, 'g'),
 };
 
+/**
+ * 1.4.58: an exact reference length written `10\u2060 米` (word joiner after the number: a rule of the game, e.g. the
+ * record heights are rounded to the nearest 10 m, DBH is quoted at 10 m). Metric keeps it as written; imperial gives
+ * the exact equivalent in feet with one decimal (「32.8 英尺」) instead of the rounded「32 英尺 10 英寸」 style.
+ */
+const EXACT_RE: Record<'zh' | 'en', RegExp> = {
+  zh: new RegExp(String.raw`${NUM}\u2060\s?(厘米|米)`, 'g'),
+  en: new RegExp(String.raw`${NUM}\u2060[ \u00a0]?(cm|m|metres?|meters?)(?![\w²³/])`, 'g'),
+};
+
 /** Convert every `<number> 厘米|米` (`cm|m`) in finished text to the unit (metric: 100 厘米 and up become 米). */
 export function convertLengths(text: string, u: HeightUnit = unit, l: Locale = current): string {
   if (!/\d/.test(text)) return text;
   const w = UNIT_WORDS[l];
+  if (u === 'imperial' && text.includes('\u2060')) {
+    text = text.replace(EXACT_RE[l === 'en' ? 'en' : 'zh'], (_all, a: string, word: string) => {
+      const cm = Number(a) * (word === w.cm || word === 'cm' ? 1 : 100);
+      return cm < 30.48 ? `${trim0(cm / 2.54, 1)}${w.sep}${w.inch}` : `${trim0(cm / 30.48, 1)}${w.sep}${w.ft}`;
+    });
+  }
   return text.replace(LEN_RE[l === 'en' ? 'en' : 'zh'], (all, a: string, dash: string | undefined, b: string | undefined, word: string) => {
     const toCm = (x: string) => Number(x) * (word === w.cm || word === 'cm' ? 1 : 100);
     if (u === 'metric') {

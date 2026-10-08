@@ -290,7 +290,8 @@ const cwaAnswers = new Map();
 async function cwaAnswer(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
   const hit = cwaAnswers.get(key);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.body;
+  // 1.4.58 MeteoAlarm answers only 2 minutes (its terms cap re-use delay at 10 min, average under 5).
+  if (hit && Date.now() - hit.at < (hit.body?.source === 'meteoalarm' ? 2 : 5) * 60_000) return hit.body;
   const body = await cwa.bundle(lat, lon);
   if (body) {
     if (cwaAnswers.size > 500) cwaAnswers.clear();
@@ -299,7 +300,7 @@ async function cwaAnswer(lat, lon) {
   return body;
 }
 
-// 1.4.26 GET /alerts answers (official NWS / ECCC / JMA / MeteoAlarm alerts): shared per ~2 km for 5 minutes.
+// 1.4.26 GET /alerts answers (official NWS / ECCC / JMA / MeteoAlarm alerts): shared per ~2 km for 5 minutes (MeteoAlarm 2).
 const alertAnswers = new Map();
 async function alertAnswer(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;

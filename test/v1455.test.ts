@@ -68,8 +68,8 @@ describe('1.4.55 imperial', () => {
     switchLocale('en');
     expect(formatHeight(160)).toBe('5 ft 3 in');
     expect(t('content.010')).toContain('144 ft');
-    // A rule stated in metres stays in metres (word joiner).
-    expect(t('ui.287', { cards: '' })).toContain('10\u2060 m');
+    // 1.4.58: a rule stated in exact metres (word joiner) converts exactly too (10 m → 32.8 ft).
+    expect(t('ui.287', { cards: '' })).toContain('32.8 ft');
     useHeightUnit('metric');
     switchLocale('en');
     expect(formatHeight(160)).toBe('1.6 m');

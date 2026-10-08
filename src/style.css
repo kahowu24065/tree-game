@@ -4312,3 +4312,125 @@ html[lang='en'] .emerg > span {
 .credits ul { margin: 0; padding-left: 18px; }
 .credits li { margin: 0 0 6px; overflow-wrap: anywhere; }
 .credits p { margin: 6px 0; }
+
+/* 1.4.58 one spacing standard for every modal / popup / sheet: buttons at least 44px tall, ~14px between stacked
+   buttons, 12px between buttons side by side, and section headings 22px clear of the group above, 10px over their
+   own content. (.btn-stack / .btn-row keep their own grid gaps.) */
+.modal-card .primary {
+  height: auto;
+  min-height: 46px;
+  padding: 8px 14px;
+}
+
+.modal-card .ghost {
+  height: auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  line-height: 1.25;
+}
+
+.modal-card .texty {
+  min-height: 44px;
+}
+
+.modal-card :is(.primary, .ghost, .texty) + :is(.primary, .ghost, .texty) {
+  margin-top: 14px;
+}
+
+.modal-card > :is(.primary, .ghost),
+.modal-card > div:not([class]) > :is(.primary, .ghost),
+.modal-card [data-egg] > :is(.primary, .ghost) {
+  margin-top: 14px;
+}
+
+.modal-card > :is(.primary, .ghost):first-child {
+  margin-top: 0;
+}
+
+.modal-card [data-egg] > .ghost {
+  display: block;
+  width: 100%;
+}
+
+.modal-card :is(.btn-stack, .btn-row) > :is(.primary, .ghost, .texty) {
+  margin: 0;
+}
+
+.modal-card .seg button {
+  height: auto;
+  min-height: 44px;
+}
+
+.modal-card .setting-row {
+  padding: 12px 0;
+  gap: 12px;
+}
+
+.modal-card h3,
+.modal-card h3.sub {
+  margin: 22px 2px 10px;
+}
+
+.modal-card h2 + h3,
+.modal-card .eyebrow + h3 {
+  margin-top: 10px;
+}
+
+.actions {
+  gap: 14px 12px;
+}
+
+.act {
+  min-height: 52px;
+}
+
+.preps {
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.prep {
+  min-height: 44px;
+}
+
+/* 1.4.58 welcome tour */
+.tour-art {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 6px auto 4px;
+  border-radius: 20px;
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.tour-art svg {
+  width: 34px;
+  height: 34px;
+}
+
+.tour h2 {
+  text-align: center;
+}
+
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+
+.tour-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(35, 53, 44, 0.18);
+}
+
+.tour-dots i.on {
+  width: 20px;
+  border-radius: 4px;
+  background: var(--green);
+}
