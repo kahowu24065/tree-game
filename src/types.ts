@@ -241,6 +241,8 @@ export interface GameState {
   nest?: NestState;
   /** 1.4.59 每日小目標 (today's three tasks). Missing until the first look of a day. */
   goals?: import('./goals').DailyGoals;
+  /** 1.4.64 解鎖長駐動物種類 score (0–100). Filled by daily goals when W/N/R are already healthy. */
+  faunaScore?: number;
 }
 
 /** v16: the latest collapse, as the scene needs it. */

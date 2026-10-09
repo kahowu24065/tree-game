@@ -72,6 +72,26 @@ export function allowedAt(a: AnimalDef, stage: number): boolean {
   return sizeClass(a) <= stageCap(stage).maxSize;
 }
 
+/**
+ * 1.4.64: which categories a growth stage prefers (young trees lean insect / amphibian / reptile;
+ * mature trees open up mammals and birds). Used as a spawn weight, not a hard ban.
+ */
+export const STAGE_CATEGORY_WEIGHT: readonly Record<AnimalDef['category'], number>[] = [
+  { bird: 0.35, mammal: 0.4, insect: 2.4, butterfly: 2.2, reptile: 0.8, amphibian: 2.0 }, // 幼苗
+  { bird: 0.55, mammal: 0.9, insect: 2.0, butterfly: 1.8, reptile: 1.2, amphibian: 1.6 }, // 小樹
+  { bird: 0.9, mammal: 1.4, insect: 1.3, butterfly: 1.2, reptile: 1.3, amphibian: 1.1 }, // 青年樹
+  { bird: 1.0, mammal: 1.5, insect: 1.0, butterfly: 1.0, reptile: 1.2, amphibian: 0.9 }, // 成年樹
+  { bird: 1.1, mammal: 1.6, insect: 0.9, butterfly: 0.9, reptile: 1.3, amphibian: 0.8 }, // 巨樹
+];
+
+/** Spawn weight for a visitor pick: stage category bias; flocks are no longer 2.5× (birds were flooding the island). */
+export function visitWeight(a: AnimalDef, stage: number): number {
+  const row = STAGE_CATEGORY_WEIGHT[Math.max(0, Math.min(4, Math.round(stage)))]!;
+  let w = row[a.category] ?? 1;
+  if (flocky(a)) w *= 1.15; // slight nudge only
+  return w;
+}
+
 /** v13.1: no species ever shows up alone — every group on the island (visitors and residents) is at least a pair. */
 export const MIN_GROUP = 2;
 

@@ -4543,3 +4543,37 @@ html[lang='en'] .emerg > span {
 .headsup-row.muted {
   opacity: 0.55;
 }
+
+
+/* ---------- 1.4.64 解鎖長駐動物種類 progress ---------- */
+.fauna-score {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(35, 53, 44, 0.1);
+}
+.fauna-score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.fauna-score-head small {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.fauna-bar {
+  margin-top: 6px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(35, 53, 44, 0.1);
+  overflow: hidden;
+}
+.fauna-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7bc47a, #3f9a4b);
+}

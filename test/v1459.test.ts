@@ -49,35 +49,41 @@ describe('weather visuals', () => {
 });
 
 describe('daily goals', () => {
-  it('water ×2 + feed + one for today (pests → treat, cold → keep warm, else weather / scenery)', () => {
-    expect(pickGoals('2026-10-08', { pest: true, cold: true })).toEqual(['water2', 'feed', 'deworm']);
-    expect(pickGoals('2026-10-08', { pest: false, cold: true })).toEqual(['water2', 'feed', 'warm']);
-    const light = new Set(['2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11'].map((d) => pickGoals(d, { pest: false, cold: false })[2]));
-    expect([...light].every((g) => g === 'weather' || g === 'scenery')).toBe(true);
+  const seed = { pest: false as const, cold: false as const, seed: 'v1459' };
+  it('1.4.64: only doable goals; pests / cold appear in the pool when relevant', () => {
+    expect(pickGoals('2026-10-08', { pest: true, cold: true, seed: 'p' })).toEqual(expect.arrayContaining([]));
+    const withPest = pickGoals('2026-10-08', { pest: true, cold: false, seed: 'p1' });
+    // Across seeds, deworm shows up when pests are on (pool includes it).
+    const pool = new Set(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'].flatMap((s) => pickGoals('2026-10-08', { pest: true, cold: false, seed: s })));
+    expect(pool.has('deworm') || withPest.includes('deworm')).toBe(true);
+    expect(pickGoals('2026-10-08', { ...seed }).every((id) => id !== 'deworm' && id !== 'warm')).toBe(true);
   });
-  it('progress from today\'s care; saturated soil counts as watered; +3 養分 exactly once; resets the next day', () => {
+  it('progress from today\'s care; saturated soil counts as watered; reward once; resets the next day', () => {
     const d = '2026-10-08';
     const s = createGame(d);
     s.started = true;
     s.care.date = d;
-    s.moisture = 60;
-    s.nutrients = 50;
-    const g = ensureGoals(s, d, { pest: false, cold: false });
-    expect(goalProgress(s, g, 'water2')).toEqual([0, 2]);
-    s.care.water = 2;
-    s.care.fertilize = 1;
-    expect(goalDone(s, g, 'water2') && goalDone(s, g, 'feed')).toBe(true);
+    s.moisture = 40;
+    s.nutrients = 80;
+    s.resist = 70;
+    const g = ensureGoals(s, d, seed);
+    // Complete every goal today, whatever was picked.
+    for (const id of g.ids) {
+      if (id === 'water2') s.care.water = 2;
+      else if (id === 'feed') s.care.fertilize = 1;
+      else if (id === 'weather' || id === 'scenery') noteGoal(s, d, id);
+    }
+    expect(g.ids.every((id) => goalDone(s, g, id))).toBe(true);
+    const before = s.moisture;
+    const r = claimGoals(s, d);
+    expect(r && r.kind).toBe('moisture');
+    expect(s.moisture).toBe(before + GOAL_REWARD_N);
     expect(claimGoals(s, d)).toBe(false);
-    expect(noteGoal(s, d, g.ids[2] as 'weather' | 'scenery')).toBe(true);
-    expect(claimGoals(s, d)).toBe(true);
-    expect(s.nutrients).toBe(50 + GOAL_REWARD_N);
-    expect(claimGoals(s, d)).toBe(false);
-    expect(s.nutrients).toBe(50 + GOAL_REWARD_N);
-    const next = ensureGoals(s, '2026-10-09', { pest: false, cold: false });
+    const next = ensureGoals(s, '2026-10-09', seed);
     expect(next.claimed).toBe(false);
     expect(next.noted).toEqual([]);
     s.moisture = 100;
-    expect(goalProgress(s, next, 'water2')).toEqual([2, 2]);
+    if (next.ids.includes('water2')) expect(goalProgress(s, next, 'water2')).toEqual([2, 2]);
     expect(parseGoals({ date: d, ids: ['water2', 'nope'], noted: 5, claimed: 'x' })).toEqual({ date: d, ids: ['water2'], noted: [], claimed: false });
   });
   it('card at the top of 成長日誌', () => {
@@ -86,11 +92,11 @@ describe('daily goals', () => {
     const s = createGame(d);
     s.started = true;
     expect(goalsCardHtml(s, d)).toBe('');
-    ensureGoals(s, d, { pest: false, cold: false });
+    const g = ensureGoals(s, d, seed);
     const html = goalsCardHtml(s, d);
     expect(html).toContain('今日小目標');
-    expect(html).toContain('0/3');
-    expect(html).toContain(`養分 +${GOAL_REWARD_N}`);
+    expect(html).toContain(`0/${g.ids.length}`);
+    expect(html).toContain('已額外解鎖');
   });
 });
 

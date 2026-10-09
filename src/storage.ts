@@ -216,6 +216,8 @@ export function parseSave(raw: string): GameState | null {
     if (data.nest) migrateNest(data.nest);
     // 1.4.59 每日小目標: drop anything malformed (re-picked on the next look).
     if (data.goals !== undefined) data.goals = parseGoals(data.goals);
+    if (typeof data.faunaScore === 'number' && Number.isFinite(data.faunaScore)) data.faunaScore = Math.max(0, Math.min(100, Math.round(data.faunaScore)));
+    else delete data.faunaScore;
     return data;
   } catch {
     return null;
