@@ -128,7 +128,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.60 | **天氣預告推送**（push-server `src/headsup.js`）：預報聽日／今日稍後可能打風、暴雨、酷熱、寒冷就提早推一次（例：「聽日可能打風，記得加固」）。來源：香港天文台九天預報（`fnd`）、澳門 SMG 7 日預報、臺灣 CWA 縣市一週預報、NWS/ECCC/JMA/MeteoAlarm 已發出但未生效（onset ≤ 36 h）嘅官方警報；其他地方 MET Norway 預報（只作預告，通知註明）。遊戲事件／損傷／成就照舊只跟官方生效警告。每個 token 每個 `類別|日期` 最多一次（`alerts.headsup`，3 日後清走）；裝置本地 22:00–08:00 唔發；該類警告已生效唔發。App：設定 → 天氣預告（`src/headsUp.ts`，`sekai-tree-headsup`，預設開），`/state` 帶 `headsUp: true` 先會收（舊版 app 收唔到）。MeteoAlarm：app 歐洲警告刷新 4 分鐘（`MA_REFRESH_MS`），伺服器 `/alerts` MeteoAlarm 答案快取 2 分鐘＋`no-cache`（修正 1.4.58 錯改咗 CWA 快取）。測試 `test/v1460.test.ts`、`push-server/test/headsup.test.js`。 | 67 |
 | 1.4.61 | **提示改喺彈窗上面**：`#toast` 搬出 `.hud`（層級 2），改 `position: fixed; z-index: 70`，高過抽屜（7）、廣告（8）、所有 modal（10）同開發面板（61）。複製存檔碼、分享樹卡、診斷複製都係同一個 toast，開住彈窗都睇到。動物到訪提示留喺場景層（可撳嘅世界提示，唔係確認）。測試 `test/v1461.test.ts`。 | 68 |
 | 1.4.62 | **iOS 追蹤權限改喺啟動時問**（修 App Review 2.1，1.4.51 build 137）：`requestAttAtLaunch` 喺載入遊戲之前、預載畫面暫時收起之後先問 App Tracking Transparency，只喺狀態係 notDetermined 問一次。Google UMP 同意表仍然喺新手教學完、橫額廣告之前。`NSUserTrackingUsageDescription` 冇改。測試 `test/att.test.ts`、ios `test/att-launch.test.ts`。 | 69 |
-| 1.4.63 | **左右視角可以轉足圈**：一指左右拖嘅 yaw 唔再夾死（以前總覽 ±0.6 rad ≈ ±34°、放大 ±π）；而家 360° 自由轉。上下（pitch）限制照舊，避免鑽地／衝天。跟拍雀仔、返回全景、雙指縮放、成長日誌島嶼橫掃都冇動。`clampOrbitDrag`／`test/v1463.test.ts`。 | 70 |
+| 1.4.63 | **左右視角可以轉足圈**：一指左右拖嘅 yaw 唔再夾死（以前總覽 ±0.6 rad ≈ ±34°、放大 ±π）；而家 360° 自由轉。上下（pitch）限制照舊，避免鑽地／衝天。跟拍雀仔、返回全景、雙指縮放、成長日誌島嶼橫掃都冇動。`clampOrbitDrag`／`test/v1463.test.ts`。**成長日誌左上角加分享樹卡掣**（鏡像右邊設定齒輪，同一 `share-card` 行為）。 | 70 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。
 

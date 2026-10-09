@@ -1,5 +1,6 @@
 // 1.4.63: left-right orbit is free (full 360°); pitch stays limited.
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
 import { clampOrbitDrag, ORBIT_EL_OVERVIEW, ORBIT_EL_ZOOMED } from '../src/three/scene3d';
 
 describe('orbit yaw', () => {
@@ -17,5 +18,17 @@ describe('orbit yaw', () => {
     expect(clampOrbitDrag(0, -1, true).el).toBe(ORBIT_EL_ZOOMED.min);
     expect(clampOrbitDrag(0, 1, true).el).toBe(ORBIT_EL_ZOOMED.max);
     expect(clampOrbitDrag(0, 0, false).el).toBe(0);
+  });
+});
+
+describe('sheet share button', () => {
+  it('mirrors the settings gear on the left of 成長日誌', () => {
+    const html = fs.readFileSync('index.html', 'utf8');
+    expect(html).toMatch(/id="sheet-share"[^>]*data-action="share-card"/);
+    const css = fs.readFileSync('src/style.css', 'utf8');
+    expect(css).toMatch(/\.sheet-share\s*\{[\s\S]*?left:\s*12px/);
+    expect(css).toMatch(/\.sheet-gear\s*\{[\s\S]*?right:\s*12px/);
+    const main = fs.readFileSync('src/main.ts', 'utf8');
+    expect(main).toContain("['#sheet-share', 'share.button']");
   });
 });

@@ -563,6 +563,8 @@ export function renderChrome(view: View): void {
   if (card) renderWeatherCard(card, view);
   const gear = document.getElementById('gear');
   if (gear && !gear.innerHTML) gear.innerHTML = icon('gear');
+  const sheetShare = document.getElementById('sheet-share');
+  if (sheetShare && !sheetShare.innerHTML) sheetShare.innerHTML = icon('sparkle');
   const close = document.getElementById('drawer-close');
   if (close && !close.innerHTML) close.innerHTML = icon('close');
 
