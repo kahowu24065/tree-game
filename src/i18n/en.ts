@@ -1715,6 +1715,11 @@ const table: Record<string, string> = {
  "animals.skink.name": "Skink",
  "animals.skink.epithet": "A sleek little lizard",
  "animals.skink.about": "Slips over stone and soil in the sun; common on a young island.",
- "share.vignette": "Today's note"
+ "share.vignette": "Today's note",
+ "log.snapSaved": "Saved to growth log",
+ "log.snapOpen": "View day's tree card",
+ "log.snapCaption": "Day's tree card",
+ "log.snapTitle": "Growth log",
+ "log.snapClose": "Close"
 };
 export default table;

@@ -1696,6 +1696,11 @@ const table: Record<string, string> = {
  "animals.skink.name": "石龙子",
  "animals.skink.epithet": "滑溜溜的小蜥蜴",
  "animals.skink.about": "太阳底下在石和泥上溜，小树岛常见。",
- "share.vignette": "今天小事"
+ "share.vignette": "今天小事",
+ "log.snapSaved": "已记入成长日志",
+ "log.snapOpen": "查看当日树卡",
+ "log.snapCaption": "当日树卡",
+ "log.snapTitle": "成长日志",
+ "log.snapClose": "关闭"
 };
 export default table;

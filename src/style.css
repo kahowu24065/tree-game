@@ -4676,3 +4676,66 @@ html[lang='en'] .emerg > span {
 .modal-card.settings-sheet .premium-card {
   margin: 8px 0 12px;
 }
+
+
+/* 1.4.66: share-card snap filed into 成長日誌 */
+.cal-day.has-photo::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2f8a4e;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9);
+}
+.cal-day {
+  position: relative;
+}
+.log-snap {
+  margin: 0 0 14px;
+  padding: 0;
+}
+.log-snap-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #eaf6ee;
+  box-shadow: 0 8px 24px rgba(35, 53, 44, 0.12);
+  cursor: pointer;
+}
+.log-snap-btn img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1080 / 1350;
+  object-fit: cover;
+  vertical-align: top;
+}
+.log-snap figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9aa39c;
+  text-align: center;
+  font-weight: 500;
+}
+.modal-card.log-snap-card {
+  width: min(360px, 92vw);
+  max-height: 88vh;
+  padding: 16px 16px 14px;
+}
+.modal-card.log-snap-card .log-snap-full {
+  margin: 8px 0 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #eaf6ee;
+}
+.modal-card.log-snap-card .log-snap-full img {
+  display: block;
+  width: 100%;
+  height: auto;
+}

@@ -6,6 +6,7 @@ import { EVENTS } from '../src/content';
 import { tables } from '../src/i18n';
 import { cardLines } from '../src/shareCard';
 import { vignettePropKind } from '../src/three/vignetteProp3d';
+import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
 
 describe('campfire clear ring', () => {
   it('default margin keeps rocks farther from the pit', () => {
@@ -67,5 +68,42 @@ describe('settings sheet', () => {
     expect(main).toContain("'settings-sheet'");
     const css = fs.readFileSync('src/style.css', 'utf8');
     expect(css).toContain('.modal-card.settings-sheet'); expect(css).toContain('max-height: min(68vh');
+  });
+});
+
+describe('log photos from share preview', () => {
+  it('saves at preview time with toast copy, and prunes to a capped window', () => {
+    const main = fs.readFileSync('src/main.ts', 'utf8');
+    expect(main).toMatch(/rememberLogPhoto\(today\(\),\s*card\)/);
+    expect(main).toContain("tl('log.snapSaved')");
+    // Save happens in shareTreeCard (preview), not only in sendPendingShareCard.
+    const shareFn = main.slice(main.indexOf('async function shareTreeCard'), main.indexOf('async function sendPendingShareCard'));
+    expect(shareFn).toContain('rememberLogPhoto');
+    expect(shareFn).toContain('log.snapSaved');
+    const sendFn = main.slice(main.indexOf('async function sendPendingShareCard'), main.indexOf('function noteDailyGoal'));
+    expect(sendFn).not.toContain('rememberLogPhoto');
+    const photos = fs.readFileSync('src/logPhotos.ts', 'utf8');
+    expect(photos).toContain('LOG_PHOTOS_MAX_DAYS');
+    expect(photos).toContain('compressShareCard');
+    const ui = fs.readFileSync('src/ui.ts', 'utf8');
+    expect(ui).toContain('log-snap');
+    expect(ui).toContain('has-photo');
+    for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
+      expect(tables()[loc]['log.snapSaved']).toBeTruthy();
+    }
+    expect(tables()['zh-HK']['log.snapSaved']).toContain('成長日誌');
+  });
+});
+
+describe('log photo prune', () => {
+  it('keeps only the newest MAX_DAYS entries', () => {
+    const map: Record<string, string> = {};
+    for (let i = 1; i <= LOG_PHOTOS_MAX_DAYS + 5; i++) {
+      map[`2026-01-${String(i).padStart(2, '0')}`] = 'data:image/jpeg;base64,xx';
+    }
+    pruneLogPhotos(map);
+    expect(Object.keys(map).length).toBe(LOG_PHOTOS_MAX_DAYS);
+    expect(map['2026-01-01']).toBeUndefined();
+    expect(map[`2026-01-${String(LOG_PHOTOS_MAX_DAYS + 5).padStart(2, '0')}`]).toBeTruthy();
   });
 });

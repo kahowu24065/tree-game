@@ -20,6 +20,7 @@ import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedSha
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
 import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nestRewardText, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount, warmBlock } from './nest';
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
+import { logPhotoDates, logPhotoFor } from './logPhotos';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -835,6 +836,12 @@ const KIND_META: Record<LogKind, { icon: IconName; tone: string; title: string }
 
 let sheetKey = '';
 
+/** 1.4.66: force 成長日誌 to redraw (e.g. after saving a share-card snap). */
+export function invalidateSheet(): void {
+  sheetKey = '';
+}
+
+
 /** Visible month (YYYY-MM) and the day whose log is open. Empty day means the calendar only. */
 let calMonth = '';
 let calDay = '';
@@ -894,19 +901,25 @@ export function logCalendarHtml(log: LogEntry[], today: string, month: string, d
     list.push(entry);
     byDate.set(entry.date, list);
   }
+  // 1.4.66: days with a saved share-card snap get a small photo mark on the calendar.
+  const photos = logPhotoDates();
   const cells: string[] = [];
   for (let i = 0; i < lead; i++) cells.push('<span></span>');
   for (let d = 1; d <= count; d++) {
     const ymd = `${month}-${String(d).padStart(2, '0')}`;
     const mark = ymd > today ? '' : healthDayMark(byDate.get(ymd) ?? [], ymd === today, healthNow);
-    const cls = ['cal-day', mark, ymd === today ? 'today' : '', ymd === day ? 'on' : ''].filter(Boolean).join(' ');
+    const cls = ['cal-day', mark, ymd === today ? 'today' : '', ymd === day ? 'on' : '', photos.has(ymd) ? 'has-photo' : ''].filter(Boolean).join(' ');
     cells.push(`<button type="button" class="${cls}" data-cal="${ymd}"${ymd === today ? ' aria-current="date"' : ''}${ymd > today ? ' disabled' : ''}>${d}</button>`);
   }
   const rows = day ? log.filter((e) => e.date === day) : [];
+  const snap = day ? logPhotoFor(day) : null;
+  const snapHtml = snap
+    ? `<figure class="log-snap"><button type="button" class="log-snap-btn" data-log-snap="${esc(day)}" aria-label="${esc(tl('log.snapOpen'))}"><img src="${snap}" alt="" width="540" height="675" loading="lazy" /></button><figcaption>${esc(tl('log.snapCaption'))}</figcaption></figure>`
+    : '';
   const detail = !day
     ? ''
-    : rows.length
-      ? `<h4 class="log-day">${esc(formatLong(day))}</h4><ol class="log-list">${rows.map((row) => logRow(row)).join('')}</ol>`
+    : rows.length || snap
+      ? `<h4 class="log-day">${esc(formatLong(day))}</h4>${snapHtml}${rows.length ? `<ol class="log-list">${rows.map((row) => logRow(row)).join('')}</ol>` : ''}`
       : tl('ui.183', { p0: esc(formatLong(day)) });
   return tl('ui.184', { y, m, p2: month >= today.slice(0, 7) ? ' disabled' : '', p3: WEEK.map((w) => `<span>${w}</span>`).join(''), p4: cells.join(''), detail });
 }
@@ -918,7 +931,8 @@ export function renderSheet(state: GameState, today: string): void {
   if (title) title.textContent = tl('ui.185');
   if (!calMonth || calMonth > today.slice(0, 7)) calMonth = today.slice(0, 7);
   const goals = goalsCardHtml(state, today);
-  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}|${goals}`;
+  const photoKey = calDay && logPhotoFor(calDay) ? '1' : '0';
+  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}|${goals}|${photoKey}`;
   if (key === sheetKey) return;
   sheetKey = key;
   body.innerHTML = goals + logCalendarHtml(state.log, today, calMonth, calDay, state.health);
@@ -1462,6 +1476,12 @@ let toastTimer = 0;
 export function sharePreviewModal(dataUrl: string): string {
   return `<h2>${esc(tl('share.previewTitle'))}</h2><img class="share-preview-img" src="${dataUrl}" alt="" /><div class="btn-stack"><button type="button" class="primary" data-action="share-card-send">${esc(tl('share.send'))}</button><button type="button" class="ghost" data-action="share-card-cancel">${esc(tl('share.cancel'))}</button></div>`;
 }
+
+/** 1.4.66: full-size view of a day's saved share-card snap from 成長日誌. */
+export function logSnapModal(dataUrl: string, dateLabel: string): string {
+  return `<p class="eyebrow">${esc(tl('log.snapTitle'))}</p><h2>${esc(dateLabel)}</h2><div class="log-snap-full"><img src="${dataUrl}" alt="" /></div><button type="button" class="primary" data-action="close-modal">${esc(tl('log.snapClose'))}</button>`;
+}
+
 
 export function toast(message: string): void {
   const el = document.getElementById('toast');

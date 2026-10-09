@@ -58,6 +58,7 @@ import { sceneryCaption } from './scenery';
 import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
 import { syncFaunaUnlocks } from './faunaScore';
 import { drawShareCard, shareCardImage } from './shareCard';
+import { logPhotoFor, rememberLogPhoto } from './logPhotos';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
@@ -111,6 +112,8 @@ import {
   type Pick,
   type View,
   diagModal,
+  invalidateSheet,
+  logSnapModal,
 } from './ui';
 import { ANIMALS, animalById } from './data/animals';
 import { defaultSpecies, speciesDef, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
@@ -1797,6 +1800,11 @@ async function shareTreeCard(): Promise<void> {
     playTok();
     playShareFlash();
     openModal(sharePreviewModal(card.toDataURL('image/png')), 'share-preview-card');
+    // 1.4.66: as soon as the preview appears, file the day's snap in 成長日誌 (toast above modal, z-index 70).
+    if (rememberLogPhoto(today(), card)) {
+      invalidateSheet();
+      toast(tl('log.snapSaved'));
+    }
   } catch {
     toast(tl('share.failed'));
     pendingShareCard = null;
@@ -2361,7 +2369,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -2461,6 +2469,12 @@ document.addEventListener('click', (event) => {
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    return;
+  }
+  if (target.dataset.logSnap) {
+    const date = target.dataset.logSnap;
+    const url = logPhotoFor(date);
+    if (url) openModal(logSnapModal(url, date), 'log-snap-card');
     return;
   }
   if (target.dataset.cal) {
