@@ -54,7 +54,9 @@ import {
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { sceneryCaption } from './scenery';
-import { GOAL_REWARD_N, claimGoals, ensureGoals, noteGoal } from './goals';
+import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
+import { syncFaunaUnlocks } from './faunaScore';
+import { goalLabel } from './goals';
 import { drawShareCard, shareCardImage } from './shareCard';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
@@ -109,7 +111,7 @@ import {
   type View,
   diagModal,
 } from './ui';
-import { ANIMALS } from './data/animals';
+import { ANIMALS, animalById } from './data/animals';
 import { defaultSpecies, speciesDef, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import {
   WEATHER_STALE_MS,
@@ -1838,15 +1840,23 @@ function renderWeatherPage(v: View): void {
   panel.scrollTop = scroll;
 }
 
-/** 1.4.59 每日小目標: pick today's three on the first look, pay +3 養分 once all are done. */
+/** 1.4.59 / 1.4.64 每日小目標: pick today's doable goals (per tree), pay the lowest of W/N/R or +2 fauna score. */
 function syncGoals(): void {
   if (!state.started || state.over || manual()) return;
   const d = today();
-  ensureGoals(state, d, { pest: state.pest.active, cold: todayEvents().includes('cold') });
-  if (claimGoals(state, d)) {
-    toast(tl('goals.toast', { n: GOAL_REWARD_N }));
+  ensureGoals(state, d, { pest: state.pest.active, cold: todayEvents().includes('cold'), seed: `${state.createdOn}|${state.treeName}|${state.species}` });
+  const reward = claimGoals(state, d);
+  if (reward) {
+    toast(goalToast(reward));
+    const names = syncFaunaUnlocks(state, d);
+    if (names.length) toast(tl('fauna.unlockToast', { names: names.map((id) => animalById(id)?.name ?? id).join(tl('ui.206')) }));
     queueMicrotask(() => persist('goals'));
   }
+}
+
+function goalToast(r: GoalReward): string {
+  if (r.kind === 'fauna') return tl('goals.toastFauna', { n: r.amount, score: r.faunaScore ?? 0 });
+  return tl(`goals.toast.${r.kind}`, { n: r.amount });
 }
 
 /** 1.4.59 分享樹卡: capture the island, draw the card, open the share sheet (web: download). */
@@ -1861,7 +1871,8 @@ async function shareTreeCard(): Promise<void> {
       .filter((w) => w.n > 0)
       .slice(0, 3)
       .map((w) => tl('share.weather', { name: weatherTrackCopy(w.id).name, n: w.n }));
-    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather };
+    const goals = (state.goals?.date === today() ? state.goals.ids : []).map((id) => goalLabel(id));
+    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, goals };
     const card = await drawShareCard(data, scene3d?.captureView() ?? null);
     const how = await shareCardImage(card);
     if (how === 'downloaded') toast(tl('share.saved'));

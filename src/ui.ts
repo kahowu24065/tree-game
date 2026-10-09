@@ -12,7 +12,8 @@ import { hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
-import { GOAL_REWARD_N, goalDone, goalLabel, goalProgress } from './goals';
+import { FAUNA_SCORE_MAX, GOAL_REWARD, goalDone, goalLabel, goalProgress } from './goals';
+import { faunaExtraUnlocked, faunaScoreOf } from './faunaScore';
 import { headsUpEnabled } from './headsUp';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
@@ -931,8 +932,11 @@ export function goalsCardHtml(state: GameState, today: string): string {
     return `<li class="${done ? 'done' : ''}"><span class="goal-tick" aria-hidden="true">${done ? '✓' : ''}</span><span>${esc(goalLabel(id))}</span>${b > 1 ? `<small>${Math.min(a, b)}/${b}</small>` : ''}</li>`;
   });
   const n = g.ids.filter((id) => goalDone(state, g, id)).length;
-  const foot = g.claimed ? tl('goals.claimed', { n: GOAL_REWARD_N }) : tl('goals.hint', { n: GOAL_REWARD_N });
-  return `<section class="goals-card${g.claimed ? ' claimed' : ''}"><div class="goals-head"><b>${esc(tl('goals.title'))}</b><span class="chip ${g.claimed ? 'green' : 'gray'}">${n}/${g.ids.length}</span></div><ul class="goals-list">${rows.join('')}</ul><p class="goals-foot">${esc(foot)}</p></section>`;
+  const foot = g.claimed ? tl('goals.claimed') : tl('goals.hint', { n: GOAL_REWARD });
+  const score = faunaScoreOf(state);
+  const unlocked = faunaExtraUnlocked(state);
+  const fauna = `<div class="fauna-score"><div class="fauna-score-head"><span>${esc(tl('fauna.progress', { n: unlocked }))}</span><small>${score}/${FAUNA_SCORE_MAX}</small></div><div class="fauna-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${FAUNA_SCORE_MAX}" aria-valuenow="${score}"><i style="width:${(score / FAUNA_SCORE_MAX) * 100}%"></i></div></div>`;
+  return `<section class="goals-card${g.claimed ? ' claimed' : ''}"><div class="goals-head"><b>${esc(tl('goals.title'))}</b><span class="chip ${g.claimed ? 'green' : 'gray'}">${n}/${g.ids.length}</span></div><ul class="goals-list">${rows.join('')}</ul><p class="goals-foot">${esc(foot)}</p>${fauna}</section>`;
 }
 
 function logRow(entry: LogEntry): string {

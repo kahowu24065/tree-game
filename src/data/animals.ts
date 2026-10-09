@@ -170,6 +170,10 @@ export const ANIMALS: AnimalDef[] = live(() => ([
   { id: 'toad', name: tl('animals.187'), category: 'amphibian', motion: 'hop', group: [1, 3], epithet: tl('animals.188'), about: tl('animals.189'), minM: 2, minHealth: 52, weather: 'rain', real: { len: 0.08 }, look: { kind: 'frog', c: ['#8a6a42', '#c8a878', '#2a2018'], size: 0.8, f: ['warty'] } },
   { id: 'newt', name: tl('animals.190'), category: 'amphibian', motion: 'crawl', group: [1, 2], epithet: tl('animals.191'), about: tl('animals.192'), minM: 3, minHealth: 58, weather: 'rain', spot: 'ground', real: { len: 0.13 }, look: { kind: 'lizard', c: ['#3a2e28', '#e8702a', '#2a221e'], size: 0.8, f: ['newt'] } },
   { id: 'treefrog', name: tl('animals.193'), category: 'amphibian', motion: 'hop', group: [1, 3], epithet: tl('animals.194'), about: tl('animals.195'), minM: 5, minHealth: 60, weather: 'rain', night: true, real: { len: 0.02 }, look: { kind: 'frog', c: ['#a8905a', '#d8c898', '#5a4a30'], size: 0.5 } },
+  /* 1.4.64 more non-birds for young trees (reuse existing looks). */
+  { id: 'damselfly', name: tl('animals.damselfly.name'), category: 'insect', motion: 'hover', group: [2, 4], epithet: tl('animals.damselfly.epithet'), about: tl('animals.damselfly.about'), minM: 0.4, minHealth: 42, real: { len: 0.035, span: 0.045 }, look: { kind: 'dragonfly', c: ['#3a8ab0', '#d8f0f8'], size: 0.7 } },
+  { id: 'grasshopper', name: tl('animals.grasshopper.name'), category: 'insect', motion: 'crawl', group: [1, 3], epithet: tl('animals.grasshopper.epithet'), about: tl('animals.grasshopper.about'), minM: 0.5, minHealth: 45, spot: 'leaf', real: { len: 0.04 }, look: { kind: 'mantis', c: ['#8ab84a', '#5a8a30'], size: 0.65 } },
+  { id: 'bullfrog', name: tl('animals.bullfrog.name'), category: 'amphibian', motion: 'hop', group: [1, 2], epithet: tl('animals.bullfrog.epithet'), about: tl('animals.bullfrog.about'), minM: 1.2, minHealth: 50, weather: 'rain', real: { len: 0.15 }, look: { kind: 'frog', c: ['#3a5a32', '#8aaa5a', '#1a2018'], size: 1.1, f: ['warty'] } },
 ]));
 
 /**

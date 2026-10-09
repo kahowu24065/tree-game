@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BLOCK, NAV_CELL, WATER, type WalkNav } from './walkNav';
 import { ANIMALS, animalById, outAt, type AnimalDef, type Look } from '../data/animals';
-import { allowedAt, flocky, groupSize, MIN_GROUP, rotateDelay, SIZE_LABEL, stageCap } from '../data/eco';
+import { allowedAt, groupSize, MIN_GROUP, rotateDelay, SIZE_LABEL, stageCap, visitWeight } from '../data/eco';
 import { MotionHints, newTrail, stepTrail, type TrailState } from './motionHints';
 import { clamp } from '../util';
 import { animalFactor, FENCE_INSET_UNITS, flightCeiling, minShoreRadius, shoreRadius } from '../scale';
@@ -1447,9 +1447,9 @@ export class Animals3D {
     return this.hints.stats;
   }
 
-  /** Weighted pick: flocks of small birds and insect swarms come more often (v9). */
+  /** Weighted pick: 1.4.64 stage category bias (fewer birds on a young tree); flocks only a slight nudge. */
   private pickOption(options: string[]): string {
-    const w = options.map((id) => (flocky(animalById(id)!) ? 2.5 : 1));
+    const w = options.map((id) => visitWeight(animalById(id)!, this.stage));
     let r = this.rng() * w.reduce((a, b) => a + b, 0);
     for (let i = 0; i < options.length; i++) {
       r -= w[i]!;
