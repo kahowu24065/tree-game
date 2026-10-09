@@ -36,6 +36,20 @@ export type SceneryHit =
 
 const ELEVATION = Math.PI / 4;
 const BASE_AZIMUTH = 0.32;
+
+/** 1.4.63: overview / zoomed pitch limits (radians). Keep the camera off the dirt and out of a weird sky dive. */
+export const ORBIT_EL_OVERVIEW = { min: -0.15, max: 0.15 } as const;
+export const ORBIT_EL_ZOOMED = { min: -0.5, max: 0.35 } as const;
+
+/**
+ * 1.4.63 one-finger orbit: yaw is free (full 360°, no hard stop). Pitch stays clamped.
+ * Before: yaw ±0.6 overview / ±π when zoomed.
+ */
+export function clampOrbitDrag(az: number, el: number, zoomed: boolean): { az: number; el: number } {
+  const lim = zoomed ? ORBIT_EL_ZOOMED : ORBIT_EL_OVERVIEW;
+  return { az, el: clamp(el, lim.min, lim.max) };
+}
+
 /** After this long with no touch, drag, key or scroll, the overview turns on its own. */
 const IDLE_MS = 5000;
 /** One clockwise turn of the view (tree stays centred) every 90 seconds. */
@@ -899,9 +913,9 @@ export class Scene3D {
         this.lastDrag = performance.now();
         return;
       }
-      const free = this.isZoomed();
-      this.dragAz = clamp(this.dragging.az - dx * 2.2, free ? -Math.PI : -0.6, free ? Math.PI : 0.6);
-      this.dragEl = clamp(this.dragging.el + dy * 0.8, free ? -0.5 : -0.15, free ? 0.35 : 0.15);
+      const next = clampOrbitDrag(this.dragging.az - dx * 2.2, this.dragging.el + dy * 0.8, this.isZoomed());
+      this.dragAz = next.az;
+      this.dragEl = next.el;
       this.lastDrag = performance.now();
     });
     const end = (e: PointerEvent) => {
