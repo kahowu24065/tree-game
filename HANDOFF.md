@@ -130,7 +130,7 @@ app-assets/      icon 原圖同 `npm run assets` 產生器
 | 1.4.62 | **iOS 追蹤權限改喺啟動時問**（修 App Review 2.1，1.4.51 build 137）：`requestAttAtLaunch` 喺載入遊戲之前、預載畫面暫時收起之後先問 App Tracking Transparency，只喺狀態係 notDetermined 問一次。Google UMP 同意表仍然喺新手教學完、橫額廣告之前。`NSUserTrackingUsageDescription` 冇改。測試 `test/att.test.ts`、ios `test/att-launch.test.ts`。 | 69 |
 | 1.4.63 | **左右視角可以轉足圈**：一指左右拖嘅 yaw 唔再夾死（以前總覽 ±0.6 rad ≈ ±34°、放大 ±π）；而家 360° 自由轉。上下（pitch）限制照舊，避免鑽地／衝天。跟拍雀仔、返回全景、雙指縮放、成長日誌島嶼橫掃都冇動。`clampOrbitDrag`／`test/v1463.test.ts`。**成長日誌左上角加分享樹卡掣**（鏡像右邊設定齒輪，同一 `share-card` 行為）。 | 70 |
 | 1.4.64 | **每日目標獎勵改去最低嗰項**：完成今日目標後，補當日最低嘅水分／養分／抗風（+3）；三項都喺健康範圍就改 +2「解鎖長駐動物種類」分數（0–100，進度條「已額外解鎖 X 種」，每 10 分解鎖一種非雀長駐圖鑑）。目標按棵樹＋日期隨機、只抽畫面做得到嘅（有蟲先有除蟲、寒冷先有保暖），1–3 個。分享樹卡寫上今日目標。幼樹訪客權重偏向昆蟲／兩棲／爬蟲（減雀），加豆娘／草蜢／牛蛙。另含 1.4.63：自由 yaw、成長日誌左上分享掣。 | 71 |
-| 1.4.66 | 73 | Campfire clear ring; share 今日小事; vignette props; lighter settings; log photos + toast; goal 分享樹卡; post-tour tip; 巨樹 timelapse (MediaRecorder webm / strip fallback) |
+| 1.4.66 | 73 | Campfire ring; share 今日小事; vignette props; lighter settings; log photos; share goal+streak; post-tour tip; 小樹成長片段 (青年樹 unlock, Settings Generate, ≥1 card; webm/strip) |
 | 1.4.65 | **分享樹卡體驗**：成長日誌左上掣顯示「分享樹卡」文字、同設定齒輪上移；撳完先白光快門＋卡片縮入預覽，確認「分享」先開系統分享／下載，可取消。里程碑分頁入面嗰個分享掣刪走。動物圖鑑繼續列出全部物種（含 1.4.64 豆娘／草蜢／牛蛙 ＋ 本版蟋蟀／石龍子）未解鎖顯示剪影；幼樹訪客權重仍偏非雀。 | 72 |
 
 Android versionCode：1.3 = 5、1.3.1 = 6、1.4 = 7、1.4.1 = 8（`android/app/build.gradle`）。下次升版記得兩個都改。

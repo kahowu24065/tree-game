@@ -545,12 +545,13 @@ export function tourModal(page: number): string {
     + `</div></div>`;
 }
 
-/** 1.4.66 one-time tip right after the welcome tour: weather card + daily share. */
+/** 1.4.66 one-time tip after the welcome tour: weather card, daily share, 小樹成長片段. */
 export function postTourTipModal(): string {
   return `<div class="post-tour-tip"><p class="eyebrow">${esc(tl('postTip.eyebrow'))}</p>`
     + `<h2>${esc(tl('postTip.title'))}</h2>`
     + `<ul class="post-tour-list"><li><b>${esc(tl('postTip.weatherTitle'))}</b><span>${esc(tl('postTip.weatherBody'))}</span></li>`
-    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li></ul>`
+    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li>`
+    + `<li><b>${esc(tl('postTip.clipTitle'))}</b><span>${esc(tl('postTip.clipBody'))}</span></li></ul>`
     + `<button type="button" class="primary" data-action="post-tip-done">${esc(tl('postTip.ok'))}</button></div>`;
 }
 
@@ -950,18 +951,41 @@ export function renderSheet(state: GameState, today: string): void {
 }
 
 
-/** 1.4.66 巨樹: growth-log entry to stitch daily snaps into a timelapse. */
+/** 1.4.66: growth-log entry to stitch daily snaps (first → latest). Shown from 青年樹. */
 export function timelapseCardHtml(state: GameState): string {
   if (!timelapseUnlocked(state)) return '';
   const n = timelapseDates().length;
   const ready = n >= TIMELAPSE_MIN_FRAMES;
   const body = ready
     ? tl('timelapse.ready', { n })
-    : tl('timelapse.need', { n, need: Math.max(0, TIMELAPSE_MIN_FRAMES - n) });
+    : tl('timelapse.need', { n, need: Math.max(1, TIMELAPSE_MIN_FRAMES - n) });
   const btn = ready
     ? `<button type="button" class="primary" data-action="timelapse-make">${esc(tl('timelapse.make'))}</button>`
     : `<button type="button" class="ghost" disabled>${esc(tl('timelapse.lockedBtn'))}</button>`;
   return `<section class="timelapse-card"><div class="timelapse-head"><b>${esc(tl('timelapse.title'))}</b><span class="chip purple">${esc(tl('timelapse.badge'))}</span></div><p class="timelapse-body">${esc(body)}</p>${btn}</section>`;
+}
+
+/** 1.4.66 settings row 「小樹成長片段」 — unlocks at 青年樹; Generate stitches first→latest. */
+export function timelapseSettingsRow(state: GameState): string {
+  if (!state.started || state.over) return '';
+  const unlocked = timelapseUnlocked(state);
+  const n = timelapseDates().length;
+  const ready = unlocked && n >= TIMELAPSE_MIN_FRAMES;
+  const hint = !unlocked
+    ? tl('timelapse.settingsLocked')
+    : ready
+      ? tl('timelapse.settingsReady', { n })
+      : tl('timelapse.settingsNeed');
+  // Before 青年樹: greyed but still tappable → toast. After unlock with no cards: disabled.
+  let btn: string;
+  if (ready) {
+    btn = `<button type="button" class="ghost" data-action="timelapse-make">${esc(tl('timelapse.generate'))}</button>`;
+  } else if (!unlocked) {
+    btn = `<button type="button" class="ghost is-locked" data-action="timelapse-make">${esc(tl('timelapse.generate'))}</button>`;
+  } else {
+    btn = `<button type="button" class="ghost" disabled>${esc(tl('timelapse.generate'))}</button>`;
+  }
+  return `<div class="setting-row timelapse-row${ready ? '' : ' muted'}"><span>${esc(tl('timelapse.settingsRow'))}<small>${esc(hint)}</small></span>${btn}</div>`;
 }
 
 /** 1.4.59 每日小目標 card at the top of 成長日誌. Empty until today's goals exist. */
@@ -1732,7 +1756,8 @@ export function locationModal(current: string): string {
 
 /** `notify`: Android app reminder switch (null in browsers = row hidden). */
 /** `premiumCardHtml` (ios branch, 1.4.49): the 世界之樹 Premium card, placed at the top of 設定 right under the heading. */
-export function settingsModal(treeName: string, notify: boolean | null = null, premiumCardHtml = ''): string {
+export function settingsModal(treeName: string, notify: boolean | null = null, premiumCardHtml = '', state: GameState | null = null): string {
+
   const soundOn = soundEnabled();
   const loc = getLocale();
   // Each language is named in itself, so the picker reads the same whatever the current language is.
@@ -1741,13 +1766,17 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   const hu = getHeightUnit();
   const unitRow = `<div class="setting-row"><span>${esc(tl('ui.heightUnit'))}</span><select class="lang-select" data-unit-select aria-label="${esc(tl('ui.heightUnit'))}">${HEIGHT_UNITS.map((u) => `<option value="${u}"${u === hu ? ' selected' : ''}>${esc(tl(`unit.${u}`))}</option>`).join('')}</select></div>`;
   const tourRow = `<div class="setting-row"><span>${esc(tl('tour.row'))}</span><button type="button" class="ghost" data-action="tour-replay">${esc(tl('tour.replay'))}</button></div>`;
-  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + (notify === null
+  // 1.4.66 「小樹成長片段」 — unlocks at 青年樹; Generate once ≥1 saved tree card.
+  const lapseRow = state ? timelapseSettingsRow(state) : '';
+  const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + lapseRow + (notify === null
+
         ? ''
         : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' }) + headsUpRow(notify)), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
     'data-action="disclaimer"',
     // 1.4.50 資料來源及授權 sits with the other legal links (before 免責聲明).
     `data-action="credits">${esc(tl('credits.link'))}</button><button type="button" data-action="disclaimer"`,
   );
+  // iOS Premium card (optional) sits under the heading.
   if (!premiumCardHtml) return html;
   const at = html.indexOf('</h2>');
   return at < 0 ? premiumCardHtml + html : html.slice(0, at + 5) + premiumCardHtml + html.slice(at + 5);
