@@ -7,7 +7,8 @@ import { tables } from '../src/i18n';
 import { cardLines } from '../src/shareCard';
 import { vignettePropKind } from '../src/three/vignetteProp3d';
 import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
-import { doableGoals, parseGoals } from '../src/goals';
+import { bumpShareStreak, doableGoals, goalLabel, parseGoals, shareStreakOf } from '../src/goals';
+import { createGame } from '../src/sim';
 import { freshCoach, loadCoach, markPostTip, markTour } from '../src/coach';
 import { GIANT_STAGE, TIMELAPSE_MIN_FRAMES, isGiant, timelapseUnlocked } from '../src/timelapse';
 
@@ -112,14 +113,26 @@ describe('log photo prune', () => {
 });
 
 describe('share-card daily goal', () => {
+  it('tracks consecutive share-preview days for the goal title', () => {
+    const g = createGame('2026-10-10');
+    expect(shareStreakOf(g, '2026-10-10')).toBe(0);
+    expect(bumpShareStreak(g, '2026-10-10')).toBe(1);
+    expect(bumpShareStreak(g, '2026-10-10')).toBe(1);
+    expect(bumpShareStreak(g, '2026-10-11')).toBe(2);
+    expect(bumpShareStreak(g, '2026-10-13')).toBe(1);
+    expect(goalLabel('share', g, '2026-10-13')).toContain('1');
+  });
   it('replaces weather-overview with 分享樹卡, noted at preview', () => {
     expect(doableGoals({ pest: false, cold: false, seed: 'x' })).toContain('share');
     expect(doableGoals({ pest: false, cold: false, seed: 'x' })).not.toContain('weather');
-    expect(tables()['zh-HK']['goals.share']).toContain('分享樹卡');
+    expect(tables()['zh-HK']['goals.share']).toContain('已連續打卡');
+    expect(tables()['zh-HK']['goals.shareHint']).toContain('巨樹');
     expect(tables()['zh-HK']['goals.weather']).toBeUndefined();
+    expect(tables()['en']['goals.share']).toContain('{n}');
     const main = fs.readFileSync('src/main.ts', 'utf8');
     const shareFn = main.slice(main.indexOf('async function shareTreeCard'), main.indexOf('async function sendPendingShareCard'));
     expect(shareFn).toContain("noteDailyGoal('share')");
+    expect(shareFn).toContain('bumpShareStreak');
     expect(main).not.toMatch(/noteDailyGoal\('weather'\)/);
     expect(parseGoals({ date: '2026-10-10', ids: ['weather', 'feed'], noted: ['weather'], claimed: false })).toEqual({
       date: '2026-10-10',

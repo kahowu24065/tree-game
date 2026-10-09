@@ -12,7 +12,7 @@ import { hkoWarningEvents, type Countdown } from './events';
 import { ICONS, weatherArt, type IconName } from './icons';
 import { warningDisplay, type HkoWarning } from './hko';
 import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
-import { FAUNA_SCORE_MAX, GOAL_REWARD, goalDone, goalLabel, goalProgress } from './goals';
+import { FAUNA_SCORE_MAX, GOAL_REWARD, goalDone, goalLabel, goalProgress, goalSub } from './goals';
 import { faunaExtraUnlocked, faunaScoreOf } from './faunaScore';
 import { headsUpEnabled } from './headsUp';
 import type { EventMode } from './events';
@@ -971,7 +971,12 @@ export function goalsCardHtml(state: GameState, today: string): string {
   const rows = g.ids.map((id) => {
     const [a, b] = goalProgress(state, g, id);
     const done = a >= b;
-    return `<li class="${done ? 'done' : ''}"><span class="goal-tick" aria-hidden="true">${done ? '✓' : ''}</span><span>${esc(goalLabel(id))}</span>${b > 1 ? `<small>${Math.min(a, b)}/${b}</small>` : ''}</li>`;
+    const sub = goalSub(id);
+    const label = goalLabel(id, state, today);
+    const copy = sub
+      ? `<span class="goal-copy"><b>${esc(label)}</b><small class="goal-sub">${esc(sub)}</small></span>`
+      : `<span>${esc(label)}</span>`;
+    return `<li class="${done ? 'done' : ''}"><span class="goal-tick" aria-hidden="true">${done ? '✓' : ''}</span>${copy}${b > 1 ? `<small>${Math.min(a, b)}/${b}</small>` : ''}</li>`;
   });
   const n = g.ids.filter((id) => goalDone(state, g, id)).length;
   const foot = g.claimed ? tl('goals.claimed') : tl('goals.hint', { n: GOAL_REWARD });

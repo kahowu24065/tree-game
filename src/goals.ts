@@ -6,6 +6,7 @@ import { t as tl } from './i18n';
 import { N_OPTIMAL, R_MAX, W_MAX, W_OPTIMAL, W_SATURATED } from './balance';
 import { addLog } from './sim';
 import type { GameState } from './types';
+import { addDays } from './dates';
 
 export type GoalId = 'water2' | 'feed' | 'deworm' | 'warm' | 'share' | 'scenery';
 
@@ -183,6 +184,36 @@ export function claimGoals(state: GameState, today: string): GoalReward | false 
   return { kind, amount: GOAL_REWARD };
 }
 
-export function goalLabel(id: GoalId): string {
+/**
+ * 1.4.66: bump consecutive share-preview days. Same calendar day is idempotent.
+ * Returns the streak after the bump (1 if the chain broke).
+ */
+export function bumpShareStreak(state: GameState, today: string): number {
+  if (state.shareStreakDate === today) return Math.max(1, state.shareStreak ?? 1);
+  const prev = state.shareStreakDate === addDays(today, -1) ? Math.max(0, state.shareStreak ?? 0) : 0;
+  const next = prev + 1;
+  state.shareStreak = next;
+  state.shareStreakDate = today;
+  return next;
+}
+
+export function shareStreakOf(state: Pick<GameState, 'shareStreak' | 'shareStreakDate'>, today: string): number {
+  const n = state.shareStreak ?? 0;
+  if (!n || !state.shareStreakDate) return 0;
+  // Still show today's streak after check-in, or yesterday's unbroken streak before today's check-in.
+  if (state.shareStreakDate === today || state.shareStreakDate === addDays(today, -1)) return n;
+  return 0;
+}
+
+export function goalLabel(id: GoalId, state?: Pick<GameState, 'shareStreak' | 'shareStreakDate'>, today?: string): string {
+  if (id === 'share' && state && today) {
+    const n = shareStreakOf(state, today);
+    // Before today's check-in, show current chain (yesterday) or 0 → display as 0 days / still phrase with n.
+    return tl('goals.share', { n });
+  }
   return tl(`goals.${id}`);
+}
+
+export function goalSub(id: GoalId): string | null {
+  return id === 'share' ? tl('goals.shareHint') : null;
 }

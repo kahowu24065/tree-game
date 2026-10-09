@@ -243,6 +243,10 @@ export interface GameState {
   goals?: import('./goals').DailyGoals;
   /** 1.4.64 解鎖長駐動物種類 score (0–100). Filled by daily goals when W/N/R are already healthy. */
   faunaScore?: number;
+  /** 1.4.66 consecutive days the player opened share-card preview (打卡). */
+  shareStreak?: number;
+  /** Date (YYYY-MM-DD) of the latest share-streak bump. */
+  shareStreakDate?: string;
 }
 
 /** v16: the latest collapse, as the scene needs it. */
