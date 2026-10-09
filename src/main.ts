@@ -50,15 +50,17 @@ import {
   visualReinforcement,
   type CareAction,
   type CatchupReport,
+  eventTitle,
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { sceneryCaption } from './scenery';
 import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
 import { syncFaunaUnlocks } from './faunaScore';
-import { goalLabel } from './goals';
 import { drawShareCard, shareCardImage } from './shareCard';
-import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
+import { logPhotoFor, rememberLogPhoto } from './logPhotos';
+import { buildTimelapse, shareTimelapse, timelapseReady } from './timelapse';
+import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markPostTip, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
@@ -97,6 +99,7 @@ import {
   nameModal,
   lessonModal,
   tourModal,
+  postTourTipModal,
   TOUR_PAGES,
   stormModal,
   windExplainerModal,
@@ -111,6 +114,8 @@ import {
   type Pick,
   type View,
   diagModal,
+  invalidateSheet,
+  logSnapModal,
 } from './ui';
 import { ANIMALS, animalById } from './data/animals';
 import { defaultSpecies, speciesDef, speciesTargetCm, stageIndexFor, stageSampleCm, STAGE_NAMES, type SpeciesId } from './data/species';
@@ -312,7 +317,11 @@ try {
     playTok();
     const now = Date.now();
     if (now - sceneryToastAt < 900) return;
-    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++);
+    const vignetteLine = hit.kind === 'vignette' ? (() => {
+      const ev = eventTitle(state);
+      return `${ev.title}：${ev.text}`;
+    })() : null;
+    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++, vignetteLine);
     if (!line) return;
     sceneryToastAt = now;
     toast(line);
@@ -725,7 +734,8 @@ function beginCoach(): boolean {
   const next = armCoach(coach);
   if (next === coach) return false;
   const due = tourDue(coach, next) && meta.history.length === 0 && meta.milestones.length === 0 && (state.daysCared ?? 0) <= 1;
-  coach = due ? next : markTour(next);
+  // Existing / returning players skip the tour and the post-tour tip.
+  coach = due ? next : markPostTip(markTour(next));
   saveCoach(coach);
   return due;
 }
@@ -738,7 +748,30 @@ function openTour(page = 0): void {
 }
 function endTour(): void {
   tourPage = null;
+  const firstTime = !coach.tour;
   const next = markTour(coach);
+  if (next !== coach) {
+    coach = next;
+    saveCoach(coach);
+  }
+  closeModal();
+  // 1.4.66: one-time tip after the first welcome tour (not on 設定 → 再睇一次).
+  if (firstTime && !coach.postTip) queuePostTourTip();
+}
+
+let postTourTipTimer = 0;
+function queuePostTourTip(): void {
+  if (coach.postTip || postTourTipTimer) return;
+  postTourTipTimer = window.setTimeout(() => {
+    postTourTipTimer = 0;
+    const modal = document.getElementById('modal');
+    if (coach.postTip || opening || (modal && !modal.hidden)) return;
+    openModal(postTourTipModal(), 'post-tour-tip-card');
+  }, 420);
+}
+
+function finishPostTourTip(): void {
+  const next = markPostTip(coach);
   if (next !== coach) {
     coach = next;
     saveCoach(coach);
@@ -1874,6 +1907,23 @@ function playShareFlash(): void {
   window.setTimeout(() => el.classList.remove('on'), 500);
 }
 
+async function makeTimelapse(): Promise<void> {
+  if (!timelapseReady(state)) {
+    toast(tl('timelapse.needToast'));
+    return;
+  }
+  toast(tl('timelapse.working'));
+  try {
+    const result = await buildTimelapse();
+    const how = await shareTimelapse(result);
+    if (how === 'downloaded') toast(result.kind === 'video' ? tl('timelapse.savedVideo') : tl('timelapse.savedStrip'));
+    else if (how === 'failed') toast(tl('timelapse.failed'));
+    else if (result.kind === 'strip') toast(tl('timelapse.stripHint'));
+  } catch {
+    toast(tl('timelapse.failed'));
+  }
+}
+
 async function shareTreeCard(): Promise<void> {
   if (sharingCard || !state.started) return;
   sharingCard = true;
@@ -1884,13 +1934,20 @@ async function shareTreeCard(): Promise<void> {
       .filter((w) => w.n > 0)
       .slice(0, 3)
       .map((w) => tl('share.weather', { name: weatherTrackCopy(w.id).name, n: w.n }));
-    const goals = (state.goals?.date === today() ? state.goals.ids : []).map((id) => goalLabel(id));
-    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, goals };
+    const vig = eventTitle(state);
+    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, vignette: vig };
     const card = await drawShareCard(data, scene3d?.captureView() ?? null);
     pendingShareCard = card;
     playTok();
     playShareFlash();
     openModal(sharePreviewModal(card.toDataURL('image/png')), 'share-preview-card');
+    // 1.4.66: as soon as the preview appears, file the day's snap in 成長日誌 (toast above modal, z-index 70)
+    // and complete the 「分享樹卡」 daily goal when it is one of today's.
+    if (rememberLogPhoto(today(), card)) {
+      invalidateSheet();
+      toast(tl('log.snapSaved'));
+    }
+    noteDailyGoal('share');
   } catch {
     toast(tl('share.failed'));
     pendingShareCard = null;
@@ -1914,7 +1971,7 @@ async function sendPendingShareCard(): Promise<void> {
   }
 }
 
-function noteDailyGoal(id: 'weather' | 'scenery'): void {
+function noteDailyGoal(id: 'share' | 'scenery'): void {
   if (!state.started || state.over || manual()) return;
   if (noteGoal(state, today(), id)) {
     persist('goal-note');
@@ -1924,7 +1981,6 @@ function noteDailyGoal(id: 'weather' | 'scenery'): void {
 
 function openWeather(): void {
   if (!wxPage || !wxBackdrop) return;
-  noteDailyGoal('weather');
   closeDrawer();
   setSheet(false);
   const close = document.getElementById('wx-close');
@@ -2124,8 +2180,14 @@ function doAction(action: string, target: HTMLElement): void {
     case 'tour-done':
       endTour();
       return;
+    case 'post-tip-done':
+      finishPostTourTip();
+      return;
     case 'tour-replay':
       openTour(0);
+      return;
+    case 'timelapse-make':
+      void makeTimelapse();
       return;
     case 'share-card':
       void shareTreeCard();
@@ -2208,7 +2270,7 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'settings':
       premiumOpen = 'none';
-      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, premiumCard(premiumMode(), premium.active)));
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, premiumCard(premiumMode(), premium.active)), 'settings-sheet');
       return;
     case 'premium':
       showPremium('paywall');
@@ -2468,7 +2530,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav], [data-skin]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap], [data-skin]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -2575,6 +2637,12 @@ document.addEventListener('click', (event) => {
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    return;
+  }
+  if (target.dataset.logSnap) {
+    const date = target.dataset.logSnap;
+    const url = logPhotoFor(date);
+    if (url) openModal(logSnapModal(url, date), 'log-snap-card');
     return;
   }
   if (target.dataset.cal) {

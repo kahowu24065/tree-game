@@ -4899,3 +4899,171 @@ html[lang='en'] .emerg > span {
   border-radius: inherit;
   background: linear-gradient(90deg, #7bc47a, #3f9a4b);
 }
+
+
+/* 1.4.66: settings as a smaller, lighter sheet — less height, more breathing room; scrolls if needed. */
+.modal-card.settings-sheet {
+  width: min(340px, 92vw);
+  max-height: min(68vh, 560px);
+  padding: 18px 18px 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(35, 53, 44, 0.16);
+}
+.modal-card.settings-sheet > .eyebrow {
+  margin-bottom: 2px;
+}
+.modal-card.settings-sheet > h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+}
+.modal-card.settings-sheet .setting-row {
+  padding: 11px 0;
+  gap: 14px;
+}
+.modal-card.settings-sheet .setting-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #9aa39c;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.modal-card.settings-sheet .set-legal {
+  margin-top: 14px;
+}
+.modal-card.settings-sheet .set-ver {
+  margin-top: 2px;
+  padding: 4px 0 2px;
+}
+/* Keep iOS premium card breathing room inside the lighter sheet. */
+.modal-card.settings-sheet .premium-card {
+  margin: 8px 0 12px;
+}
+
+
+/* 1.4.66: share-card snap filed into 成長日誌 */
+.cal-day.has-photo::before {
+  content: '';
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2f8a4e;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9);
+}
+.cal-day {
+  position: relative;
+}
+.log-snap {
+  margin: 0 0 14px;
+  padding: 0;
+}
+.log-snap-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #eaf6ee;
+  box-shadow: 0 8px 24px rgba(35, 53, 44, 0.12);
+  cursor: pointer;
+}
+.log-snap-btn img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1080 / 1350;
+  object-fit: cover;
+  vertical-align: top;
+}
+.log-snap figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9aa39c;
+  text-align: center;
+  font-weight: 500;
+}
+.modal-card.log-snap-card {
+  width: min(360px, 92vw);
+  max-height: 88vh;
+  padding: 16px 16px 14px;
+}
+.modal-card.log-snap-card .log-snap-full {
+  margin: 8px 0 14px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #eaf6ee;
+}
+.modal-card.log-snap-card .log-snap-full img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+
+/* 1.4.66 post-tour tip */
+.modal-card.post-tour-tip-card {
+  width: min(340px, 92vw);
+  max-height: min(72vh, 560px);
+  padding: 18px 18px 16px;
+}
+.post-tour-list {
+  list-style: none;
+  margin: 8px 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.post-tour-list li {
+  display: grid;
+  gap: 4px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  background: rgba(47, 138, 78, 0.08);
+}
+.post-tour-list b {
+  font-size: 15px;
+  color: #23352c;
+}
+.post-tour-list span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4c6157;
+  font-weight: 500;
+}
+
+
+/* 1.4.66 巨樹 timelapse unlock on 成長日誌 */
+.timelapse-card {
+  margin: 0 0 14px;
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(124, 92, 180, 0.12), rgba(47, 138, 78, 0.1));
+  border: 1px solid rgba(124, 92, 180, 0.18);
+}
+.timelapse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.timelapse-head b {
+  font-size: 15px;
+  color: #23352c;
+}
+.timelapse-body {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4c6157;
+  font-weight: 500;
+}
+.timelapse-card .primary,
+.timelapse-card .ghost {
+  width: 100%;
+}

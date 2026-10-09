@@ -55,7 +55,8 @@ export interface CampfireSpot {
  */
 export function campfireSpot(opts: { trunkU: number; fireU: number; prefer: number; blocked: (x: number, z: number, r: number) => boolean; margin?: number; clearU?: number }): CampfireSpot {
   const { trunkU, fireU, prefer, blocked } = opts;
-  const margin = opts.margin ?? 0.14;
+  // 1.4.66: keep a clear empty ring so rocks / grass don't crowd the pit (was 0.14).
+  const margin = opts.margin ?? 0.42;
   // v15.2: `clearU` keeps the whole fire ring outside another circle round the trunk (the mulch patch).
   const d0 = Math.max(trunkU, opts.clearU ?? 0) + fireU + margin;
   for (const k of [1, 1.3, 1.65, 2.1, 2.7]) {

@@ -7,12 +7,12 @@ import { N_OPTIMAL, R_MAX, W_MAX, W_OPTIMAL, W_SATURATED } from './balance';
 import { addLog } from './sim';
 import type { GameState } from './types';
 
-export type GoalId = 'water2' | 'feed' | 'deworm' | 'warm' | 'weather' | 'scenery';
+export type GoalId = 'water2' | 'feed' | 'deworm' | 'warm' | 'share' | 'scenery';
 
 export interface DailyGoals {
   date: string;
   ids: GoalId[];
-  /** Goals met by doing something outside the care actions (opened 天氣概況, tapped the scenery). */
+  /** Goals met by doing something outside the care actions (share-card preview, tapped the scenery). */
   noted: GoalId[];
   claimed: boolean;
 }
@@ -27,7 +27,7 @@ export const FAUNA_SCORE_MAX = 100;
 /** One permanent species unlocked per this many score points (10 species at 100). */
 export const FAUNA_SCORE_PER_SPECIES = 10;
 
-const GOAL_IDS: readonly GoalId[] = ['water2', 'feed', 'deworm', 'warm', 'weather', 'scenery'];
+const GOAL_IDS: readonly GoalId[] = ['water2', 'feed', 'deworm', 'warm', 'share', 'scenery'];
 
 export interface GoalCtx {
   /** Pests on the tree now (除蟲 is available). */
@@ -73,7 +73,7 @@ export function lowestCare(state: Pick<GameState, 'moisture' | 'nutrients' | 're
 
 /** Goals that make sense on screen today (no 除蟲 without pests, no 保暖 without cold). */
 export function doableGoals(ctx: GoalCtx): GoalId[] {
-  const pool: GoalId[] = ['water2', 'feed', 'weather', 'scenery'];
+  const pool: GoalId[] = ['water2', 'feed', 'share', 'scenery'];
   if (ctx.pest) pool.push('deworm');
   if (ctx.cold) pool.push('warm');
   return pool;
@@ -98,7 +98,12 @@ export function parseGoals(x: unknown): DailyGoals | undefined {
   if (!x || typeof x !== 'object') return undefined;
   const g = x as Partial<DailyGoals>;
   if (typeof g.date !== 'string' || !Array.isArray(g.ids)) return undefined;
-  const ok = (a: unknown): GoalId[] => (Array.isArray(a) ? a.filter((v): v is GoalId => GOAL_IDS.includes(v as GoalId)).slice(0, 3) : []);
+  const ok = (a: unknown): GoalId[] => {
+    if (!Array.isArray(a)) return [];
+    // 1.4.66: 「打開天氣概況」 became 「分享樹卡」.
+    const mapped = a.map((v) => (v === 'weather' ? 'share' : v));
+    return mapped.filter((v): v is GoalId => GOAL_IDS.includes(v as GoalId)).slice(0, 3);
+  };
   return { date: g.date, ids: ok(g.ids), noted: ok(g.noted), claimed: g.claimed === true };
 }
 
@@ -131,8 +136,8 @@ export function goalDone(state: GameState, g: DailyGoals, id: GoalId): boolean {
   return a >= b;
 }
 
-/** Opened 天氣概況 / tapped the scenery: marks that goal if it is one of today's. */
-export function noteGoal(state: GameState, today: string, id: 'weather' | 'scenery'): boolean {
+/** Opened share-card preview / tapped the scenery: marks that goal if it is one of today's. */
+export function noteGoal(state: GameState, today: string, id: 'share' | 'scenery'): boolean {
   const g = state.goals;
   if (!g || g.date !== today || g.claimed || !g.ids.includes(id) || g.noted.includes(id)) return false;
   g.noted = [...g.noted, id];

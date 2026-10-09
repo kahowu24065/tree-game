@@ -19,6 +19,8 @@ export interface Island {
   setProps(propK: number, bucket: number): void;
   /** v11: solid garden props (rocks, bushes) for walkers: centre (island units) + radius at prop scale 1. */
   obstacles(): GardenObstacle[];
+  /** 1.4.66: hide grass / flowers in a clear ring around the campfire. */
+  clearGardenNear(x: number, z: number, clearR: number): void;
 }
 
 export interface GardenObstacle {
@@ -303,6 +305,44 @@ export function buildIsland(): Island {
     obstacles() {
       return (props?.userData.obstacles as GardenObstacle[] | undefined) ?? [];
     },
+    /** 1.4.66: hide grass / flowers inside a clear ring (island units) around (x, z); restore outside it. */
+    clearGardenNear(x: number, z: number, clearR: number) {
+      if (!props) return;
+      const tufts = props.userData.tufts as THREE.InstancedMesh | undefined;
+      const flowers = props.userData.flowers as THREE.InstancedMesh | undefined;
+      const tuftHome = props.userData.tuftHome as THREE.Matrix4[] | undefined;
+      const flowerHome = props.userData.flowerHome as THREE.Matrix4[] | undefined;
+      const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+      const pos = new THREE.Vector3();
+      const hide = (mesh: THREE.InstancedMesh | undefined, home: THREE.Matrix4[] | undefined) => {
+        if (!mesh || !home) return;
+        for (let i = 0; i < mesh.count; i++) {
+          const m = home[i];
+          if (!m) continue;
+          pos.setFromMatrixPosition(m);
+          mesh.setMatrixAt(i, Math.hypot(pos.x - x, pos.z - z) < clearR ? zero : m);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+      };
+      hide(tufts, tuftHome);
+      hide(flowers, flowerHome);
+      const rockGroup = props.userData.rockGroup as THREE.Group | undefined;
+      if (rockGroup) {
+        for (const child of rockGroup.children) {
+          const xz = child.userData.rockXZ as { x: number; z: number; r: number } | undefined;
+          if (!xz) continue;
+          child.visible = Math.hypot(xz.x - x, xz.z - z) >= clearR + xz.r * 0.35;
+        }
+      }
+      // Drop solid rock / bush obstacles that sit inside the ring so walkers and the fire picker agree.
+      const obs = props.userData.obstacles as GardenObstacle[] | undefined;
+      if (obs) {
+        for (let i = obs.length - 1; i >= 0; i--) {
+          const o = obs[i]!;
+          if ((o.kind === 'rock' || o.kind === 'bush') && Math.hypot(o.x - x, o.z - z) < clearR + o.r * 0.5) obs.splice(i, 1);
+        }
+      }
+    },
     setExtended(on: boolean) {
       rimMesh.visible = !on;
       underMesh.visible = !on;
@@ -332,7 +372,14 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
   const rockSpots: [number, number, number][] = [
     [2.9, -2.9, 0.75], [2.1, -2.6, 0.45], [3.4, -2.1, 0.5], [5.2, 1.9, 0.6], [5.5, 2.8, 0.4],
     [-5.3, -1.2, 0.5], [-1.6, -5.2, 0.6], [0.8, -5.6, 0.4], [1.8, 4.4, 0.3], [-2.4, 4.8, 0.45],
-  ];
+  ].filter((spot): spot is [number, number, number] => {
+    const [x, z] = spot;
+    // 1.4.66: keep the campfire pocket (prefer ≈ 2.2) free of fixed rocks.
+    const fireAng = Math.atan2(z, x);
+    const fireDist = Math.hypot(x, z);
+    const dAng = Math.abs(((fireAng - 2.2 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    return !(fireDist > 0.9 && fireDist < 2.8 && dAng < 0.85);
+  });
   const P = GARDEN_POND;
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * Math.PI * 2 + 0.3;
@@ -349,12 +396,19 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     const x = Math.cos(a) * r;
     const z = Math.sin(a) * r;
     if (wet(x, z, 0.35)) continue;
+    // 1.4.66: leave the front-left campfire pocket empty (prefer angle ≈ 2.2).
+    const fireAng = Math.atan2(z, x);
+    const fireDist = Math.hypot(x, z);
+    if (fireDist > 0.9 && fireDist < 2.8 && Math.abs(((fireAng - 2.2 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.85) continue;
     rockSpots.push([x, z, 0.18 + rand() * 0.32]);
     i++;
   }
-  const rockGeos: THREE.BufferGeometry[] = [];
   const obstacles: GardenObstacle[] = [];
   out.userData.obstacles = obstacles;
+  // 1.4.66: per-rock meshes so clearGardenNear can hide stones crowding the firepit.
+  const rockGroup = new THREE.Group();
+  rockGroup.name = 'rocks';
+  const rockMat = solidMat();
   rockSpots.forEach(([x, z, s], i) => {
     obstacles.push({ x, z, r: s * 1.0, kind: 'rock' });
     const g = new THREE.DodecahedronGeometry(s, 0);
@@ -362,14 +416,17 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     g.scale(1, 0.7, 1);
     g.rotateY(i);
     const y = domeAt(x, z);
-    g.translate(x, y + s * 0.25, z);
+    g.translate(0, s * 0.25, 0);
     paint(g, new THREE.Color().setHSL(0.08, 0.04, 0.55 + (i % 3) * 0.06));
-    rockGeos.push(anchorGeometry(g, x, y, z));
+    const mesh = asProp(new THREE.Mesh(g, rockMat), true);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = pk > 0.6;
+    mesh.receiveShadow = true;
+    mesh.userData.rockXZ = { x, z, r: s };
+    rockGroup.add(mesh);
   });
-  const rocks = asProp(new THREE.Mesh(merge(rockGeos, true), solidMat()), true);
-  rocks.castShadow = pk > 0.6;
-  rocks.receiveShadow = true;
-  out.add(rocks);
+  out.add(rockGroup);
+  out.userData.rockGroup = rockGroup;
 
   // Stepping stones from the bridge toward the tree (more, smaller stones when drawn small).
   const stones: THREE.BufferGeometry[] = [];
@@ -432,6 +489,18 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
   tufts.receiveShadow = true;
   flowers.name = 'flowers';
   out.add(tufts, flowers);
+  out.userData.tufts = tufts;
+  out.userData.flowers = flowers;
+  out.userData.tuftHome = Array.from({ length: placed }, (_, i) => {
+    const m = new THREE.Matrix4();
+    tufts.getMatrixAt(i, m);
+    return m.clone();
+  });
+  out.userData.flowerHome = Array.from({ length: flowers.count }, (_, i) => {
+    const m = new THREE.Matrix4();
+    flowers.getMatrixAt(i, m);
+    return m.clone();
+  });
 
   // Bushes near the fence for a fuller rim (+ clumps inside the garden when drawn small).
   const start = 1.2;

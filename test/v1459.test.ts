@@ -71,7 +71,7 @@ describe('daily goals', () => {
     for (const id of g.ids) {
       if (id === 'water2') s.care.water = 2;
       else if (id === 'feed') s.care.fertilize = 1;
-      else if (id === 'weather' || id === 'scenery') noteGoal(s, d, id);
+      else if (id === 'share' || id === 'scenery') noteGoal(s, d, id);
     }
     expect(g.ids.every((id) => goalDone(s, g, id))).toBe(true);
     const before = s.moisture;
