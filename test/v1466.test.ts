@@ -169,8 +169,13 @@ describe('post-tour tip', () => {
     for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
       expect(tables()[loc]['postTip.title']).toBeTruthy();
       expect(tables()[loc]['postTip.shareTitle']).toBeTruthy();
+      expect(tables()[loc]['postTip.clipTitle']).toBeTruthy();
+      expect(tables()[loc]['postTip.clipBody']).toBeTruthy();
     }
     expect(tables()['zh-HK']['postTip.shareTitle']).toContain('強烈建議');
+    expect(tables()['zh-HK']['postTip.clipTitle']).toBe('小樹成長片段');
+    expect(tables()['zh-HK']['postTip.clipBody']).toContain('青年樹');
+    expect(fs.readFileSync('src/ui.ts', 'utf8')).toContain('postTip.clipTitle');
     void markTour;
   });
 });

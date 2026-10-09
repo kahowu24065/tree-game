@@ -1722,7 +1722,7 @@ const table: Record<string, string> = {
  "log.snapTitle": "Growth log",
  "log.snapClose": "Close",
  "postTip.eyebrow": "Quick tip",
- "postTip.title": "Two handy things",
+ "postTip.title": "Three handy things",
  "postTip.weatherTitle": "Tap the top-left weather card",
  "postTip.weatherBody": "See the forecast and official warnings so you can brace, drain, water or warm in time.",
  "postTip.shareTitle": "Share a tree card every day (highly recommended)",
@@ -1746,6 +1746,8 @@ const table: Record<string, string> = {
  "timelapse.generate": "Generate",
  "timelapse.settingsReady": "{n} cards saved — stitch from the first to the latest.",
  "timelapse.settingsNeed": "Share at least one tree card first (preview saves it).",
- "timelapse.settingsLocked": "Unlocks at the young-tree stage."
+ "timelapse.settingsLocked": "Unlocks at the young-tree stage.",
+ "postTip.clipTitle": "Tree growth clip",
+ "postTip.clipBody": "Daily saved cards can later be stitched into a growth video — unlocks at young tree, in Settings."
 };
 export default table;

@@ -545,12 +545,13 @@ export function tourModal(page: number): string {
     + `</div></div>`;
 }
 
-/** 1.4.66 one-time tip right after the welcome tour: weather card + daily share. */
+/** 1.4.66 one-time tip after the welcome tour: weather card, daily share, 小樹成長片段. */
 export function postTourTipModal(): string {
   return `<div class="post-tour-tip"><p class="eyebrow">${esc(tl('postTip.eyebrow'))}</p>`
     + `<h2>${esc(tl('postTip.title'))}</h2>`
     + `<ul class="post-tour-list"><li><b>${esc(tl('postTip.weatherTitle'))}</b><span>${esc(tl('postTip.weatherBody'))}</span></li>`
-    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li></ul>`
+    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li>`
+    + `<li><b>${esc(tl('postTip.clipTitle'))}</b><span>${esc(tl('postTip.clipBody'))}</span></li></ul>`
     + `<button type="button" class="primary" data-action="post-tip-done">${esc(tl('postTip.ok'))}</button></div>`;
 }
 
