@@ -1800,11 +1800,13 @@ async function shareTreeCard(): Promise<void> {
     playTok();
     playShareFlash();
     openModal(sharePreviewModal(card.toDataURL('image/png')), 'share-preview-card');
-    // 1.4.66: as soon as the preview appears, file the day's snap in 成長日誌 (toast above modal, z-index 70).
+    // 1.4.66: as soon as the preview appears, file the day's snap in 成長日誌 (toast above modal, z-index 70)
+    // and complete the 「分享樹卡」 daily goal when it is one of today's.
     if (rememberLogPhoto(today(), card)) {
       invalidateSheet();
       toast(tl('log.snapSaved'));
     }
+    noteDailyGoal('share');
   } catch {
     toast(tl('share.failed'));
     pendingShareCard = null;
@@ -1828,7 +1830,7 @@ async function sendPendingShareCard(): Promise<void> {
   }
 }
 
-function noteDailyGoal(id: 'weather' | 'scenery'): void {
+function noteDailyGoal(id: 'share' | 'scenery'): void {
   if (!state.started || state.over || manual()) return;
   if (noteGoal(state, today(), id)) {
     persist('goal-note');
@@ -1838,7 +1840,6 @@ function noteDailyGoal(id: 'weather' | 'scenery'): void {
 
 function openWeather(): void {
   if (!wxPage || !wxBackdrop) return;
-  noteDailyGoal('weather');
   closeDrawer();
   setSheet(false);
   const close = document.getElementById('wx-close');

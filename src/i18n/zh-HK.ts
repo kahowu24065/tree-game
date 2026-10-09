@@ -1616,7 +1616,7 @@ const table: Record<string, string> = {
  "goals.feed": "施一次肥",
  "goals.deworm": "幫棵樹除蟲",
  "goals.warm": "天氣凍：幫樹頭保暖",
- "goals.weather": "打開天氣概況睇睇",
+ "goals.share": "分享樹卡（記錄每日成長）",
  "goals.scenery": "撳一下島上嘅石頭、花或者建築",
  "goals.hint": "全部完成：補最低嗰項（水／養分／抗風）；三項都健康就 +2 解鎖長駐動物分數",
  "goals.claimed": "今日目標完成！獎勵已經加咗。",

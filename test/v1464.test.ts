@@ -42,11 +42,11 @@ describe('goal reward → lowest care or fauna score', () => {
     s.resist = 70;
     const g = ensureGoals(s, '2026-10-10', { pest: false, cold: false, seed: 'a' });
     for (const id of g.ids) {
-      if (id === 'water2') s.moisture = 100;
+      if (id === 'water2') s.care = { ...s.care, date: '2026-10-10', water: 2 };
       else if (id === 'feed') s.care = { ...s.care, date: '2026-10-10', fertilize: 1 };
       else s.goals!.noted.push(id);
     }
-    // After water2 auto-complete via saturation, put W back as lowest for the reward.
+    // Keep W as lowest for the reward (water2 already counted via care.water).
     s.moisture = 40;
     const r = claimGoals(s, '2026-10-10');
     expect(r).toEqual({ kind: 'moisture', amount: GOAL_REWARD });
@@ -60,7 +60,7 @@ describe('goal reward → lowest care or fauna score', () => {
     s2.faunaScore = 8;
     const g2 = ensureGoals(s2, '2026-10-10', { pest: false, cold: false, seed: 'b' });
     for (const id of g2.ids) {
-      if (id === 'water2') s2.moisture = 100; // still in optimal after? 100 is top of band
+      if (id === 'water2') s2.care = { ...s2.care, date: '2026-10-10', water: 2 };
       else if (id === 'feed') s2.care = { ...s2.care, date: '2026-10-10', fertilize: 1 };
       else s2.goals!.noted.push(id);
     }

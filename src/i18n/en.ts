@@ -1664,7 +1664,7 @@ const table: Record<string, string> = {
  "goals.feed": "Feed once",
  "goals.deworm": "Get rid of the pests",
  "goals.warm": "It's cold: keep the roots warm",
- "goals.weather": "Check the weather page",
+ "goals.share": "Share a tree card (log today’s growth)",
  "goals.scenery": "Tap a rock, flower or building on the island",
  "goals.hint": "Finish all: top up the lowest of Water / Nutrients / Wind resistance. If all three are healthy, +2 to the permanent-animal unlock score",
  "goals.claimed": "Today's goals done — reward added.",

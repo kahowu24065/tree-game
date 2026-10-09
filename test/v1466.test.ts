@@ -7,6 +7,7 @@ import { tables } from '../src/i18n';
 import { cardLines } from '../src/shareCard';
 import { vignettePropKind } from '../src/three/vignetteProp3d';
 import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
+import { doableGoals, parseGoals } from '../src/goals';
 
 describe('campfire clear ring', () => {
   it('default margin keeps rocks farther from the pit', () => {
@@ -105,5 +106,24 @@ describe('log photo prune', () => {
     expect(Object.keys(map).length).toBe(LOG_PHOTOS_MAX_DAYS);
     expect(map['2026-01-01']).toBeUndefined();
     expect(map[`2026-01-${String(LOG_PHOTOS_MAX_DAYS + 5).padStart(2, '0')}`]).toBeTruthy();
+  });
+});
+
+describe('share-card daily goal', () => {
+  it('replaces weather-overview with 分享樹卡, noted at preview', () => {
+    expect(doableGoals({ pest: false, cold: false, seed: 'x' })).toContain('share');
+    expect(doableGoals({ pest: false, cold: false, seed: 'x' })).not.toContain('weather');
+    expect(tables()['zh-HK']['goals.share']).toContain('分享樹卡');
+    expect(tables()['zh-HK']['goals.weather']).toBeUndefined();
+    const main = fs.readFileSync('src/main.ts', 'utf8');
+    const shareFn = main.slice(main.indexOf('async function shareTreeCard'), main.indexOf('async function sendPendingShareCard'));
+    expect(shareFn).toContain("noteDailyGoal('share')");
+    expect(main).not.toMatch(/noteDailyGoal\('weather'\)/);
+    expect(parseGoals({ date: '2026-10-10', ids: ['weather', 'feed'], noted: ['weather'], claimed: false })).toEqual({
+      date: '2026-10-10',
+      ids: ['share', 'feed'],
+      noted: ['share'],
+      claimed: false,
+    });
   });
 });
