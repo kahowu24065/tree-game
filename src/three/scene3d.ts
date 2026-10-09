@@ -19,6 +19,7 @@ import type { SpeciesId } from '../data/species';
 import { jitterGeometry, merge, paint } from './util3d';
 import { CareFx, type CareFxKind } from './careFx';
 import { Campfire3D } from './campfire3d';
+import { VignetteProp3D, vignettePropKind } from './vignetteProp3d';
 import { Mulch3D } from './mulch3d';
 import { campfireNightK, campfireRadiusUnits, campfireSpot, mulchRadii, type CampfireSpot } from '../campfire';
 import { catchUp, smoothDamp, smoothstep, smootherstep } from './camEase';
@@ -32,7 +33,9 @@ export type Quality = 'low' | 'high';
 /** 1.4.58 what a scenery tap landed on (decor: which island decoration, in earn order). */
 export type SceneryHit =
   | { kind: 'decor'; decor: NestBuildKind; index: number }
-  | { kind: 'landmark' | 'rock' | 'bush' | 'flower'; index: number };
+  | { kind: 'landmark' | 'rock' | 'bush' | 'flower'; index: number }
+  /** 1.4.66 「今日小事」 prop left in the garden today. */
+  | { kind: 'vignette'; eventId: string; index: number };
 
 const ELEVATION = Math.PI / 4;
 const BASE_AZIMUTH = 0.32;
@@ -267,6 +270,8 @@ export class Scene3D {
   /** v15.1 澆水／施肥 effects; v15.2 nightly campfire and the 保暖 mulch layer. */
   private careFx = new CareFx();
   private campfire = new Campfire3D();
+  /** 1.4.66 daily-vignette prop (drawing / bag / leaf pile / …). */
+  private vignetteProp = new VignetteProp3D();
   private fireSpot: (CampfireSpot & { rU: number; key: string }) | null = null;
   private mulch: Mulch3D | null = null;
   private mulchKey = '';
@@ -447,7 +452,7 @@ export class Scene3D {
 
     this.land.add(this.careFx.root);
     // v15.2: the campfire's point light stays on the island (intensity 0 by day): no shader recompiles.
-    this.land.add(this.campfire.group, this.campfire.light);
+    this.land.add(this.campfire.group, this.campfire.light, this.vignetteProp.group);
 
     this.rays = this.buildRays();
     this.bindDrag();
@@ -1321,6 +1326,17 @@ export class Scene3D {
       cands.push({ hit: { kind: 'decor', decor: kind, index: i }, pos, r: 0.75 * K, obj: decorRoot?.children[i] ?? null, index: i });
     });
     if (this.landmark.visible) cands.push({ hit: { kind: 'landmark', index: 0 }, pos: this.landmark.localToWorld(new THREE.Vector3(0, 0.8, 0)), r: 0.8 * K, obj: this.landmark, index: 0 });
+    if (this.vignetteProp.group.visible && this.vignetteProp.kind) {
+      const vp = this.vignetteProp.group.getWorldPosition(new THREE.Vector3());
+      vp.y += 0.15 * K;
+      cands.push({
+        hit: { kind: 'vignette', eventId: this.vignetteProp.kind, index: 0 },
+        pos: vp,
+        r: this.vignetteProp.pickRadius() * K,
+        obj: this.vignetteProp.group,
+        index: 0,
+      });
+    }
     const propK = propUniforms.uPropK.value as number;
     this.island.obstacles().forEach((o, i) => {
       if (o.kind !== 'rock' && o.kind !== 'bush') return;
@@ -1348,7 +1364,7 @@ export class Scene3D {
       const d = Math.sqrt(ray.distanceSqToPoint(c.pos));
       if (d > slack) continue;
       // Prefer the bigger, closer-to-centre things (decorations over the flower in front of them).
-      const score = d / slack + (c.hit.kind === 'flower' ? 0.35 : 0);
+      const score = d / slack + (c.hit.kind === 'flower' ? 0.35 : c.hit.kind === 'vignette' ? -0.2 : 0);
       if (score < bestScore) {
         bestScore = score;
         best = c;
@@ -2624,10 +2640,14 @@ export class Scene3D {
         clearU: this.mulchR.outer * 1.06,
         fireU: rU,
         prefer: 2.2,
-        blocked: (x, z, r) => this.wetOrBlocked(x, z, r + 0.05) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.04),
+        // 1.4.66: bigger keep-out so rocks / bushes never sit on the firepit rim.
+        margin: 0.5,
+        blocked: (x, z, r) => this.wetOrBlocked(x, z, r + 0.08) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + Math.max(0.45, rU * 1.4)),
       });
       this.fireSpot = { ...spot, rU, key };
     }
+    // 1.4.66: always re-apply the empty ring (garden props rebuild when the density bucket changes).
+    this.island.clearGardenNear(this.fireSpot.x, this.fireSpot.z, this.fireSpot.rU * 2.4 + 0.55);
     return this.fireSpot;
   }
 
@@ -2679,6 +2699,18 @@ export class Scene3D {
     if (input.bare) {
       this.campfire.group.visible = false;
       this.campfire.light.intensity = 0;
+    }
+    // 1.4.66 「今日小事」 prop under / beside the tree for the day.
+    {
+      const vk = vignettePropKind(input.eventId);
+      this.vignetteProp.setKind(vk);
+      if (vk) {
+        const spot = this.vignetteProp.spot(vk);
+        const y = this.groundFast(spot.x, spot.z) * K + spot.y * K;
+        this.vignetteProp.group.position.set(spot.x * K, y, spot.z * K);
+        this.vignetteProp.group.scale.setScalar(Math.max(0.55, Math.min(1.15, propUniforms.uPropK.value as number)) * K * spot.s * 0.55);
+      }
+      this.vignetteProp.update(dt, input.reducedMotion);
     }
     this.updateMulch(input, dt);
     if (!this.careFx.count()) return;

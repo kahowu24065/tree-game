@@ -1695,6 +1695,7 @@ const table: Record<string, string> = {
  "animals.cricket.about": "入夜在草和树脚叫，小树就够了。",
  "animals.skink.name": "石龙子",
  "animals.skink.epithet": "滑溜溜的小蜥蜴",
- "animals.skink.about": "太阳底下在石和泥上溜，小树岛常见。"
+ "animals.skink.about": "太阳底下在石和泥上溜，小树岛常见。",
+ "share.vignette": "今天小事"
 };
 export default table;

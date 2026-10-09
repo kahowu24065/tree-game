@@ -50,13 +50,13 @@ import {
   visualReinforcement,
   type CareAction,
   type CatchupReport,
+  eventTitle,
 } from './sim';
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { sceneryCaption } from './scenery';
 import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
 import { syncFaunaUnlocks } from './faunaScore';
-import { goalLabel } from './goals';
 import { drawShareCard, shareCardImage } from './shareCard';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
@@ -301,7 +301,11 @@ try {
     playTok();
     const now = Date.now();
     if (now - sceneryToastAt < 900) return;
-    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++);
+    const vignetteLine = hit.kind === 'vignette' ? (() => {
+      const ev = eventTitle(state);
+      return `${ev.title}：${ev.text}`;
+    })() : null;
+    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++, vignetteLine);
     if (!line) return;
     sceneryToastAt = now;
     toast(line);
@@ -1786,8 +1790,8 @@ async function shareTreeCard(): Promise<void> {
       .filter((w) => w.n > 0)
       .slice(0, 3)
       .map((w) => tl('share.weather', { name: weatherTrackCopy(w.id).name, n: w.n }));
-    const goals = (state.goals?.date === today() ? state.goals.ids : []).map((id) => goalLabel(id));
-    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, goals };
+    const vig = eventTitle(state);
+    const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, vignette: vig };
     const card = await drawShareCard(data, scene3d?.captureView() ?? null);
     pendingShareCard = card;
     playTok();
@@ -2109,7 +2113,7 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
     case 'settings':
-      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null));
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null), 'settings-sheet');
       return;
     case 'disclaimer':
       openModal(disclaimerModal());

@@ -116,9 +116,10 @@ describe('stage visit weights favour non-birds on a young tree', () => {
 });
 
 describe('share card and goals UI', () => {
-  it('puts today\'s goals on the share card and shows the fauna bar', () => {
+  it('shows the fauna bar; share card uses vignette from 1.4.66', () => {
     useLocale('zh-HK');
-    expect(cardLines({ treeName: '樹', species: '細葉榕', age: '1 日', height: '20 cm', weather: [], goals: ['淋兩次水'] })).toContain('淋兩次水');
+    // 1.4.66: share card shows 「今日小事」 instead of daily goals (see v1466.test.ts).
+    expect(cardLines({ treeName: '樹', species: '細葉榕', age: '1 日', height: '20 cm', weather: [], vignette: { title: '小朋友的畫', text: '樹下留低一張畫' } })).toContain('小朋友的畫');
     const s = createGame('2026-10-10');
     s.started = true;
     ensureGoals(s, '2026-10-10', { pest: false, cold: false, seed: 'ui' });

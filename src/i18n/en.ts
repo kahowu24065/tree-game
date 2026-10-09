@@ -1714,6 +1714,7 @@ const table: Record<string, string> = {
  "animals.cricket.about": "Chirps at night in the grass by the trunk; even a seedling is enough.",
  "animals.skink.name": "Skink",
  "animals.skink.epithet": "A sleek little lizard",
- "animals.skink.about": "Slips over stone and soil in the sun; common on a young island."
+ "animals.skink.about": "Slips over stone and soil in the sun; common on a young island.",
+ "share.vignette": "Today's note"
 };
 export default table;

@@ -15,8 +15,8 @@ export interface ShareCardData {
   height: string;
   /** Up to three "八號風球 × 2"-style lines (already localised). */
   weather: string[];
-  /** 1.4.64 today's daily-goal labels (already localised), shown under the facts. */
-  goals?: string[];
+  /** 1.4.66 「今日小事」 title + body (already localised). Replaces 1.4.64 daily goals on the card. */
+  vignette?: { title: string; text: string } | null;
 }
 
 export const CARD_W = 1080;
@@ -25,7 +25,8 @@ const FONT = '"PingFang HK","PingFang TC","Noto Sans HK","Noto Sans TC","Noto Sa
 
 /** What the card says, in order (also used by tests): title lines first, then the facts. */
 export function cardLines(d: ShareCardData): string[] {
-  return [d.treeName, `${d.species} · ${d.age}`, d.height, ...d.weather.slice(0, 3), ...(d.goals ?? []).slice(0, 3)];
+  const v = d.vignette ? [d.vignette.title, d.vignette.text].filter(Boolean) : [];
+  return [d.treeName, `${d.species} · ${d.age}`, d.height, ...d.weather.slice(0, 3), ...v];
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -123,18 +124,23 @@ export async function drawShareCard(d: ShareCardData, scene: HTMLCanvasElement |
       g.fillText(`· ${line}`, x, y);
     }
   }
-  // 1.4.64 today's daily goals on the card.
-  const goals = (d.goals ?? []).filter(Boolean).slice(0, 3);
-  if (goals.length) {
+  // 1.4.66 「今日小事」 vignette on the card (not daily goals).
+  const vig = d.vignette;
+  if (vig && (vig.title || vig.text)) {
     y += 52;
     g.fillStyle = '#2f8a4e';
-    fitText(g, tl('share.goals'), maxW, 28, 700);
-    g.fillText(tl('share.goals'), x, y);
+    fitText(g, tl('share.vignette'), maxW, 28, 700);
+    g.fillText(tl('share.vignette'), x, y);
     g.fillStyle = '#4c6157';
-    for (const line of goals) {
+    if (vig.title) {
       y += 40;
-      fitText(g, `· ${line}`, maxW, 28, 500);
-      g.fillText(`· ${line}`, x, y);
+      fitText(g, vig.title, maxW, 30, 700);
+      g.fillText(vig.title, x, y);
+    }
+    if (vig.text) {
+      y += 36;
+      fitText(g, vig.text, maxW, 26, 500);
+      g.fillText(vig.text, x, y);
     }
   }
 

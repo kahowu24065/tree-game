@@ -52,8 +52,11 @@ export class Campfire3D {
 
   constructor() {
     const g = this.group;
-    // Ash bed + glowing coals.
-    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.33, 14), this.solid(new THREE.MeshStandardMaterial({ color: '#4a3e36', roughness: 1, flatShading: true })));
+    // 1.4.66: wide clear soil pad + ash bed so nearby grass / small stones stay visually clear of the pit.
+    const clearPad = new THREE.Mesh(new THREE.CircleGeometry(0.72, 18), this.solid(new THREE.MeshStandardMaterial({ color: '#5a4a3a', roughness: 1, flatShading: true })));
+    clearPad.rotation.x = -Math.PI / 2;
+    clearPad.position.y = 0.006;
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.4, 14), this.solid(new THREE.MeshStandardMaterial({ color: '#4a3e36', roughness: 1, flatShading: true })));
     ash.rotation.x = -Math.PI / 2;
     ash.position.y = 0.012;
     this.coal = new THREE.MeshBasicMaterial({ color: '#ff5a1a', transparent: true, opacity: 0.9 });
@@ -95,7 +98,7 @@ export class Campfire3D {
     }
     const logMesh = new THREE.Mesh(merge(logs), this.solid(new THREE.MeshStandardMaterial({ color: '#6b4526', roughness: 0.95, flatShading: true, emissive: '#3a1204', emissiveIntensity: 0.4 })));
     logMesh.castShadow = true;
-    g.add(ash, coal, ring, logMesh);
+    g.add(clearPad, ash, coal, ring, logMesh);
     // Flames: nested low-poly cones plus two side tongues.
     const flame = (r: number, h: number, base: string, tip: string, opacity: number, x: number, z: number, seed: number) => {
       const geo = new THREE.ConeGeometry(r, h, 7, 4);
