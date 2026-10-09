@@ -55,7 +55,7 @@ import {
 import { clearGame, loadGame, loadWeatherCache, saveGame, saveWeatherCache, SAVE_KEY } from './storage';
 import { canOpenSecond, clearGrove, GROVE_KEY, isleAward, loadGrove, saveGrove } from './grove';
 import { sceneryCaption } from './scenery';
-import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
+import { bumpShareStreak, claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
 import { syncFaunaUnlocks } from './faunaScore';
 import { drawShareCard, shareCardImage } from './shareCard';
 import { logPhotoFor, rememberLogPhoto } from './logPhotos';
@@ -1947,7 +1947,10 @@ async function shareTreeCard(): Promise<void> {
       invalidateSheet();
       toast(tl('log.snapSaved'));
     }
+    bumpShareStreak(state, today());
     noteDailyGoal('share');
+    persist('share-streak');
+    invalidateSheet();
   } catch {
     toast(tl('share.failed'));
     pendingShareCard = null;

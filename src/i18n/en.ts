@@ -1731,7 +1731,7 @@ const table: Record<string, string> = {
  "goals.feed": "Feed once",
  "goals.deworm": "Get rid of the pests",
  "goals.warm": "It's cold: keep the roots warm",
- "goals.share": "Share a tree card (log today’s growth)",
+ "goals.share": "Share a tree card ({n}-day streak)",
  "goals.scenery": "Tap a rock, flower or building on the island",
  "goals.hint": "Finish all: top up the lowest of Water / Nutrients / Wind resistance. If all three are healthy, +2 to the permanent-animal unlock score",
  "goals.claimed": "Today's goals done — reward added.",
@@ -1807,6 +1807,7 @@ const table: Record<string, string> = {
  "timelapse.stripHint": "This device can’t record video yet — shared a photo strip instead.",
  "timelapse.failed": "Couldn’t make the timelapse. Try again later.",
  "timelapse.needToast": "Need more daily tree cards first.",
- "timelapse.shareTitle": "World Tree · growth timelapse"
+ "timelapse.shareTitle": "World Tree · growth timelapse",
+ "goals.shareHint": "Keep the streak going — build a clip from seedling to giant!"
 };
 export default table;

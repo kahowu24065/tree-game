@@ -1712,7 +1712,7 @@ const table: Record<string, string> = {
  "goals.feed": "施一次肥",
  "goals.deworm": "给树除虫",
  "goals.warm": "天气冷：给树根保暖",
- "goals.share": "分享树卡（记录每日成长）",
+ "goals.share": "分享树卡（已连续打卡{n}天）",
  "goals.scenery": "点一下岛上的石头、花或建筑",
  "goals.hint": "全部完成：补最低那项（水／养分／抗风）；三项都健康则 +2 解锁长驻动物分数",
  "goals.claimed": "今日目标完成！奖励已加上。",
@@ -1788,6 +1788,7 @@ const table: Record<string, string> = {
  "timelapse.stripHint": "此设备暂不支持录影片，已用长图代替。",
  "timelapse.failed": "缩时制作失败，稍后再试。",
  "timelapse.needToast": "再多一点每日树卡才行。",
- "timelapse.shareTitle": "世界之树 · 成长缩时"
+ "timelapse.shareTitle": "世界之树 · 成长缩时",
+ "goals.shareHint": "努力加油坚持打卡，打造由小树生长到巨树的片段！"
 };
 export default table;

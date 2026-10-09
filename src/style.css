@@ -5067,3 +5067,24 @@ html[lang='en'] .emerg > span {
 .timelapse-card .ghost {
   width: 100%;
 }
+
+
+/* 1.4.66 share goal subtitle */
+.goals-list .goal-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.goals-list .goal-copy b {
+  font-weight: 700;
+  font-size: 14px;
+  color: #23352c;
+}
+.goals-list .goal-sub {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #7a8a80;
+  font-weight: 500;
+}
