@@ -59,7 +59,8 @@ import { claimGoals, ensureGoals, noteGoal, type GoalReward } from './goals';
 import { syncFaunaUnlocks } from './faunaScore';
 import { drawShareCard, shareCardImage } from './shareCard';
 import { logPhotoFor, rememberLogPhoto } from './logPhotos';
-import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markTour, saveCoach, tourDue, type Coach } from './coach';
+import { buildTimelapse, shareTimelapse, timelapseReady } from './timelapse';
+import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markPostTip, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
 import {
@@ -98,6 +99,7 @@ import {
   nameModal,
   lessonModal,
   tourModal,
+  postTourTipModal,
   TOUR_PAGES,
   stormModal,
   windExplainerModal,
@@ -718,7 +720,8 @@ function beginCoach(): boolean {
   const next = armCoach(coach);
   if (next === coach) return false;
   const due = tourDue(coach, next) && meta.history.length === 0 && meta.milestones.length === 0 && (state.daysCared ?? 0) <= 1;
-  coach = due ? next : markTour(next);
+  // Existing / returning players skip the tour and the post-tour tip.
+  coach = due ? next : markPostTip(markTour(next));
   saveCoach(coach);
   return due;
 }
@@ -731,7 +734,30 @@ function openTour(page = 0): void {
 }
 function endTour(): void {
   tourPage = null;
+  const firstTime = !coach.tour;
   const next = markTour(coach);
+  if (next !== coach) {
+    coach = next;
+    saveCoach(coach);
+  }
+  closeModal();
+  // 1.4.66: one-time tip after the first welcome tour (not on 設定 → 再睇一次).
+  if (firstTime && !coach.postTip) queuePostTourTip();
+}
+
+let postTourTipTimer = 0;
+function queuePostTourTip(): void {
+  if (coach.postTip || postTourTipTimer) return;
+  postTourTipTimer = window.setTimeout(() => {
+    postTourTipTimer = 0;
+    const modal = document.getElementById('modal');
+    if (coach.postTip || opening || (modal && !modal.hidden)) return;
+    openModal(postTourTipModal(), 'post-tour-tip-card');
+  }, 420);
+}
+
+function finishPostTourTip(): void {
+  const next = markPostTip(coach);
   if (next !== coach) {
     coach = next;
     saveCoach(coach);
@@ -1783,6 +1809,23 @@ function playShareFlash(): void {
   window.setTimeout(() => el.classList.remove('on'), 500);
 }
 
+async function makeTimelapse(): Promise<void> {
+  if (!timelapseReady(state)) {
+    toast(tl('timelapse.needToast'));
+    return;
+  }
+  toast(tl('timelapse.working'));
+  try {
+    const result = await buildTimelapse();
+    const how = await shareTimelapse(result);
+    if (how === 'downloaded') toast(result.kind === 'video' ? tl('timelapse.savedVideo') : tl('timelapse.savedStrip'));
+    else if (how === 'failed') toast(tl('timelapse.failed'));
+    else if (result.kind === 'strip') toast(tl('timelapse.stripHint'));
+  } catch {
+    toast(tl('timelapse.failed'));
+  }
+}
+
 async function shareTreeCard(): Promise<void> {
   if (sharingCard || !state.started) return;
   sharingCard = true;
@@ -2039,8 +2082,14 @@ function doAction(action: string, target: HTMLElement): void {
     case 'tour-done':
       endTour();
       return;
+    case 'post-tip-done':
+      finishPostTourTip();
+      return;
     case 'tour-replay':
       openTour(0);
+      return;
+    case 'timelapse-make':
+      void makeTimelapse();
       return;
     case 'share-card':
       void shareTreeCard();

@@ -8,6 +8,8 @@ import { cardLines } from '../src/shareCard';
 import { vignettePropKind } from '../src/three/vignetteProp3d';
 import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
 import { doableGoals, parseGoals } from '../src/goals';
+import { freshCoach, loadCoach, markPostTip, markTour } from '../src/coach';
+import { GIANT_STAGE, TIMELAPSE_MIN_FRAMES, isGiant, timelapseUnlocked } from '../src/timelapse';
 
 describe('campfire clear ring', () => {
   it('default margin keeps rocks farther from the pit', () => {
@@ -125,5 +127,56 @@ describe('share-card daily goal', () => {
       noted: ['share'],
       claimed: false,
     });
+  });
+});
+
+describe('post-tour tip', () => {
+  it('is one-time for new players after the welcome tour, not for existing saves', () => {
+    const fresh = freshCoach();
+    expect(fresh.postTip).toBe(false);
+    expect(markPostTip(fresh).postTip).toBe(true);
+    // Missing postTip field → existing player, never show.
+    const store = new Map<string, string>();
+    (globalThis as unknown as { localStorage: Storage }).localStorage = {
+      getItem: (k) => store.get(k) ?? null,
+      setItem: (k, v) => { store.set(k, v); },
+      removeItem: (k) => { store.delete(k); },
+      clear: () => store.clear(),
+      key: () => null,
+      length: 0,
+    } as Storage;
+    store.set('sekai-tree-coach', JSON.stringify({ armed: true, water: true, feed: true, health: true, carbon: true, done: true, tour: true }));
+    expect(loadCoach().postTip).toBe(true);
+    const main = fs.readFileSync('src/main.ts', 'utf8');
+    expect(main).toContain('queuePostTourTip');
+    expect(main).toContain('post-tip-done');
+    expect(main).toContain('postTourTipModal');
+    expect(fs.readFileSync('src/ui.ts', 'utf8')).toContain('postTourTipModal');
+    for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
+      expect(tables()[loc]['postTip.title']).toBeTruthy();
+      expect(tables()[loc]['postTip.shareTitle']).toBeTruthy();
+    }
+    expect(tables()['zh-HK']['postTip.shareTitle']).toContain('強烈建議');
+    void markTour;
+  });
+});
+
+describe('巨樹 timelapse unlock', () => {
+  it('unlocks at giant stage and scaffolds stitch/share', () => {
+    expect(GIANT_STAGE).toBe(4);
+    expect(TIMELAPSE_MIN_FRAMES).toBeGreaterThanOrEqual(3);
+    expect(isGiant({ heightCm: 10, species: 'ficus' })).toBe(false);
+    // Huge height → giant for default target.
+    expect(timelapseUnlocked({ heightCm: 50_000, species: 'ficus', started: true, over: null })).toBe(true);
+    expect(timelapseUnlocked({ heightCm: 50_000, species: 'ficus', started: false, over: null })).toBe(false);
+    const tl = fs.readFileSync('src/timelapse.ts', 'utf8');
+    expect(tl).toContain('recordTimelapseWebm');
+    expect(tl).toContain('buildTimelapseStrip');
+    expect(tl).toContain('shareTimelapse');
+    expect(fs.readFileSync('src/ui.ts', 'utf8')).toContain('timelapseCardHtml');
+    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain('timelapse-make');
+    for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
+      expect(tables()[loc]['timelapse.title']).toBeTruthy();
+    }
   });
 });

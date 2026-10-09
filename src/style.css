@@ -4739,3 +4739,67 @@ html[lang='en'] .emerg > span {
   width: 100%;
   height: auto;
 }
+
+
+/* 1.4.66 post-tour tip */
+.modal-card.post-tour-tip-card {
+  width: min(340px, 92vw);
+  max-height: min(72vh, 560px);
+  padding: 18px 18px 16px;
+}
+.post-tour-list {
+  list-style: none;
+  margin: 8px 0 18px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.post-tour-list li {
+  display: grid;
+  gap: 4px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  background: rgba(47, 138, 78, 0.08);
+}
+.post-tour-list b {
+  font-size: 15px;
+  color: #23352c;
+}
+.post-tour-list span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4c6157;
+  font-weight: 500;
+}
+
+
+/* 1.4.66 巨樹 timelapse unlock on 成長日誌 */
+.timelapse-card {
+  margin: 0 0 14px;
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(124, 92, 180, 0.12), rgba(47, 138, 78, 0.1));
+  border: 1px solid rgba(124, 92, 180, 0.18);
+}
+.timelapse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.timelapse-head b {
+  font-size: 15px;
+  color: #23352c;
+}
+.timelapse-body {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4c6157;
+  font-weight: 500;
+}
+.timelapse-card .primary,
+.timelapse-card .ghost {
+  width: 100%;
+}

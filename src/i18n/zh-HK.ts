@@ -1672,6 +1672,26 @@ const table: Record<string, string> = {
  "log.snapOpen": "睇當日樹卡",
  "log.snapCaption": "當日樹卡",
  "log.snapTitle": "成長日誌",
- "log.snapClose": "關閉"
+ "log.snapClose": "關閉",
+ "postTip.eyebrow": "小提示",
+ "postTip.title": "兩樣好用嘅功能",
+ "postTip.weatherTitle": "撳左上角天氣卡",
+ "postTip.weatherBody": "可以睇預報同官方警告，提前準備加固、疏水、澆水或者保暖。",
+ "postTip.shareTitle": "每日分享樹卡（強烈建議）",
+ "postTip.shareBody": "喺成長日誌撳「分享樹卡」，會記入當日樣貌，方便睇棵樹點樣一日日變大。",
+ "postTip.ok": "明白",
+ "timelapse.title": "成長縮時",
+ "timelapse.badge": "巨樹解鎖",
+ "timelapse.ready": "已有 {n} 日樹卡。可以串成一段縮時，睇棵樹點樣一日日大。",
+ "timelapse.need": "再分享 {need} 日樹卡就可以做縮時（而家 {n} 日）。每日預覽樹卡就會自動記入。",
+ "timelapse.make": "整成長縮時",
+ "timelapse.lockedBtn": "再多啲樹卡先得",
+ "timelapse.working": "整緊縮時…",
+ "timelapse.savedVideo": "縮時影片已下載。",
+ "timelapse.savedStrip": "縮時長圖已下載。",
+ "timelapse.stripHint": "呢部機暫唔支援錄影片，已用長圖代替。",
+ "timelapse.failed": "縮時整唔到，遲啲再試。",
+ "timelapse.needToast": "再多啲每日樹卡先得。",
+ "timelapse.shareTitle": "世界之樹 · 成長縮時"
 };
 export default table;

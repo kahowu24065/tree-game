@@ -21,6 +21,7 @@ import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weather
 import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBirdName, nestBuildAt, nestBuildPhrase, nestBuilds, nestHatchAt, nestRewardText, nextNestAwardCount, nextNestBuildCount, nextNestHeightCount, warmBlock } from './nest';
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import { logPhotoDates, logPhotoFor } from './logPhotos';
+import { TIMELAPSE_MIN_FRAMES, timelapseDates, timelapseUnlocked } from './timelapse';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -544,6 +545,15 @@ export function tourModal(page: number): string {
     + `</div></div>`;
 }
 
+/** 1.4.66 one-time tip right after the welcome tour: weather card + daily share. */
+export function postTourTipModal(): string {
+  return `<div class="post-tour-tip"><p class="eyebrow">${esc(tl('postTip.eyebrow'))}</p>`
+    + `<h2>${esc(tl('postTip.title'))}</h2>`
+    + `<ul class="post-tour-list"><li><b>${esc(tl('postTip.weatherTitle'))}</b><span>${esc(tl('postTip.weatherBody'))}</span></li>`
+    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li></ul>`
+    + `<button type="button" class="primary" data-action="post-tip-done">${esc(tl('postTip.ok'))}</button></div>`;
+}
+
 /** 1.4.30 wordless swipe bar above the growth log: two dots show where you are; swipe on the bar to switch. */
 function renderIsleBar(isle: View['isle'], show: boolean): void {
   const bar = document.getElementById('isle-bar');
@@ -931,11 +941,27 @@ export function renderSheet(state: GameState, today: string): void {
   if (title) title.textContent = tl('ui.185');
   if (!calMonth || calMonth > today.slice(0, 7)) calMonth = today.slice(0, 7);
   const goals = goalsCardHtml(state, today);
+  const lapse = timelapseCardHtml(state);
   const photoKey = calDay && logPhotoFor(calDay) ? '1' : '0';
-  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}|${goals}|${photoKey}`;
+  const key = `${today}|${calMonth}|${calDay}|${Math.round(state.health)}|${state.log.length}|${state.log[0]?.text ?? ''}|${state.log[0]?.time ?? ''}|${getLocale()}|${goals}|${photoKey}|${lapse.length}`;
   if (key === sheetKey) return;
   sheetKey = key;
-  body.innerHTML = goals + logCalendarHtml(state.log, today, calMonth, calDay, state.health);
+  body.innerHTML = lapse + goals + logCalendarHtml(state.log, today, calMonth, calDay, state.health);
+}
+
+
+/** 1.4.66 巨樹: growth-log entry to stitch daily snaps into a timelapse. */
+export function timelapseCardHtml(state: GameState): string {
+  if (!timelapseUnlocked(state)) return '';
+  const n = timelapseDates().length;
+  const ready = n >= TIMELAPSE_MIN_FRAMES;
+  const body = ready
+    ? tl('timelapse.ready', { n })
+    : tl('timelapse.need', { n, need: Math.max(0, TIMELAPSE_MIN_FRAMES - n) });
+  const btn = ready
+    ? `<button type="button" class="primary" data-action="timelapse-make">${esc(tl('timelapse.make'))}</button>`
+    : `<button type="button" class="ghost" disabled>${esc(tl('timelapse.lockedBtn'))}</button>`;
+  return `<section class="timelapse-card"><div class="timelapse-head"><b>${esc(tl('timelapse.title'))}</b><span class="chip purple">${esc(tl('timelapse.badge'))}</span></div><p class="timelapse-body">${esc(body)}</p>${btn}</section>`;
 }
 
 /** 1.4.59 每日小目標 card at the top of 成長日誌. Empty until today's goals exist. */

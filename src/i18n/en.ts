@@ -1720,6 +1720,26 @@ const table: Record<string, string> = {
  "log.snapOpen": "View day's tree card",
  "log.snapCaption": "Day's tree card",
  "log.snapTitle": "Growth log",
- "log.snapClose": "Close"
+ "log.snapClose": "Close",
+ "postTip.eyebrow": "Quick tip",
+ "postTip.title": "Two handy things",
+ "postTip.weatherTitle": "Tap the top-left weather card",
+ "postTip.weatherBody": "See the forecast and official warnings so you can brace, drain, water or warm in time.",
+ "postTip.shareTitle": "Share a tree card every day (highly recommended)",
+ "postTip.shareBody": "On the growth log, tap Share tree card — it saves how the tree looked that day so you can watch it grow.",
+ "postTip.ok": "Got it",
+ "timelapse.title": "Growth timelapse",
+ "timelapse.badge": "Giant unlock",
+ "timelapse.ready": "{n} daily cards ready. Stitch them into a short timelapse of your tree.",
+ "timelapse.need": "Share {need} daily cards to unlock (you have {n}). Opening the share preview saves that day.",
+ "timelapse.make": "Make timelapse",
+ "timelapse.lockedBtn": "Need more cards",
+ "timelapse.working": "Making timelapse…",
+ "timelapse.savedVideo": "Timelapse video downloaded.",
+ "timelapse.savedStrip": "Timelapse strip downloaded.",
+ "timelapse.stripHint": "This device can’t record video yet — shared a photo strip instead.",
+ "timelapse.failed": "Couldn’t make the timelapse. Try again later.",
+ "timelapse.needToast": "Need more daily tree cards first.",
+ "timelapse.shareTitle": "World Tree · growth timelapse"
 };
 export default table;

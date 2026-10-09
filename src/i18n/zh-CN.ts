@@ -1701,6 +1701,26 @@ const table: Record<string, string> = {
  "log.snapOpen": "查看当日树卡",
  "log.snapCaption": "当日树卡",
  "log.snapTitle": "成长日志",
- "log.snapClose": "关闭"
+ "log.snapClose": "关闭",
+ "postTip.eyebrow": "小提示",
+ "postTip.title": "两个好用的功能",
+ "postTip.weatherTitle": "点左上角天气卡",
+ "postTip.weatherBody": "可以看预报与官方警告，提前准备加固、疏水、浇水或保暖。",
+ "postTip.shareTitle": "每日分享树卡（强烈建议）",
+ "postTip.shareBody": "在成长日志点「分享树卡」，会记入当日样貌，方便看树怎样一天天长大。",
+ "postTip.ok": "明白",
+ "timelapse.title": "成长缩时",
+ "timelapse.badge": "巨树解锁",
+ "timelapse.ready": "已有 {n} 日树卡。可以串成一段缩时，看树怎样一天天长大。",
+ "timelapse.need": "再分享 {need} 日树卡就可以做缩时（现在 {n} 日）。每日预览树卡就会自动记入。",
+ "timelapse.make": "制作成长缩时",
+ "timelapse.lockedBtn": "再多一点树卡才行",
+ "timelapse.working": "制作中…",
+ "timelapse.savedVideo": "缩时影片已下载。",
+ "timelapse.savedStrip": "缩时长图已下载。",
+ "timelapse.stripHint": "此设备暂不支持录影片，已用长图代替。",
+ "timelapse.failed": "缩时制作失败，稍后再试。",
+ "timelapse.needToast": "再多一点每日树卡才行。",
+ "timelapse.shareTitle": "世界之树 · 成长缩时"
 };
 export default table;
