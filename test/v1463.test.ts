@@ -26,8 +26,8 @@ describe('sheet share button', () => {
     const html = fs.readFileSync('index.html', 'utf8');
     expect(html).toMatch(/id="sheet-share"[^>]*data-action="share-card"/);
     const css = fs.readFileSync('src/style.css', 'utf8');
-    expect(css).toMatch(/\.sheet-share\s*\{[\s\S]*?left:\s*12px/);
-    expect(css).toMatch(/\.sheet-gear\s*\{[\s\S]*?right:\s*12px/);
+    expect(css).toMatch(/\.sheet-share\s*\{[\s\S]*?left:\s*8px/);
+    expect(css).toMatch(/\.sheet-gear\s*\{[\s\S]*?right:\s*10px/);
     const main = fs.readFileSync('src/main.ts', 'utf8');
     expect(main).toContain("['#sheet-share', 'share.button']");
   });

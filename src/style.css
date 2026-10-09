@@ -3978,32 +3978,90 @@ body.sheet-open .animal-toast.show {
   transform: translate(-50%, 0);
 }
 
-/* Settings: right end of the 成長日誌 title row. A sibling of the drag handle, so tapping it never drags the panel. */
+/* Settings + 分享樹卡 on the 成長日誌 title row. 1.4.65: raised a touch; share shows its label. */
 .sheet-gear,
 .sheet-share {
   position: absolute;
-  top: 9px;
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.75);
+  top: 3px;
+  background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   z-index: 1;
 }
 .sheet-gear {
-  right: 12px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
 }
-/* 1.4.63 分享樹卡: mirror of the settings gear, left of the title. */
 .sheet-share {
-  left: 12px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
 }
-.sheet-gear svg,
-.sheet-share svg {
+.sheet-share-ic {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.sheet-share-ic svg {
+  width: 14px;
+  height: 14px;
+}
+.sheet-share-lab {
+  white-space: nowrap;
+}
+.sheet-gear svg {
   width: 15px;
   height: 15px;
 }
 .sheet-gear:active,
 .sheet-share:active {
   transform: scale(0.94);
+}
+
+/* 1.4.65 screenshot flash before the share-card preview. */
+.share-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.share-flash.on {
+  animation: share-flash 0.42s ease-out forwards;
+}
+@keyframes share-flash {
+  0% { opacity: 0.88; }
+  35% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.share-preview-img {
+  display: block;
+  width: 100%;
+  border-radius: 18px;
+  margin: 4px 0 0;
+  box-shadow: 0 8px 28px rgba(20, 40, 30, 0.22);
+  transform-origin: 50% 0%;
+  animation: share-preview-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes share-preview-in {
+  0% { opacity: 0.2; transform: scale(1.12); }
+  55% { opacity: 1; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .share-flash.on { animation: none; opacity: 0; }
+  .share-preview-img { animation: none; }
 }
 
 /* Note stack: one card at a time — title row (tap to expand) + pager, then the action buttons. */

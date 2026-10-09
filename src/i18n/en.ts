@@ -1705,6 +1705,15 @@ const table: Record<string, string> = {
  "animals.grasshopper.about": "Eats leaves and jumps far; even a small tree's foliage is home enough.",
  "animals.bullfrog.name": "Bullfrog",
  "animals.bullfrog.epithet": "A frog with a booming call",
- "animals.bullfrog.about": "Comes out by the water after rain; likes a damp island shore."
+ "animals.bullfrog.about": "Comes out by the water after rain; likes a damp island shore.",
+ "share.previewTitle": "Share tree card",
+ "share.send": "Share",
+ "share.cancel": "Cancel",
+ "animals.cricket.name": "Cricket",
+ "animals.cricket.epithet": "A night singer in the grass",
+ "animals.cricket.about": "Chirps at night in the grass by the trunk; even a seedling is enough.",
+ "animals.skink.name": "Skink",
+ "animals.skink.epithet": "A sleek little lizard",
+ "animals.skink.about": "Slips over stone and soil in the sun; common on a young island."
 };
 export default table;

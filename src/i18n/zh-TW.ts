@@ -1657,6 +1657,15 @@ const table: Record<string, string> = {
  "animals.grasshopper.about": "吃葉、跳得遠，小樹的葉子就夠它住。",
  "animals.bullfrog.name": "牛蛙",
  "animals.bullfrog.epithet": "叫聲很大的蛙",
- "animals.bullfrog.about": "下雨後出沒水邊，喜歡潮濕的島岸。"
+ "animals.bullfrog.about": "下雨後出沒水邊，喜歡潮濕的島岸。",
+ "share.previewTitle": "分享樹卡",
+ "share.send": "分享",
+ "share.cancel": "取消",
+ "animals.cricket.name": "蟋蟀",
+ "animals.cricket.epithet": "夜晚唱歌的小昆蟲",
+ "animals.cricket.about": "入夜在草和樹腳叫，小樹就夠了。",
+ "animals.skink.name": "石龍子",
+ "animals.skink.epithet": "滑溜溜的小蜥蜴",
+ "animals.skink.about": "太陽底下在石和泥上溜，小樹島常見。"
 };
 export default table;
