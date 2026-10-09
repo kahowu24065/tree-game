@@ -564,8 +564,10 @@ export function renderChrome(view: View): void {
   if (card) renderWeatherCard(card, view);
   const gear = document.getElementById('gear');
   if (gear && !gear.innerHTML) gear.innerHTML = icon('gear');
-  const sheetShare = document.getElementById('sheet-share');
-  if (sheetShare && !sheetShare.innerHTML) sheetShare.innerHTML = icon('sparkle');
+  const sheetShareIc = document.querySelector('#sheet-share .sheet-share-ic');
+  if (sheetShareIc && !sheetShareIc.innerHTML) sheetShareIc.innerHTML = icon('sparkle');
+  const sheetShareLab = document.querySelector('#sheet-share .sheet-share-lab');
+  if (sheetShareLab) sheetShareLab.textContent = tl('share.button');
   const close = document.getElementById('drawer-close');
   if (close && !close.innerHTML) close.innerHTML = icon('close');
 
@@ -985,8 +987,7 @@ function body(view: View): string {
     case 'album':
       return albumTab(view);
     case 'milestones':
-      // 1.4.59 分享樹卡 (image card → share sheet / download).
-      return `<button type="button" class="ghost share-card-btn" data-action="share-card">${icon('sparkle')}<span>${esc(tl('share.button'))}</span></button>${milestoneTab(view)}`;
+      return milestoneTab(view);
     case 'achievements':
       return achievementTab(view);
     default:
@@ -1456,6 +1457,11 @@ export function paintThumbs(): void {
 /* ---------- Toast, modals ---------- */
 
 let toastTimer = 0;
+
+/** 1.4.65 preview of the share tree card (player confirms before the system share sheet). */
+export function sharePreviewModal(dataUrl: string): string {
+  return `<h2>${esc(tl('share.previewTitle'))}</h2><img class="share-preview-img" src="${dataUrl}" alt="" /><div class="btn-stack"><button type="button" class="primary" data-action="share-card-send">${esc(tl('share.send'))}</button><button type="button" class="ghost" data-action="share-card-cancel">${esc(tl('share.cancel'))}</button></div>`;
+}
 
 export function toast(message: string): void {
   const el = document.getElementById('toast');

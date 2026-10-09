@@ -73,6 +73,7 @@ import {
   firstEggModal,
   setOnModalClosed,
   openModal,
+  sharePreviewModal,
   overModal,
   milestoneModal,
   weatherModal,
@@ -1859,8 +1860,20 @@ function goalToast(r: GoalReward): string {
   return tl(`goals.toast.${r.kind}`, { n: r.amount });
 }
 
-/** 1.4.59 分享樹卡: capture the island, draw the card, open the share sheet (web: download). */
+/** 1.4.59 / 1.4.65 分享樹卡: shutter flash → preview modal → native share only after Confirm. */
 let sharingCard = false;
+let pendingShareCard: HTMLCanvasElement | null = null;
+
+function playShareFlash(): void {
+  const el = document.getElementById('share-flash');
+  if (!el) return;
+  el.classList.remove('on');
+  // restart CSS animation
+  void el.offsetWidth;
+  el.classList.add('on');
+  window.setTimeout(() => el.classList.remove('on'), 500);
+}
+
 async function shareTreeCard(): Promise<void> {
   if (sharingCard || !state.started) return;
   sharingCard = true;
@@ -1874,6 +1887,25 @@ async function shareTreeCard(): Promise<void> {
     const goals = (state.goals?.date === today() ? state.goals.ids : []).map((id) => goalLabel(id));
     const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, goals };
     const card = await drawShareCard(data, scene3d?.captureView() ?? null);
+    pendingShareCard = card;
+    playTok();
+    playShareFlash();
+    openModal(sharePreviewModal(card.toDataURL('image/png')), 'share-preview-card');
+  } catch {
+    toast(tl('share.failed'));
+    pendingShareCard = null;
+  } finally {
+    sharingCard = false;
+  }
+}
+
+async function sendPendingShareCard(): Promise<void> {
+  const card = pendingShareCard;
+  pendingShareCard = null;
+  closeModal();
+  if (!card) return;
+  sharingCard = true;
+  try {
     const how = await shareCardImage(card);
     if (how === 'downloaded') toast(tl('share.saved'));
     else if (how === 'failed') toast(tl('share.failed'));
@@ -2097,6 +2129,13 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'share-card':
       void shareTreeCard();
+      return;
+    case 'share-card-send':
+      void sendPendingShareCard();
+      return;
+    case 'share-card-cancel':
+      pendingShareCard = null;
+      closeModal();
       return;
     case 'lesson-next':
       if (!lesson) return;

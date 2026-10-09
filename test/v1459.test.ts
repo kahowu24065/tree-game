@@ -111,6 +111,7 @@ describe('share card', () => {
     const main = fs.readFileSync('src/main.ts', 'utf8');
     expect(main).toContain('formatHeight(state.heightCm)');
     expect(main).not.toMatch(/drawShareCard\([^)]*place/);
-    expect(fs.readFileSync('src/ui.ts', 'utf8')).toContain('data-action="share-card"');
+    expect(fs.readFileSync('index.html', 'utf8')).toContain('data-action="share-card"');
+    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain("case 'share-card'");
   });
 });

@@ -1724,6 +1724,15 @@ const table: Record<string, string> = {
  "animals.grasshopper.about": "食葉、跳得遠，細棵樹葉已經夠佢住。",
  "animals.bullfrog.name": "牛蛙",
  "animals.bullfrog.epithet": "叫聲好大嘅蛙",
- "animals.bullfrog.about": "落雨之後出沒水邊，喜歡潮濕嘅島岸。"
+ "animals.bullfrog.about": "落雨之後出沒水邊，喜歡潮濕嘅島岸。",
+ "share.previewTitle": "分享樹卡",
+ "share.send": "分享",
+ "share.cancel": "取消",
+ "animals.cricket.name": "蟋蟀",
+ "animals.cricket.epithet": "夜晚唱歌嘅小昆蟲",
+ "animals.cricket.about": "入夜喺草同樹腳叫，細棵樹已經夠。",
+ "animals.skink.name": "石龍子",
+ "animals.skink.epithet": "滑溜溜嘅小蜥蜴",
+ "animals.skink.about": "太陽底下喺石同泥上面溜，小樹島常見。"
 };
 export default table;
