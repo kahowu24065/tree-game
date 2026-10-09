@@ -10,7 +10,7 @@ import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
 import { bumpShareStreak, doableGoals, goalLabel, parseGoals, shareStreakOf } from '../src/goals';
 import { createGame } from '../src/sim';
 import { freshCoach, loadCoach, markPostTip, markTour } from '../src/coach';
-import { GIANT_STAGE, TIMELAPSE_MIN_FRAMES, isGiant, timelapseUnlocked } from '../src/timelapse';
+import { TIMELAPSE_MIN_FRAMES, timelapseReady, timelapseUnlocked } from '../src/timelapse';
 
 describe('campfire clear ring', () => {
   it('default margin keeps rocks farther from the pit', () => {
@@ -174,22 +174,26 @@ describe('post-tour tip', () => {
   });
 });
 
-describe('巨樹 timelapse unlock', () => {
-  it('unlocks at giant stage and scaffolds stitch/share', () => {
-    expect(GIANT_STAGE).toBe(4);
-    expect(TIMELAPSE_MIN_FRAMES).toBeGreaterThanOrEqual(3);
-    expect(isGiant({ heightCm: 10, species: 'ficus' })).toBe(false);
-    // Huge height → giant for default target.
-    expect(timelapseUnlocked({ heightCm: 50_000, species: 'ficus', started: true, over: null })).toBe(true);
-    expect(timelapseUnlocked({ heightCm: 50_000, species: 'ficus', started: false, over: null })).toBe(false);
+describe('growth clip (timelapse)', () => {
+  it('is available without 巨樹 once started; generate needs ≥1 saved card', () => {
+    expect(TIMELAPSE_MIN_FRAMES).toBe(1);
+    expect(timelapseUnlocked({ started: true, over: null })).toBe(true);
+    expect(timelapseUnlocked({ started: false, over: null })).toBe(false);
+    expect(timelapseReady({ started: true, over: null })).toBe(false); // no photos yet
     const tl = fs.readFileSync('src/timelapse.ts', 'utf8');
     expect(tl).toContain('recordTimelapseWebm');
     expect(tl).toContain('buildTimelapseStrip');
-    expect(tl).toContain('shareTimelapse');
-    expect(fs.readFileSync('src/ui.ts', 'utf8')).toContain('timelapseCardHtml');
+    expect(tl).not.toContain('isGiant');
+    const ui = fs.readFileSync('src/ui.ts', 'utf8');
+    expect(ui).toContain('timelapseCardHtml');
+    expect(ui).toContain('timelapseSettingsRow');
+    expect(ui).toContain('timelapse.settingsRow');
     expect(fs.readFileSync('src/main.ts', 'utf8')).toContain('timelapse-make');
+    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain("settingsModal(state.treeName, isNative() ? notifyEnabled() : null, '', state)");
     for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
-      expect(tables()[loc]['timelapse.title']).toBeTruthy();
+      expect(tables()[loc]['timelapse.settingsRow']).toBeTruthy();
+      expect(tables()[loc]['timelapse.generate']).toBeTruthy();
     }
+    expect(tables()['zh-HK']['timelapse.settingsRow']).toBe('小樹成長片段');
   });
 });

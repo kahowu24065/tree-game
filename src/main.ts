@@ -2174,7 +2174,7 @@ function doAction(action: string, target: HTMLElement): void {
       openModal(locationModal(placeChoice || (weather.source === 'geo' ? 'geo' : 'hk')));
       return;
     case 'settings':
-      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null), 'settings-sheet');
+      openModal(settingsModal(state.treeName, isNative() ? notifyEnabled() : null, '', state), 'settings-sheet');
       return;
     case 'disclaimer':
       openModal(disclaimerModal());

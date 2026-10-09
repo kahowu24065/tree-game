@@ -4824,3 +4824,17 @@ html[lang='en'] .emerg > span {
   color: #7a8a80;
   font-weight: 500;
 }
+
+
+/* 1.4.66 settings 「小樹成長片段」 */
+.setting-row.timelapse-row span small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #9aa39c;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.setting-row.timelapse-row.muted button:disabled {
+  opacity: 0.45;
+}

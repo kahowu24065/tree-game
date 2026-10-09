@@ -1,36 +1,29 @@
 /**
- * 1.4.66 巨樹 unlock: stitch saved daily share-card snaps into a short timelapse.
- * Uses Canvas + MediaRecorder (webm) when available; otherwise exports a vertical
- * strip PNG of the frames as a fallback the player can still share/save.
+ * 1.4.66: stitch saved daily share-card snaps into a short timelapse (first → latest).
+ * Available as soon as at least one tree card is saved — no 巨樹 gate.
+ * Uses Canvas + MediaRecorder (webm) when available; otherwise a JPEG strip fallback.
  */
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { t as tl } from './i18n';
 import { loadLogPhotos, LOG_PHOTOS_MAX_DAYS } from './logPhotos';
 import { isNative } from './native/platform';
-import { stageIndex } from './content';
-import { speciesTargetCm } from './data/species';
 import type { GameState } from './types';
 
-/** Giant stage index (幼苗0…巨樹4). */
-export const GIANT_STAGE = 4;
-
-/** Minimum daily snaps before a timelapse is worth making. */
-export const TIMELAPSE_MIN_FRAMES = 3;
-
-export function isGiant(state: Pick<GameState, 'heightCm' | 'species'>): boolean {
-  return stageIndex(state.heightCm, speciesTargetCm(state.species)) >= GIANT_STAGE;
-}
-
-export function timelapseUnlocked(state: Pick<GameState, 'heightCm' | 'species' | 'started' | 'over'>): boolean {
-  return Boolean(state.started && !state.over && isGiant(state));
-}
+/** Minimum daily snaps to generate (one card is enough). */
+export const TIMELAPSE_MIN_FRAMES = 1;
 
 export function timelapseDates(): string[] {
   return Object.keys(loadLogPhotos()).sort();
 }
 
-export function timelapseReady(state: Pick<GameState, 'heightCm' | 'species' | 'started' | 'over'>): boolean {
+/** Feature is on whenever the tree is alive (settings row always shown). */
+export function timelapseUnlocked(state: Pick<GameState, 'started' | 'over'>): boolean {
+  return Boolean(state.started && !state.over);
+}
+
+/** Generate is enabled once ≥1 saved tree card exists. */
+export function timelapseReady(state: Pick<GameState, 'started' | 'over'>): boolean {
   return timelapseUnlocked(state) && timelapseDates().length >= TIMELAPSE_MIN_FRAMES;
 }
 
