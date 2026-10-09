@@ -4835,6 +4835,11 @@ html[lang='en'] .emerg > span {
   font-weight: 500;
   line-height: 1.35;
 }
-.setting-row.timelapse-row.muted button:disabled {
+.setting-row.timelapse-row.muted button:disabled,
+.setting-row.timelapse-row button.is-locked {
   opacity: 0.45;
+}
+.setting-row.timelapse-row button.is-locked {
+  pointer-events: auto;
+  cursor: pointer;
 }

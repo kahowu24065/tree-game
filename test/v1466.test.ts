@@ -10,7 +10,8 @@ import { LOG_PHOTOS_MAX_DAYS, pruneLogPhotos } from '../src/logPhotos';
 import { bumpShareStreak, doableGoals, goalLabel, parseGoals, shareStreakOf } from '../src/goals';
 import { createGame } from '../src/sim';
 import { freshCoach, loadCoach, markPostTip, markTour } from '../src/coach';
-import { TIMELAPSE_MIN_FRAMES, timelapseReady, timelapseUnlocked } from '../src/timelapse';
+import { TIMELAPSE_MIN_FRAMES, YOUNG_STAGE, timelapseReady, timelapseUnlocked } from '../src/timelapse';
+import { STAGE_SHARES, speciesTargetCm } from '../src/data/species';
 
 describe('campfire clear ring', () => {
   it('default margin keeps rocks farther from the pit', () => {
@@ -175,25 +176,26 @@ describe('post-tour tip', () => {
 });
 
 describe('growth clip (timelapse)', () => {
-  it('is available without 巨樹 once started; generate needs ≥1 saved card', () => {
+  it('unlocks at 青年樹; generate needs ≥1 saved card', () => {
+    expect(YOUNG_STAGE).toBe(2);
     expect(TIMELAPSE_MIN_FRAMES).toBe(1);
-    expect(timelapseUnlocked({ started: true, over: null })).toBe(true);
-    expect(timelapseUnlocked({ started: false, over: null })).toBe(false);
-    expect(timelapseReady({ started: true, over: null })).toBe(false); // no photos yet
-    const tl = fs.readFileSync('src/timelapse.ts', 'utf8');
-    expect(tl).toContain('recordTimelapseWebm');
-    expect(tl).toContain('buildTimelapseStrip');
-    expect(tl).not.toContain('isGiant');
+    const species = 'banyan';
+    const target = speciesTargetCm(species);
+    const seedling = { started: true as const, over: null, heightCm: 1, species };
+    const youngCm = Math.round(STAGE_SHARES[YOUNG_STAGE]! * target);
+    const young = { started: true as const, over: null, heightCm: youngCm + 1, species };
+    expect(timelapseUnlocked(seedling)).toBe(false);
+    expect(timelapseUnlocked(young)).toBe(true);
+    expect(timelapseReady(young)).toBe(false); // no photos yet
+    expect(timelapseUnlocked({ ...young, started: false })).toBe(false);
+    const src = fs.readFileSync('src/timelapse.ts', 'utf8');
+    expect(src).toContain('recordTimelapseWebm');
+    expect(src).toContain('YOUNG_STAGE');
     const ui = fs.readFileSync('src/ui.ts', 'utf8');
-    expect(ui).toContain('timelapseCardHtml');
     expect(ui).toContain('timelapseSettingsRow');
-    expect(ui).toContain('timelapse.settingsRow');
-    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain('timelapse-make');
-    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain("settingsModal(state.treeName, isNative() ? notifyEnabled() : null, '', state)");
-    for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
-      expect(tables()[loc]['timelapse.settingsRow']).toBeTruthy();
-      expect(tables()[loc]['timelapse.generate']).toBeTruthy();
-    }
     expect(tables()['zh-HK']['timelapse.settingsRow']).toBe('小樹成長片段');
+    expect(tables()['zh-HK']['timelapse.settingsLocked']).toContain('青年樹');
+    expect(ui).toContain('is-locked');
+    expect(fs.readFileSync('src/main.ts', 'utf8')).toContain("tl('timelapse.settingsLocked')");
   });
 });

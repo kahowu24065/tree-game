@@ -1710,7 +1710,7 @@ const table: Record<string, string> = {
  "postTip.shareBody": "在成长日志点「分享树卡」，会记入当日样貌，方便看树怎样一天天长大。",
  "postTip.ok": "明白",
  "timelapse.title": "小树成长片段",
- "timelapse.badge": "成长片段",
+ "timelapse.badge": "青年树解锁",
  "timelapse.ready": "已有 {n} 日树卡。可以串成一段由小到大的片段。",
  "timelapse.need": "分享树卡预览就会记入；有了至少一张就可以生成片段（现在 {n} 日）。",
  "timelapse.make": "生成成长片段",
@@ -1720,12 +1720,13 @@ const table: Record<string, string> = {
  "timelapse.savedStrip": "缩时长图已下载。",
  "timelapse.stripHint": "此设备暂不支持录影片，已用长图代替。",
  "timelapse.failed": "缩时制作失败，稍后再试。",
- "timelapse.needToast": "先分享至少一张树卡才行。",
+ "timelapse.needToast": "青年树之后，再分享至少一张树卡才行。",
  "timelapse.shareTitle": "世界之树 · 成长缩时",
  "goals.shareHint": "努力加油坚持打卡，打造由小树生长到巨树的片段！",
  "timelapse.settingsRow": "小树成长片段",
  "timelapse.generate": "生成",
  "timelapse.settingsReady": "已有 {n} 日树卡，可由第一张串到最新。",
- "timelapse.settingsNeed": "先分享至少一张树卡（预览就会记入）。"
+ "timelapse.settingsNeed": "先分享至少一张树卡（预览就会记入）。",
+ "timelapse.settingsLocked": "青年树阶段解锁。"
 };
 export default table;

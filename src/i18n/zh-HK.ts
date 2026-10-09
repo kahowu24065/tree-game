@@ -1681,7 +1681,7 @@ const table: Record<string, string> = {
  "postTip.shareBody": "喺成長日誌撳「分享樹卡」，會記入當日樣貌，方便睇棵樹點樣一日日變大。",
  "postTip.ok": "明白",
  "timelapse.title": "小樹成長片段",
- "timelapse.badge": "成長片段",
+ "timelapse.badge": "青年樹解鎖",
  "timelapse.ready": "已有 {n} 日樹卡。可以串成一段由細到大嘅片段。",
  "timelapse.need": "分享樹卡預覽就會記入；有咗最少一張就可以生成片段（而家 {n} 日）。",
  "timelapse.make": "生成成長片段",
@@ -1691,12 +1691,13 @@ const table: Record<string, string> = {
  "timelapse.savedStrip": "縮時長圖已下載。",
  "timelapse.stripHint": "呢部機暫唔支援錄影片，已用長圖代替。",
  "timelapse.failed": "縮時整唔到，遲啲再試。",
- "timelapse.needToast": "先分享最少一張樹卡先得。",
+ "timelapse.needToast": "青年樹之後，再分享最少一張樹卡先得。",
  "timelapse.shareTitle": "世界之樹 · 成長縮時",
  "goals.shareHint": "努力加油堅持打卡，打造由小樹生長到巨樹嘅片段！",
  "timelapse.settingsRow": "小樹成長片段",
  "timelapse.generate": "生成",
  "timelapse.settingsReady": "已有 {n} 日樹卡，可由第一張串到最新。",
- "timelapse.settingsNeed": "先分享最少一張樹卡（預覽就會記入）。"
+ "timelapse.settingsNeed": "先分享最少一張樹卡（預覽就會記入）。",
+ "timelapse.settingsLocked": "青年樹階段解鎖。"
 };
 export default table;

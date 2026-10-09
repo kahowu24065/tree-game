@@ -1729,7 +1729,7 @@ const table: Record<string, string> = {
  "postTip.shareBody": "On the growth log, tap Share tree card — it saves how the tree looked that day so you can watch it grow.",
  "postTip.ok": "Got it",
  "timelapse.title": "Tree growth clip",
- "timelapse.badge": "Growth clip",
+ "timelapse.badge": "Young unlock",
  "timelapse.ready": "{n} daily cards ready. Stitch them from first to latest.",
  "timelapse.need": "Opening share preview saves a card; need at least one to generate (you have {n}).",
  "timelapse.make": "Generate clip",
@@ -1739,12 +1739,13 @@ const table: Record<string, string> = {
  "timelapse.savedStrip": "Timelapse strip downloaded.",
  "timelapse.stripHint": "This device can’t record video yet — shared a photo strip instead.",
  "timelapse.failed": "Couldn’t make the timelapse. Try again later.",
- "timelapse.needToast": "Share at least one tree card first.",
+ "timelapse.needToast": "Reach young tree, then share at least one card.",
  "timelapse.shareTitle": "World Tree · growth timelapse",
  "goals.shareHint": "Keep the streak going — build a clip from seedling to giant!",
  "timelapse.settingsRow": "Tree growth clip",
  "timelapse.generate": "Generate",
  "timelapse.settingsReady": "{n} cards saved — stitch from the first to the latest.",
- "timelapse.settingsNeed": "Share at least one tree card first (preview saves it)."
+ "timelapse.settingsNeed": "Share at least one tree card first (preview saves it).",
+ "timelapse.settingsLocked": "Unlocks at the young-tree stage."
 };
 export default table;

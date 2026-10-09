@@ -1,6 +1,6 @@
 /**
  * 1.4.66: stitch saved daily share-card snaps into a short timelapse (first → latest).
- * Available as soon as at least one tree card is saved — no 巨樹 gate.
+ * Unlocks at 青年樹 (young stage); Generate needs ≥1 saved tree card.
  * Uses Canvas + MediaRecorder (webm) when available; otherwise a JPEG strip fallback.
  */
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -8,22 +8,28 @@ import { Share } from '@capacitor/share';
 import { t as tl } from './i18n';
 import { loadLogPhotos, LOG_PHOTOS_MAX_DAYS } from './logPhotos';
 import { isNative } from './native/platform';
+import { stageIndex } from './content';
+import { speciesTargetCm } from './data/species';
 import type { GameState } from './types';
 
-/** Minimum daily snaps to generate (one card is enough). */
+/** 青年樹 stage index (幼苗0、小樹1、青年樹2、成年樹3、巨樹4). */
+export const YOUNG_STAGE = 2;
+
+/** Minimum daily snaps to generate (one card is enough once unlocked). */
 export const TIMELAPSE_MIN_FRAMES = 1;
 
 export function timelapseDates(): string[] {
   return Object.keys(loadLogPhotos()).sort();
 }
 
-/** Feature is on whenever the tree is alive (settings row always shown). */
-export function timelapseUnlocked(state: Pick<GameState, 'started' | 'over'>): boolean {
-  return Boolean(state.started && !state.over);
+/** Feature unlocks at 青年樹 onwards. */
+export function timelapseUnlocked(state: Pick<GameState, 'started' | 'over' | 'heightCm' | 'species'>): boolean {
+  if (!state.started || state.over) return false;
+  return stageIndex(state.heightCm, speciesTargetCm(state.species)) >= YOUNG_STAGE;
 }
 
-/** Generate is enabled once ≥1 saved tree card exists. */
-export function timelapseReady(state: Pick<GameState, 'started' | 'over'>): boolean {
+/** Generate once unlocked and ≥1 saved tree card exists. */
+export function timelapseReady(state: Pick<GameState, 'started' | 'over' | 'heightCm' | 'species'>): boolean {
   return timelapseUnlocked(state) && timelapseDates().length >= TIMELAPSE_MIN_FRAMES;
 }
 

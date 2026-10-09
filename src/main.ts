@@ -59,7 +59,7 @@ import { bumpShareStreak, claimGoals, ensureGoals, noteGoal, type GoalReward } f
 import { syncFaunaUnlocks } from './faunaScore';
 import { drawShareCard, shareCardImage } from './shareCard';
 import { logPhotoFor, rememberLogPhoto } from './logPhotos';
-import { buildTimelapse, shareTimelapse, timelapseReady } from './timelapse';
+import { buildTimelapse, shareTimelapse, timelapseReady, timelapseUnlocked } from './timelapse';
 import { armCoach, clearCoach, coachFocus, coachOpen, freshCoach, loadCoach, markCoach, markPostTip, markTour, saveCoach, tourDue, type Coach } from './coach';
 import { META_KEY } from './meta';
 import type { DayCond, GameState, TabId } from './types';
@@ -1810,6 +1810,10 @@ function playShareFlash(): void {
 }
 
 async function makeTimelapse(): Promise<void> {
+  if (!timelapseUnlocked(state)) {
+    toast(tl('timelapse.settingsLocked'));
+    return;
+  }
   if (!timelapseReady(state)) {
     toast(tl('timelapse.needToast'));
     return;
@@ -2431,7 +2435,8 @@ document.addEventListener('click', (event) => {
     }
     return;
   }
-  if (target.getAttribute('aria-disabled') === 'true') return;
+  // 1.4.66: locked 「生成」 still fires so we can toast 青年樹解鎖.
+  if (target.getAttribute('aria-disabled') === 'true' && target.dataset.action !== 'timelapse-make') return;
   if (target.dataset.sound !== '0' && target.dataset.sound !== '1') playControl(target.dataset.action);
   const inModal = Boolean(target.closest('#modal'));
   if ((!state.started || state.over) && !inModal) return;

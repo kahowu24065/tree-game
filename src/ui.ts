@@ -950,7 +950,7 @@ export function renderSheet(state: GameState, today: string): void {
 }
 
 
-/** 1.4.66: growth-log entry to stitch daily snaps (first → latest). Shown once the tree is started. */
+/** 1.4.66: growth-log entry to stitch daily snaps (first → latest). Shown from 青年樹. */
 export function timelapseCardHtml(state: GameState): string {
   if (!timelapseUnlocked(state)) return '';
   const n = timelapseDates().length;
@@ -964,15 +964,26 @@ export function timelapseCardHtml(state: GameState): string {
   return `<section class="timelapse-card"><div class="timelapse-head"><b>${esc(tl('timelapse.title'))}</b><span class="chip purple">${esc(tl('timelapse.badge'))}</span></div><p class="timelapse-body">${esc(body)}</p>${btn}</section>`;
 }
 
-/** 1.4.66 settings row 「小樹成長片段」 — Generate stitches first→latest saved cards. */
+/** 1.4.66 settings row 「小樹成長片段」 — unlocks at 青年樹; Generate stitches first→latest. */
 export function timelapseSettingsRow(state: GameState): string {
   if (!state.started || state.over) return '';
+  const unlocked = timelapseUnlocked(state);
   const n = timelapseDates().length;
-  const ready = n >= TIMELAPSE_MIN_FRAMES;
-  const hint = ready ? tl('timelapse.settingsReady', { n }) : tl('timelapse.settingsNeed');
-  const btn = ready
-    ? `<button type="button" class="ghost" data-action="timelapse-make">${esc(tl('timelapse.generate'))}</button>`
-    : `<button type="button" class="ghost" disabled>${esc(tl('timelapse.generate'))}</button>`;
+  const ready = unlocked && n >= TIMELAPSE_MIN_FRAMES;
+  const hint = !unlocked
+    ? tl('timelapse.settingsLocked')
+    : ready
+      ? tl('timelapse.settingsReady', { n })
+      : tl('timelapse.settingsNeed');
+  // Before 青年樹: greyed but still tappable → toast. After unlock with no cards: disabled.
+  let btn: string;
+  if (ready) {
+    btn = `<button type="button" class="ghost" data-action="timelapse-make">${esc(tl('timelapse.generate'))}</button>`;
+  } else if (!unlocked) {
+    btn = `<button type="button" class="ghost is-locked" data-action="timelapse-make">${esc(tl('timelapse.generate'))}</button>`;
+  } else {
+    btn = `<button type="button" class="ghost" disabled>${esc(tl('timelapse.generate'))}</button>`;
+  }
   return `<div class="setting-row timelapse-row${ready ? '' : ' muted'}"><span>${esc(tl('timelapse.settingsRow'))}<small>${esc(hint)}</small></span>${btn}</div>`;
 }
 
@@ -1752,7 +1763,7 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   const hu = getHeightUnit();
   const unitRow = `<div class="setting-row"><span>${esc(tl('ui.heightUnit'))}</span><select class="lang-select" data-unit-select aria-label="${esc(tl('ui.heightUnit'))}">${HEIGHT_UNITS.map((u) => `<option value="${u}"${u === hu ? ' selected' : ''}>${esc(tl(`unit.${u}`))}</option>`).join('')}</select></div>`;
   const tourRow = `<div class="setting-row"><span>${esc(tl('tour.row'))}</span><button type="button" class="ghost" data-action="tour-replay">${esc(tl('tour.replay'))}</button></div>`;
-  // 1.4.66 「小樹成長片段」 — generate anytime once ≥1 saved tree card (no 巨樹 gate).
+  // 1.4.66 「小樹成長片段」 — unlocks at 青年樹; Generate once ≥1 saved tree card.
   const lapseRow = state ? timelapseSettingsRow(state) : '';
   const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + lapseRow + (notify === null
         ? ''
