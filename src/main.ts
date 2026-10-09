@@ -2274,6 +2274,7 @@ function localizeStatic(): void {
     ['#view-reset', 'main.064'],
     ['#sheet', 'ui.185'],
     ['#gear', 'html.settings'],
+    ['#sheet-share', 'share.button'],
     ['#dock', 'html.dock'],
     ['#drawer', 'html.drawer'],
     ['#drawer-close', 'html.close'],

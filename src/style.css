@@ -3988,21 +3988,30 @@ body.sheet-open .animal-toast.show {
 }
 
 /* Settings: right end of the 成長日誌 title row. A sibling of the drag handle, so tapping it never drags the panel. */
-.sheet-gear {
+.sheet-gear,
+.sheet-share {
   position: absolute;
   top: 9px;
-  right: 12px;
   width: 24px;
   height: 24px;
   background: rgba(255, 255, 255, 0.75);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   z-index: 1;
 }
-.sheet-gear svg {
+.sheet-gear {
+  right: 12px;
+}
+/* 1.4.63 分享樹卡: mirror of the settings gear, left of the title. */
+.sheet-share {
+  left: 12px;
+}
+.sheet-gear svg,
+.sheet-share svg {
   width: 15px;
   height: 15px;
 }
-.sheet-gear:active {
+.sheet-gear:active,
+.sheet-share:active {
   transform: scale(0.94);
 }
 
