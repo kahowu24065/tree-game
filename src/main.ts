@@ -318,11 +318,14 @@ try {
     playTok();
     const now = Date.now();
     if (now - sceneryToastAt < 900) return;
-    const vignetteLine = hit.kind === 'vignette' ? (() => {
-      const ev = eventTitle(state);
-      return `${ev.title}：${ev.text}`;
-    })() : null;
-    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++, vignetteLine);
+    // 1.4.69: vignette prop reopens today's illustration card.
+    if (hit.kind === 'vignette') {
+      sceneryToastAt = now;
+      openTodayVignetteCard();
+      noteDailyGoal('scenery');
+      return;
+    }
+    const line = sceneryCaption(hit, meta.landmark, sceneryTurn++, null);
     if (!line) return;
     sceneryToastAt = now;
     toast(line);
@@ -1503,6 +1506,14 @@ function markVigDay(date: string): void {
 }
 
 let vigDayTimer = 0;
+
+/** 1.4.69: reopen today's 「今日小事」 illustration (Care tab / scene prop). */
+function openTodayVignetteCard(): void {
+  if (!state.started || state.over) return;
+  const ev = eventTitle(state);
+  openModal(vignetteDayModal(state.dailyEventId || 'quiet', ev.title, ev.text), 'vignette-day-card');
+}
+
 function queueDailyVignetteCard(): void {
   if (vigDayTimer) window.clearTimeout(vigDayTimer);
   const tryShow = () => {
@@ -1519,8 +1530,7 @@ function queueDailyVignetteCard(): void {
       vigDayTimer = window.setTimeout(tryShow, 600);
       return;
     }
-    const ev = eventTitle(state);
-    openModal(vignetteDayModal(state.dailyEventId || 'quiet', ev.title, ev.text), 'vignette-day-card');
+    openTodayVignetteCard();
   };
   vigDayTimer = window.setTimeout(tryShow, 280);
 }
@@ -2264,6 +2274,9 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'post-tip-done':
       finishPostTourTip();
+      return;
+    case 'open-vignette-day':
+      openTodayVignetteCard();
       return;
     case 'vig-day-done':
       markVigDay(today());
