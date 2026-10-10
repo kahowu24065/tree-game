@@ -2,22 +2,22 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { tables } from '../src/i18n';
 import { vignetteDayModal } from '../src/ui';
-import { VIGNETTE_ART_IDS, vignetteArtSvg } from '../src/vignetteArt';
+import { VIGNETTE_ART_IDS, vignetteArtUrl } from '../src/vignetteArt';
 
 describe('1.4.67b daily vignette + boot lock', () => {
-  it('has soft SVG art for every vignette id', () => {
+  it('has painterly WebP art for every vignette id', () => {
     expect(VIGNETTE_ART_IDS.length).toBeGreaterThanOrEqual(10);
     for (const id of VIGNETTE_ART_IDS) {
-      const svg = vignetteArtSvg(id);
-      expect(svg).toContain('<svg');
-      expect(svg.length).toBeLessThan(3500);
+      expect(fs.existsSync(`public/vignette/${id}.webp`), id).toBe(true);
+      expect(vignetteArtUrl(id)).toBe(`/vignette/${id}.webp`);
     }
-    expect(vignetteArtSvg('unknown-id')).toContain('<svg');
+    expect(vignetteArtUrl('unknown-id')).toBe('/vignette/quiet.webp');
   });
 
   it('vignette day modal shows art + copy', () => {
     const html = vignetteDayModal('mist', '晨霧', '薄霧濕潤咗葉面同泥土。');
     expect(html).toContain('vignette-art');
+    expect(html).toContain('/vignette/mist.webp');
     expect(html).toContain('晨霧');
     expect(html).toContain('data-action="vig-day-done"');
     expect(tables()['zh-HK']['vigDay.eyebrow']).toBe('今日小事');

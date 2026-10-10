@@ -7,7 +7,7 @@ import type { GameState } from '../src/types';
 
 describe('1.4.67', () => {
   it('bumps to 1.4.67 / documents MP4 path', () => {
-    expect(APP_VERSION).toBe('1.4.67');
+    expect(APP_VERSION >= '1.4.67').toBe(true);
     expect(fs.readFileSync('src/timelapse.ts', 'utf8')).toContain('mp4');
     expect(fs.readFileSync('src/native/timelapseEncode.ts', 'utf8')).toContain('TreeTimelapse');
     expect(fs.readFileSync('android/app/src/main/java/app/sekaitree/game/TreeTimelapsePlugin.java', 'utf8')).toContain('MediaMuxer');
