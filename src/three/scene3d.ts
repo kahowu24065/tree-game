@@ -2486,8 +2486,9 @@ export class Scene3D {
   }
 
   /**
-   * 1.4.59 分享樹卡: the view as it is now, rendered once more at the card's size and aspect and copied straight away
-   * (same task, so no preserveDrawingBuffer); the canvas size and camera are restored before the browser paints.
+   * 1.4.59 / 1.4.67 分享樹卡: render at the card size using the fixed HUD overview camera
+   * (same height/distance as when the interface first appears — not the player's zoom/orbit),
+   * then restore the live canvas before the browser paints.
    */
   captureView(w = 1200, h = 950): HTMLCanvasElement | null {
     const r = this.renderer;
@@ -2495,12 +2496,35 @@ export class Scene3D {
     const size = r.getSize(new THREE.Vector2());
     const pr = r.getPixelRatio();
     const aspect = cam.aspect;
+    const fov = cam.fov;
+    const near = cam.near;
+    const far = cam.far;
     const view = cam.view ? { ...cam.view } : null;
+    const pos = cam.position.clone();
+    const quat = cam.quaternion.clone();
+    const skyPos = this.sky.position.clone();
+    const seaPos = this.sea.position.clone();
     try {
       r.setPixelRatio(1);
       r.setSize(w, h, false);
       cam.aspect = w / h;
+      cam.fov = cam.aspect < 0.8 ? 46 : 36;
       cam.clearViewOffset();
+      // Fixed overview pose: zoom 1, base azimuth / elevation, no pan / follow / idle spin.
+      const target = new THREE.Vector3(0, this.camTargetY, 0);
+      const dist = Math.max(0.3, this.camDist);
+      const az = BASE_AZIMUTH;
+      const el = ELEVATION;
+      cam.position.set(
+        target.x + Math.sin(az) * Math.cos(el) * dist,
+        target.y + Math.sin(el) * dist,
+        target.z + Math.cos(az) * Math.cos(el) * dist,
+      );
+      cam.lookAt(target);
+      cam.near = clamp(dist * 0.02, 0.005, 2);
+      cam.far = Math.max(900, dist * 3 + 500);
+      this.sky.position.copy(cam.position);
+      this.sea.position.set(cam.position.x, -22 * this.islandK, cam.position.z);
       cam.updateProjectionMatrix();
       r.render(this.scene, cam);
       const cv = document.createElement('canvas');
@@ -2514,7 +2538,15 @@ export class Scene3D {
       r.setPixelRatio(pr);
       r.setSize(size.x, size.y, false);
       cam.aspect = aspect;
+      cam.fov = fov;
+      cam.near = near;
+      cam.far = far;
+      cam.position.copy(pos);
+      cam.quaternion.copy(quat);
+      this.sky.position.copy(skyPos);
+      this.sea.position.copy(seaPos);
       if (view?.enabled) cam.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
+      else cam.clearViewOffset();
       cam.updateProjectionMatrix();
       r.render(this.scene, cam);
     }
