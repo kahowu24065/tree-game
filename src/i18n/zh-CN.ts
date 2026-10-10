@@ -1733,6 +1733,7 @@ const table: Record<string, string> = {
  "postTip.title3": "三个好用的功能",
  "timelapse.savedMp4": "成长短片（MP4）已准备好分享。",
  "vigDay.eyebrow": "今日小事",
- "vigDay.ok": "好的"
+ "vigDay.ok": "好的",
+ "log.snapFront": "已同时存入一张小树正面照入成长日志"
 };
 export default table;

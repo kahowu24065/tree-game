@@ -1752,6 +1752,7 @@ const table: Record<string, string> = {
  "postTip.title3": "Three handy things",
  "timelapse.savedMp4": "Growth clip (MP4) ready to share.",
  "vigDay.eyebrow": "Today's little thing",
- "vigDay.ok": "Nice"
+ "vigDay.ok": "Nice",
+ "log.snapFront": "Also saved a front-view tree photo to the growth log"
 };
 export default table;
