@@ -545,13 +545,22 @@ export function tourModal(page: number): string {
     + `</div></div>`;
 }
 
-/** 1.4.66 one-time tip after the welcome tour: weather card, daily share, 小樹成長片段. */
-export function postTourTipModal(): string {
+/**
+ * 1.4.66/1.4.67 tips after the welcome tour (and after 設定 → 再睇一次).
+ * Weather is omitted when the tour already covered the weather card (page 3).
+ */
+export function postTourTipModal(opts: { includeWeather?: boolean } = {}): string {
+  const includeWeather = Boolean(opts.includeWeather);
+  const items: string[] = [];
+  if (includeWeather) {
+    items.push(`<li><b>${esc(tl('postTip.weatherTitle'))}</b><span>${esc(tl('postTip.weatherBody'))}</span></li>`);
+  }
+  items.push(`<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li>`);
+  items.push(`<li><b>${esc(tl('postTip.clipTitle'))}</b><span>${esc(tl('postTip.clipBody'))}</span></li>`);
+  const title = includeWeather ? tl('postTip.title3') : tl('postTip.title');
   return `<div class="post-tour-tip"><p class="eyebrow">${esc(tl('postTip.eyebrow'))}</p>`
-    + `<h2>${esc(tl('postTip.title'))}</h2>`
-    + `<ul class="post-tour-list"><li><b>${esc(tl('postTip.weatherTitle'))}</b><span>${esc(tl('postTip.weatherBody'))}</span></li>`
-    + `<li><b>${esc(tl('postTip.shareTitle'))}</b><span>${esc(tl('postTip.shareBody'))}</span></li>`
-    + `<li><b>${esc(tl('postTip.clipTitle'))}</b><span>${esc(tl('postTip.clipBody'))}</span></li></ul>`
+    + `<h2>${esc(title)}</h2>`
+    + `<ul class="post-tour-list">${items.join('')}</ul>`
     + `<button type="button" class="primary" data-action="post-tip-done">${esc(tl('postTip.ok'))}</button></div>`;
 }
 
@@ -885,21 +894,30 @@ function daysInMonth(ym: string): number {
   return new Date(Date.UTC(y!, m!, 0)).getUTCDate();
 }
 
-/** up: health rose or held 100. down: health fell. flat: unchanged and still under 100. */
+/** 1.4.67: green (`up`) = healthy end-of-day health; red (`down`) = unhealthy. Threshold matches the H bar green zone (50). */
+export const CAL_HEALTHY_MIN = 50;
+
+/** Parse end-of-day health from a settle log line (arrow form, or modern 「健康 85」 / "health 85"). */
+export function settleHealthAfter(text: string): number | null {
+  const arrow = text.match(/(?:健康|[Hh]ealth)\s*(\d+)\s*→\s*(\d+)/i);
+  if (arrow) return Number(arrow[2]);
+  // Modern sim.096 ends with 「健康 85，…」 / "health 85, …" — take the last unsigned absolute.
+  let last: number | null = null;
+  const re = /(?:健康|[Hh]ealth)\s*(\d+)(?!\s*[→+\-−±])/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) last = Number(m[1]);
+  return last;
+}
+
 export function healthDayMark(entries: LogEntry[], isToday: boolean, healthNow: number): 'up' | 'down' | 'flat' | '' {
-  // Settle lines read 「健康 70 → 64」 / "Health 70 → 64" (whichever language wrote them).
-  const HEALTH = /(?:健康|[Hh]ealth)\s*(\d+)\s*→\s*(\d+)/;
-  const settle = entries.find((e) => e.kind === 'settle') ?? entries.find((e) => HEALTH.test(e.text));
-  const match = settle?.text.match(HEALTH);
-  if (match) {
-    const before = Number(match[1]);
-    const after = Number(match[2]);
-    if (after < before) return 'down';
-    if (after > before || after >= 100) return 'up';
-    return 'flat';
+  const settle = entries.find((e) => e.kind === 'settle')
+    ?? entries.find((e) => /(?:健康|[Hh]ealth)\s*\d+/i.test(e.text));
+  if (settle) {
+    const after = settleHealthAfter(settle.text);
+    if (after != null) return after >= CAL_HEALTHY_MIN ? 'up' : 'down';
   }
   if (!isToday) return '';
-  return healthNow >= 100 ? 'up' : 'flat';
+  return healthNow >= CAL_HEALTHY_MIN ? 'up' : 'down';
 }
 
 export function logCalendarHtml(log: LogEntry[], today: string, month: string, day: string, healthNow = 0): string {
@@ -985,7 +1003,8 @@ export function timelapseSettingsRow(state: GameState): string {
   } else {
     btn = `<button type="button" class="ghost" disabled>${esc(tl('timelapse.generate'))}</button>`;
   }
-  return `<div class="setting-row timelapse-row${ready ? '' : ' muted'}"><span>${esc(tl('timelapse.settingsRow'))}<small>${esc(hint)}</small></span>${btn}</div>`;
+  // 1.4.67: locked hint sits below Generate (not above / in the label).
+  return `<div class="setting-row timelapse-row${ready ? '' : ' muted'}"><span>${esc(tl('timelapse.settingsRow'))}</span><div class="timelapse-actions">${btn}<small class="timelapse-hint">${esc(hint)}</small></div></div>`;
 }
 
 /** 1.4.59 每日小目標 card at the top of 成長日誌. Empty until today's goals exist. */

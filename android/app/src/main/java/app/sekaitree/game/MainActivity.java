@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TreeBannerPlugin.class);
         registerPlugin(TreePushPlugin.class);
+        registerPlugin(TreeTimelapsePlugin.class);
         super.onCreate(savedInstanceState);
         // Opening the game starts the music bed without a tap.
         WebView webView = getBridge().getWebView();

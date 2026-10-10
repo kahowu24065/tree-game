@@ -1674,7 +1674,7 @@ const table: Record<string, string> = {
  "log.snapTitle": "成長日誌",
  "log.snapClose": "關閉",
  "postTip.eyebrow": "小提示",
- "postTip.title": "三樣好用嘅功能",
+ "postTip.title": "兩樣好用嘅功能",
  "postTip.weatherTitle": "撳左上角天氣卡",
  "postTip.weatherBody": "可以睇預報同官方警告，提前準備加固、疏水、澆水或者保暖。",
  "postTip.shareTitle": "每日分享樹卡（強烈建議）",
@@ -1687,7 +1687,7 @@ const table: Record<string, string> = {
  "timelapse.make": "生成成長片段",
  "timelapse.lockedBtn": "未有樹卡",
  "timelapse.working": "整緊縮時…",
- "timelapse.savedVideo": "縮時影片已下載。",
+ "timelapse.savedVideo": "成長短片已下載。",
  "timelapse.savedStrip": "縮時長圖已下載。",
  "timelapse.stripHint": "呢部機暫唔支援錄影片，已用長圖代替。",
  "timelapse.failed": "縮時整唔到，遲啲再試。",
@@ -1698,8 +1698,10 @@ const table: Record<string, string> = {
  "timelapse.generate": "生成",
  "timelapse.settingsReady": "已有 {n} 日樹卡，可由第一張串到最新。",
  "timelapse.settingsNeed": "先分享最少一張樹卡（預覽就會記入）。",
- "timelapse.settingsLocked": "青年樹階段解鎖。",
+ "timelapse.settingsLocked": "青年樹後解鎖",
  "postTip.clipTitle": "小樹成長片段",
- "postTip.clipBody": "每日記入嘅樹卡，到青年樹之後可以喺設定串成一段成長短片。"
+ "postTip.clipBody": "每日記入嘅樹卡，到青年樹之後可以喺設定串成一段成長短片。",
+ "postTip.title3": "三樣好用嘅功能",
+ "timelapse.savedMp4": "成長短片（MP4）已準備好分享。"
 };
 export default table;

@@ -4826,10 +4826,21 @@ html[lang='en'] .emerg > span {
 }
 
 
-/* 1.4.66 settings 「小樹成長片段」 */
-.setting-row.timelapse-row span small {
+/* 1.4.66/1.4.67 settings 「小樹成長片段」 — hint below Generate */
+.setting-row.timelapse-row {
+  align-items: flex-start;
+}
+.setting-row.timelapse-row .timelapse-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.setting-row.timelapse-row .timelapse-hint {
   display: block;
-  margin-top: 2px;
+  max-width: 11em;
+  text-align: right;
   font-size: 11px;
   color: #9aa39c;
   font-weight: 500;
