@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { sunForDate } from '../src/sun';
-import { creditsModal, DATA_SOURCES, SOUNDS } from '../src/credits';
+import { creditsModal, DATA_SOURCES } from '../src/credits';
 import { useLocale } from '../src/i18n';
 
 describe('1.4.50 no Open-Meteo, MET Norway via our server', () => {
@@ -21,18 +21,22 @@ describe('1.4.50 no Open-Meteo, MET Norway via our server', () => {
   });
 });
 
-describe('1.4.50 資料來源及授權', () => {
-  it('lists every source, every CREDITS.txt sound and a no-endorsement line in all languages', () => {
-    const credits = readFileSync('public/audio/CREDITS.txt', 'utf8');
-    for (const [, , url] of SOUNDS) expect(credits).toContain(url);
+describe('1.4.50 / 1.4.67 資料來源及授權', () => {
+  it('lists weather sources only — no hyperlinks, no audio/OSS sections', () => {
     for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
       useLocale(loc);
       const html = creditsModal();
-      expect(html).toContain('data.gov.tw/license');
       expect(html).toContain('MET Norway');
-      expect(html).toContain('three.js');
-      expect(html.match(/<li>/g)!.length).toBeGreaterThanOrEqual(DATA_SOURCES.length + SOUNDS.length + 3);
+      expect(html).not.toMatch(/<a\s/i);
+      expect(html).not.toContain('three.js');
+      expect(html).not.toContain('opengameart');
+      expect(html).not.toContain('CC0');
+      expect(html.match(/<li>/g)!.length).toBe(DATA_SOURCES.length);
     }
     useLocale('zh-HK');
+    const hk = creditsModal();
+    expect(hk).toContain('天氣、警告及地名資料');
+    expect(hk).not.toContain('音樂及音效');
+    expect(hk).not.toContain('開源軟件');
   });
 });
