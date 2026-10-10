@@ -1143,7 +1143,8 @@ body.tree-fx .coach {
   transform: translateY(calc(100% - 42px));
   transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, bottom 0.32s, height 0.32s;
   z-index: 3;
-  overflow: hidden;
+  /* 1.4.69: allow ::after to paint under the dock without growing content height. */
+  overflow: visible;
 }
 
 .sheet[data-state='closed'] {
@@ -1157,6 +1158,28 @@ body.tree-fx .coach {
   transform: translateY(0);
   background: #f4f7f2;
   border-radius: 22px 22px 0 0;
+}
+
+/* 1.4.69: paint white into the gap under the care dock / to screen bottom (visual only). */
+.sheet::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  top: 100%;
+  height: calc(var(--dock-h) - 14px);
+  background: rgba(244, 247, 242, 0.96);
+  pointer-events: none;
+  z-index: -1;
+}
+.sheet[data-state='open']::after {
+  /* Sheet bottom already at banner-h; fill the banner strip to the true screen bottom. */
+  height: var(--banner-h);
+  background: #f4f7f2;
+}
+.sheet[data-state='closed']::after {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .sheet.dragging {
@@ -1207,8 +1230,10 @@ body.tree-fx .coach {
   flex: 1;
   transition: opacity 0.2s;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px 14px calc(var(--dock-body) + 12px);
   overscroll-behavior: contain;
+  background: inherit;
 }
 
 .sheet-backdrop {
@@ -4942,4 +4967,14 @@ html[lang='en'] .emerg > span {
 }
 .vignette-day .primary {
   width: 100%;
+}
+
+
+/* 1.4.69: Care-tab 「今日小事」 opens the illustration modal */
+.card.event[data-action='open-vignette-day'] {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.card.event[data-action='open-vignette-day']:active {
+  transform: scale(0.985);
 }

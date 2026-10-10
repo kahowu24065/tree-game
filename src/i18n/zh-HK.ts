@@ -214,7 +214,7 @@ const table: Record<string, string> = {
  "ui.212": "用過喇",
  "ui.213": "有蟲，每晚 −{p0}",
  "ui.214": "預防",
- "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">今日{p1} · {p2}後結算</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}。</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\">\n      <p class=\"eyebrow\">今日小事</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">碳吸收量：約 {p19} CO₂／年。用心照顧過 {daysCared} 日。進度只係留喺呢部機。</p>\n  ",
+ "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">今日{p1} · {p2}後結算</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}。</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\" data-action=\"open-vignette-day\" role=\"button\" tabindex=\"0\">\n      <p class=\"eyebrow\">今日小事</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">碳吸收量：約 {p19} CO₂／年。用心照顧過 {daysCared} 日。進度只係留喺呢部機。</p>\n  ",
  "ui.216": "因素",
  "ui.217": "（流失）",
  "ui.218": "（毛毛雨）",

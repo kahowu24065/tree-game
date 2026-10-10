@@ -1349,7 +1349,7 @@ const table: Record<string, string> = {
  "ui.212": "Used",
  "ui.213": "Pests, −{p0} a night",
  "ui.214": "Prevent",
- "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">Today {p1} · settles in {p2}</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}.</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\">\n      <p class=\"eyebrow\">Little thing today</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">Carbon uptake: about {p19} CO₂/year. Cared for with love for {daysCared, plural, one {# day} other {# days}}. Progress is stored only on this device.</p>\n  ",
+ "ui.215": "\n    <article class=\"card event-card {p0}\">\n      <p class=\"eyebrow\">Today {p1} · settles in {p2}</p>\n      <h2>{p3}{p4}</h2>\n      <p>{p5}.</p>\n      {p6}\n      {soon}\n      {emerg}\n    </article>\n    {p9}\n    <div class=\"actions\">\n      {p10}\n      {p11}\n      {p12}\n      {p13}\n    </div>\n    {p14}\n    {p15}\n    {p16}\n    <article class=\"card event\" data-action=\"open-vignette-day\" role=\"button\" tabindex=\"0\">\n      <p class=\"eyebrow\">Little thing today</p>\n      <h2>{p17}</h2>\n      <p>{p18}</p>\n    </article>\n    <p class=\"fine\">Carbon uptake: about {p19} CO₂/year. Cared for with love for {daysCared, plural, one {# day} other {# days}}. Progress is stored only on this device.</p>\n  ",
  "ui.216": " factor",
  "ui.217": " (loss)",
  "ui.218": " (drizzle)",
