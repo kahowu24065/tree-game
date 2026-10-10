@@ -599,6 +599,12 @@ export function renderChrome(view: View): void {
   if (sheetShareIc && !sheetShareIc.innerHTML) sheetShareIc.innerHTML = icon('sparkle');
   const sheetShareLab = document.querySelector('#sheet-share .sheet-share-lab');
   if (sheetShareLab) sheetShareLab.textContent = tl('share.button');
+  const sheetShare = document.getElementById('sheet-share');
+  if (sheetShare) {
+    // 1.4.67: glow until today's front shot is filed in 成長日誌.
+    sheetShare.classList.toggle('needs-snap', !logPhotoFor(view.today));
+    sheetShare.setAttribute('aria-label', tl('share.button'));
+  }
   const close = document.getElementById('drawer-close');
   if (close && !close.innerHTML) close.innerHTML = icon('close');
 

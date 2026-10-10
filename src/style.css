@@ -4037,6 +4037,32 @@ body.sheet-open .animal-toast.show {
 .sheet-share-lab {
   white-space: nowrap;
 }
+.sheet-share.needs-snap {
+  color: #1a5c3a;
+  background: rgba(120, 220, 160, 0.55);
+  box-shadow:
+    0 0 0 1.5px rgba(60, 180, 110, 0.65),
+    0 0 12px rgba(80, 210, 130, 0.55),
+    0 1px 4px rgba(0, 0, 0, 0.12);
+  animation: sheet-share-glow 1.6s ease-in-out infinite;
+}
+@keyframes sheet-share-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1.5px rgba(60, 180, 110, 0.55),
+      0 0 10px rgba(80, 210, 130, 0.4),
+      0 1px 4px rgba(0, 0, 0, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(40, 170, 100, 0.85),
+      0 0 18px rgba(70, 230, 140, 0.75),
+      0 1px 4px rgba(0, 0, 0, 0.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-share.needs-snap { animation: none; }
+}
 .sheet-gear svg {
   width: 15px;
   height: 15px;
