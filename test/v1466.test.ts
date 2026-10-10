@@ -77,14 +77,17 @@ describe('settings sheet', () => {
 });
 
 describe('log photos from share preview', () => {
-  it('saves at preview time with toast copy, and prunes to a capped window', () => {
+  it('saves overview front shot at preview time with toast copy, and prunes to a capped window', () => {
     const main = fs.readFileSync('src/main.ts', 'utf8');
-    expect(main).toMatch(/rememberLogPhoto\(today\(\),\s*card\)/);
-    expect(main).toContain("tl('log.snapSaved')");
+    expect(main).toContain('captureOverviewView');
+    expect(main).toMatch(/rememberLogPhoto\(today\(\),\s*logCard\)/);
+    expect(main).toContain("tl('log.snapFront')");
     // Save happens in shareTreeCard (preview), not only in sendPendingShareCard.
     const shareFn = main.slice(main.indexOf('async function shareTreeCard'), main.indexOf('async function sendPendingShareCard'));
     expect(shareFn).toContain('rememberLogPhoto');
-    expect(shareFn).toContain('log.snapSaved');
+    expect(shareFn).toContain('log.snapFront');
+    expect(shareFn).toContain('captureView()');
+    expect(shareFn).toContain('captureOverviewView()');
     const sendFn = main.slice(main.indexOf('async function sendPendingShareCard'), main.indexOf('function noteDailyGoal'));
     expect(sendFn).not.toContain('rememberLogPhoto');
     const photos = fs.readFileSync('src/logPhotos.ts', 'utf8');
@@ -94,9 +97,9 @@ describe('log photos from share preview', () => {
     expect(ui).toContain('log-snap');
     expect(ui).toContain('has-photo');
     for (const loc of ['zh-HK', 'zh-TW', 'zh-CN', 'en'] as const) {
-      expect(tables()[loc]['log.snapSaved']).toBeTruthy();
+      expect(tables()[loc]['log.snapFront']).toBeTruthy();
     }
-    expect(tables()['zh-HK']['log.snapSaved']).toContain('成長日誌');
+    expect(tables()['zh-HK']['log.snapFront']).toContain('正面照');
   });
 });
 
