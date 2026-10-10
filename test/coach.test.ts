@@ -71,14 +71,15 @@ describe('新手引導', () => {
 });
 
 describe('成長日誌月曆', () => {
-  it('未揀日子唔顯示日誌，今日用綠點標示', () => {
+  it('未揀日子唔顯示日誌，今日按健康標示', () => {
     const html = logCalendarHtml(
       [{ date: '2026-09-28', text: '澆咗水' }],
       '2026-09-29',
       '2026-09',
       '',
+      70,
     );
-    expect(html).toContain('class="cal-day flat today"');
+    expect(html).toContain('class="cal-day up today"');
     expect(html).toContain('aria-current="date"');
     expect(html).toContain('data-cal="2026-09-29"');
     expect(html).not.toContain('cal-day has');
@@ -98,21 +99,23 @@ describe('成長日誌月曆', () => {
     expect(html).not.toContain('呢日未有紀錄');
   });
 
-  it('健康加分或維持 100 分淺綠色，扣分淺紅色，冇加減又未到 100 淺白色', () => {
+  it('健康日淺綠色、不健康淺紅色；現代結算文「健康 85」都會標', () => {
     const log = [
       { date: '2026-09-27', text: '健康 80→90', kind: 'settle' as const },
       { date: '2026-09-28', text: '健康 100→100', kind: 'settle' as const },
-      { date: '2026-09-26', text: '健康 70→60', kind: 'settle' as const },
-      { date: '2026-09-25', text: '健康 55→55', kind: 'settle' as const },
+      { date: '2026-09-26', text: '健康 70→40', kind: 'settle' as const },
+      { date: '2026-09-25', text: '今日：健康 +5、水分 −10。天氣：天晴，天氣分 ±0；健康 85，良好 ×1.2。', kind: 'settle' as const },
+      { date: '2026-09-24', text: 'Today: health −8, moisture ±0. weather: Cloudy, weather score ±0; health 42, struggling ×0.5.', kind: 'settle' as const },
     ];
     const html = logCalendarHtml(log, '2026-09-29', '2026-09', '', 70);
     expect(html).toContain('class="cal-day up" data-cal="2026-09-27"');
     expect(html).toContain('class="cal-day up" data-cal="2026-09-28"');
     expect(html).toContain('class="cal-day down" data-cal="2026-09-26"');
-    expect(html).toContain('class="cal-day flat" data-cal="2026-09-25"');
-    expect(html).toContain('class="cal-day flat today" data-cal="2026-09-29"');
-    const full = logCalendarHtml(log, '2026-09-29', '2026-09', '', 100);
-    expect(full).toContain('class="cal-day up today" data-cal="2026-09-29"');
+    expect(html).toContain('class="cal-day up" data-cal="2026-09-25"');
+    expect(html).toContain('class="cal-day down" data-cal="2026-09-24"');
+    expect(html).toContain('class="cal-day up today" data-cal="2026-09-29"');
+    const low = logCalendarHtml(log, '2026-09-29', '2026-09', '', 30);
+    expect(low).toContain('class="cal-day down today" data-cal="2026-09-29"');
   });
 });
 

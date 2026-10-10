@@ -740,41 +740,58 @@ function beginCoach(): boolean {
   return due;
 }
 
-/** 1.4.58 welcome tour (page 0-based). Closing it any way counts as seen. */
+/** 1.4.58 welcome tour (page 0-based). Closing it any way counts as seen. Page 2 = 睇天氣卡. */
 let tourPage: number | null = null;
+/** Highest tour page index reached this session (for weather-tip dedupe). */
+let tourMaxPage = 0;
 function openTour(page = 0): void {
   tourPage = page;
+  tourMaxPage = Math.max(tourMaxPage, page);
   openModal(tourModal(page), 'tour-card');
 }
 function endTour(): void {
-  tourPage = null;
+  const pageAtEnd = tourPage ?? 0;
+  tourMaxPage = Math.max(tourMaxPage, pageAtEnd);
+  // Tour page 2 (step 3) already tips the weather card — don't repeat it in the post tip.
+  const sawWeather = tourMaxPage >= 2;
   const firstTime = !coach.tour;
+  tourPage = null;
   const next = markTour(coach);
   if (next !== coach) {
     coach = next;
     saveCoach(coach);
   }
   closeModal();
-  // 1.4.66: one-time tip after the first welcome tour (not on 設定 → 再睇一次).
-  if (firstTime && !coach.postTip) queuePostTourTip();
+  // 1.4.66/1.4.67: first-time tip once; 設定 → 再睇一次 also shows share + 成長片段.
+  if (firstTime && !coach.postTip) queuePostTourTip({ includeWeather: !sawWeather, markDone: true });
+  else if (!firstTime) queuePostTourTip({ includeWeather: false, markDone: false });
+  tourMaxPage = 0;
 }
 
 let postTourTipTimer = 0;
-function queuePostTourTip(): void {
-  if (coach.postTip || postTourTipTimer) return;
+let postTourTipMarkDone = true;
+function queuePostTourTip(opts: { includeWeather?: boolean; markDone?: boolean } = {}): void {
+  const includeWeather = Boolean(opts.includeWeather);
+  const markDone = opts.markDone !== false;
+  if (markDone && coach.postTip) return;
+  if (postTourTipTimer) window.clearTimeout(postTourTipTimer);
+  postTourTipMarkDone = markDone;
   postTourTipTimer = window.setTimeout(() => {
     postTourTipTimer = 0;
     const modal = document.getElementById('modal');
-    if (coach.postTip || opening || (modal && !modal.hidden)) return;
-    openModal(postTourTipModal(), 'post-tour-tip-card');
+    if (opening || (modal && !modal.hidden)) return;
+    if (markDone && coach.postTip) return;
+    openModal(postTourTipModal({ includeWeather }), 'post-tour-tip-card');
   }, 420);
 }
 
 function finishPostTourTip(): void {
-  const next = markPostTip(coach);
-  if (next !== coach) {
-    coach = next;
-    saveCoach(coach);
+  if (postTourTipMarkDone) {
+    const next = markPostTip(coach);
+    if (next !== coach) {
+      coach = next;
+      saveCoach(coach);
+    }
   }
   closeModal();
 }
@@ -1920,9 +1937,11 @@ async function makeTimelapse(): Promise<void> {
   try {
     const result = await buildTimelapse();
     const how = await shareTimelapse(result);
-    if (how === 'downloaded') toast(result.kind === 'video' ? tl('timelapse.savedVideo') : tl('timelapse.savedStrip'));
-    else if (how === 'failed') toast(tl('timelapse.failed'));
+    if (how === 'downloaded') {
+      toast(result.kind === 'strip' ? tl('timelapse.savedStrip') : tl('timelapse.savedVideo'));
+    } else if (how === 'failed') toast(tl('timelapse.failed'));
     else if (result.kind === 'strip') toast(tl('timelapse.stripHint'));
+    else if (result.ext === 'mp4') toast(tl('timelapse.savedMp4'));
   } catch {
     toast(tl('timelapse.failed'));
   }
@@ -2181,6 +2200,7 @@ function doAction(action: string, target: HTMLElement): void {
     case 'tour-next':
       if (tourPage === null) return;
       tourPage = Math.min(TOUR_PAGES - 1, tourPage + 1);
+      tourMaxPage = Math.max(tourMaxPage, tourPage);
       updateModal(tourModal(tourPage));
       return;
     case 'tour-skip':

@@ -71,5 +71,6 @@ public class CloudKVPlugin: CAPPlugin, CAPBridgedPlugin {
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(CloudKVPlugin())
+        bridge?.registerPluginInstance(TreeTimelapsePlugin())
     }
 }

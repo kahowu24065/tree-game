@@ -1789,7 +1789,7 @@ const table: Record<string, string> = {
  "log.snapTitle": "Growth log",
  "log.snapClose": "Close",
  "postTip.eyebrow": "Quick tip",
- "postTip.title": "Three handy things",
+ "postTip.title": "Two handy things",
  "postTip.weatherTitle": "Tap the top-left weather card",
  "postTip.weatherBody": "See the forecast and official warnings so you can brace, drain, water or warm in time.",
  "postTip.shareTitle": "Share a tree card every day (highly recommended)",
@@ -1802,7 +1802,7 @@ const table: Record<string, string> = {
  "timelapse.make": "Generate clip",
  "timelapse.lockedBtn": "No cards yet",
  "timelapse.working": "Making timelapse…",
- "timelapse.savedVideo": "Timelapse video downloaded.",
+ "timelapse.savedVideo": "Growth clip downloaded.",
  "timelapse.savedStrip": "Timelapse strip downloaded.",
  "timelapse.stripHint": "This device can’t record video yet — shared a photo strip instead.",
  "timelapse.failed": "Couldn’t make the timelapse. Try again later.",
@@ -1813,8 +1813,10 @@ const table: Record<string, string> = {
  "timelapse.generate": "Generate",
  "timelapse.settingsReady": "{n} cards saved — stitch from the first to the latest.",
  "timelapse.settingsNeed": "Share at least one tree card first (preview saves it).",
- "timelapse.settingsLocked": "Unlocks at the young-tree stage.",
+ "timelapse.settingsLocked": "Unlocks after young tree",
  "postTip.clipTitle": "Tree growth clip",
- "postTip.clipBody": "Daily saved cards can later be stitched into a growth video — unlocks at young tree, in Settings."
+ "postTip.clipBody": "Daily saved cards can later be stitched into a growth video — unlocks at young tree, in Settings.",
+ "postTip.title3": "Three handy things",
+ "timelapse.savedMp4": "Growth clip (MP4) ready to share."
 };
 export default table;
