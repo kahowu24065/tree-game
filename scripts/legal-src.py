@@ -132,7 +132,7 @@ EN = f'''
 SUPPORT_ZH = f'''<p>多謝你玩「世界之樹」！如有問題、建議或發現錯誤，請電郵 <a href="mailto:{MAIL}">{MAIL}</a>，註明裝置型號、系統版本及應用版本（設定頁最底），我們通常會在 3 個工作天內回覆。</p>
 <h3>常見問題</h3>
 <ul>
-<li><b>天氣同我見到嘅唔同？</b>本遊戲整理官方公開資料，可能有延遲；惡劣天氣請以當地氣象部門為準。</li>
+<li><b>天氣同我見到嘅唔同？</b>本遊戲顯示官方氣象機構嘅公開資料，擷取、快取或轉換時可能有延遲或出入；惡劣天氣請留意最新公布並注意安全。</li>
 <li><b>點樣搬存檔去新手機？</b>iPhone 會自動用你自己嘅 iCloud 備份，Android 會用 Google 備份，換同一類手機或者重裝會自動恢復。iPhone 同 Android 之間轉機：設定 › 備份存檔 複製存檔碼，喺新裝置 設定 › 用存檔碼還原 貼上。</li>
 <li><b>收唔到通知？</b>確認系統設定已允許通知，並喺遊戲 設定 › 提醒通知 開啟。</li>
 <li><b>恢復購買／取消訂閱？</b>遊戲 設定 › 世界之樹 Premium › 恢復購買；取消請到 App Store 或 Google Play 帳戶的訂閱設定。退款由 Apple／Google 處理。</li>
@@ -141,7 +141,7 @@ SUPPORT_ZH = f'''<p>多謝你玩「世界之樹」！如有問題、建議或發
 SUPPORT_EN = f'''<p>Thanks for playing World Tree! For questions, suggestions or bugs, email <a href="mailto:{MAIL}">{MAIL}</a> with your device model, OS version and app version (bottom of Settings). We usually reply within 3 working days.</p>
 <h3>FAQ</h3>
 <ul>
-<li><b>The weather differs from what I see?</b> The game compiles official public data and may lag; in severe weather follow your local weather service.</li>
+<li><b>The weather differs from what I see?</b> The game shows public data from official meteorological agencies; fetching, caching or converting those feeds can lag or differ. In severe weather, follow the latest announcements and stay safe.</li>
 <li><b>Move my save to a new phone?</b> iPhone backs it up automatically to your own iCloud and Android to your Google backup, so a new phone of the same kind or a reinstall restores it. Between iPhone and Android: Settings › Back up save, copy the code, then Settings › Restore from code on the new device.</li>
 <li><b>No notifications?</b> Allow notifications in system settings and turn on Settings › Notifications in the game.</li>
 <li><b>Restore purchases / cancel?</b> Settings › World Tree Premium › Restore purchases; cancel in your App Store or Google Play subscription settings. Refunds are handled by Apple / Google.</li>

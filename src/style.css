@@ -1131,12 +1131,13 @@ body.tree-fx .coach {
 .sheet {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--dock-h) - 14px);
+  /* 1.4.67: sit lower so white covers green ground under the peek / open panel. */
+  bottom: calc(var(--dock-h) - 36px);
   width: min(560px, calc(100vw - 16px));
-  height: min(62vh, 560px);
+  height: min(68vh, 620px);
   margin-left: calc(min(560px, calc(100vw - 16px)) / -2);
   border-radius: 22px 22px 0 0;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.92);
   display: flex;
   flex-direction: column;
   transform: translateY(calc(100% - 42px));
@@ -1146,13 +1147,16 @@ body.tree-fx .coach {
 }
 
 .sheet[data-state='closed'] {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .sheet[data-state='open'] {
-  bottom: var(--banner-h);
-  height: calc(min(62vh, 560px) + var(--dock-body) - 14px);
+  /* Extend to the true bottom so no island green peeks under the white panel. */
+  bottom: 0;
+  height: calc(min(68vh, 620px) + var(--dock-h));
   transform: translateY(0);
+  background: #f4f7f2;
+  border-radius: 22px 22px 0 0;
 }
 
 .sheet.dragging {
@@ -1203,7 +1207,7 @@ body.tree-fx .coach {
   flex: 1;
   transition: opacity 0.2s;
   overflow-y: auto;
-  padding: 4px 14px calc(var(--dock-body) + 12px);
+  padding: 4px 14px calc(var(--dock-h) + 16px);
   overscroll-behavior: contain;
 }
 
