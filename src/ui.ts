@@ -22,6 +22,7 @@ import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBirdName, nestBuild
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import { logPhotoDates, logPhotoFor } from './logPhotos';
 import { TIMELAPSE_MIN_FRAMES, timelapseDates, timelapseUnlocked } from './timelapse';
+import { vignetteArtHtml } from './vignetteArt';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -562,6 +563,15 @@ export function postTourTipModal(opts: { includeWeather?: boolean } = {}): strin
     + `<h2>${esc(title)}</h2>`
     + `<ul class="post-tour-list">${items.join('')}</ul>`
     + `<button type="button" class="primary" data-action="post-tip-done">${esc(tl('postTip.ok'))}</button></div>`;
+}
+
+
+/** 1.4.67: once-a-day 「今日小事」 illustration card after HUD is ready. */
+export function vignetteDayModal(eventId: string, title: string, text: string): string {
+  return `<div class="vignette-day"><p class="eyebrow">${esc(tl('vigDay.eyebrow'))}</p>`
+    + vignetteArtHtml(eventId)
+    + `<h2>${esc(title)}</h2><p class="vignette-day-text">${esc(text)}</p>`
+    + `<button type="button" class="primary" data-action="vig-day-done">${esc(tl('vigDay.ok'))}</button></div>`;
 }
 
 /** 1.4.30 wordless swipe bar above the growth log: two dots show where you are; swipe on the bar to switch. */

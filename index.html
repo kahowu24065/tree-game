@@ -12,6 +12,7 @@
       html.preplant .hud,
       html.preplant #dev-root,
       html.preplant .ad-banner { opacity: 0; pointer-events: none; }
+      html.boot-block #scene, html.boot-block .hud, html.preplant #scene, html.preloading #scene { pointer-events: none !important; }
       /* 1.4.33 preload screen: same sky blue as the native splash (Android drawable/splash, iOS LaunchScreen). */
       html.preloading, html.preloading body { background: #bee2f7; }
       #preload { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; background: #bee2f7; transition: opacity 0.45s ease; }
@@ -46,7 +47,7 @@
     <script>
       try {
         var root = document.documentElement;
-        root.classList.add('preplant', 'preloading');
+        root.classList.add('preplant', 'preloading', 'boot-block');
         var cap = window.Capacitor;
         var plat = cap && cap.getPlatform ? cap.getPlatform() : 'web';
         root.classList.add('plat-' + plat);

@@ -1750,6 +1750,8 @@ const table: Record<string, string> = {
  "postTip.clipTitle": "Tree growth clip",
  "postTip.clipBody": "Daily saved cards can later be stitched into a growth video — unlocks at young tree, in Settings.",
  "postTip.title3": "Three handy things",
- "timelapse.savedMp4": "Growth clip (MP4) ready to share."
+ "timelapse.savedMp4": "Growth clip (MP4) ready to share.",
+ "vigDay.eyebrow": "Today's little thing",
+ "vigDay.ok": "Nice"
 };
 export default table;

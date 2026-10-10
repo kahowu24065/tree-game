@@ -1702,6 +1702,8 @@ const table: Record<string, string> = {
  "postTip.clipTitle": "小樹成長片段",
  "postTip.clipBody": "每日記入的樹卡，到青年樹之後可以在設定串成一段成長短片。",
  "postTip.title3": "三個好用的功能",
- "timelapse.savedMp4": "成長短片（MP4）已準備好分享。"
+ "timelapse.savedMp4": "成長短片（MP4）已準備好分享。",
+ "vigDay.eyebrow": "今日小事",
+ "vigDay.ok": "好的"
 };
 export default table;

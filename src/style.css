@@ -140,6 +140,20 @@ html.preplant .ad-banner {
   pointer-events: none;
 }
 
+/* 1.4.67: block all playfield taps until HUD fade-in finishes (opacity can lag pointer-events). */
+html.boot-block #scene,
+html.boot-block .hud,
+html.boot-block #drawer,
+html.boot-block #drawer-backdrop,
+html.boot-block #wx-page,
+html.boot-block #wx-backdrop,
+html.boot-block #dev-root,
+html.boot-block .ad-banner,
+html.preplant #scene,
+html.preloading #scene {
+  pointer-events: none !important;
+}
+
 #dev-root,
 .animal-markers,
 .ad-banner {
@@ -4853,4 +4867,48 @@ html[lang='en'] .emerg > span {
 .setting-row.timelapse-row button.is-locked {
   pointer-events: auto;
   cursor: pointer;
+}
+
+
+/* 1.4.67 daily 「今日小事」 illustration card */
+.modal-card.vignette-day-card {
+  max-width: min(420px, calc(100vw - 28px));
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  background: linear-gradient(165deg, #f7faf4 0%, #eef5ea 55%, #e7f0e8 100%);
+  box-shadow: 0 18px 48px rgba(35, 53, 44, 0.18);
+}
+.vignette-day .eyebrow {
+  margin: 0 0 10px;
+  letter-spacing: 0.08em;
+  color: #7a9080;
+}
+.vignette-art {
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 0 0 14px;
+  background: #eaf3e6;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.65), 0 8px 20px rgba(35, 53, 44, 0.08);
+  aspect-ratio: 540 / 360;
+}
+.vignette-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+}
+.vignette-day h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  color: #2a3d32;
+  font-weight: 700;
+}
+.vignette-day-text {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #4a5c52;
+}
+.vignette-day .primary {
+  width: 100%;
 }

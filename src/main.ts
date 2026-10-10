@@ -100,6 +100,7 @@ import {
   lessonModal,
   tourModal,
   postTourTipModal,
+  vignetteDayModal,
   TOUR_PAGES,
   stormModal,
   windExplainerModal,
@@ -160,7 +161,7 @@ import { HEADSUP_KEY, headsUpEnabled } from './headsUp';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
 import { LOCALES, getHeightUnit, getLocale, isHeightUnit, loadHeightUnit, saveHeightUnit, saveLocale, switchLocale, t as tl, tName, useHeightUnit, type HeightUnit, type Locale } from './i18n';
-import { kvSet } from './native/kv';
+import { kvGet, kvSet } from './native/kv';
 import { bootCloud, cloudDiagLines, flushCloud, resumeCloud, startCloud, type CloudSave } from './native/cloud';
 
 const isLocaleId = (x: string): x is Locale => (LOCALES as readonly string[]).includes(x);
@@ -1384,13 +1385,65 @@ function banner(on: boolean, delayMs = 0): void {
 }
 const AFTER_OPENING_MS = 1000;
 
+/** 1.4.67: HUD opacity fade is 2.4s — keep boot-block until it finishes so faded UI is not tappable. */
+const HUD_FADE_MS = 2400;
+const VIG_DAY_KEY = 'sekai-tree-vig-day';
+
+function vigDaySeen(): string {
+  try {
+    return kvGet(VIG_DAY_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function markVigDay(date: string): void {
+  try {
+    kvSet(VIG_DAY_KEY, date);
+  } catch {
+    /* ignore */
+  }
+}
+
+let vigDayTimer = 0;
+function queueDailyVignetteCard(): void {
+  if (vigDayTimer) window.clearTimeout(vigDayTimer);
+  const tryShow = () => {
+    vigDayTimer = 0;
+    if (!state.started || state.over) return;
+    const d = today();
+    if (vigDaySeen() === d) return;
+    if (opening || coachOpen(coach) || tourPage !== null) {
+      vigDayTimer = window.setTimeout(tryShow, 600);
+      return;
+    }
+    const modal = document.getElementById('modal');
+    if (modal && !modal.hidden) {
+      vigDayTimer = window.setTimeout(tryShow, 600);
+      return;
+    }
+    const ev = eventTitle(state);
+    openModal(vignetteDayModal(state.dailyEventId || 'quiet', ev.title, ev.text), 'vignette-day-card');
+  };
+  vigDayTimer = window.setTimeout(tryShow, 280);
+}
+
+function unlockHudInput(): void {
+  document.documentElement.classList.remove('boot-block');
+  document.documentElement.classList.add('hud-ready');
+  queueDailyVignetteCard();
+}
+
 function finishOpening(): void {
   opening = false;
   noteIntro('end');
   document.documentElement.classList.remove('preplant');
   document.documentElement.classList.add('hud-in');
+  // Keep boot-block through the HUD fade so controls are not tappable while still invisible.
+  document.documentElement.classList.add('boot-block');
   banner(true, AFTER_OPENING_MS);
   window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
+  window.setTimeout(unlockHudInput, reducedMotion ? 0 : HUD_FADE_MS);
   flushNestToast();
   const report = deferredReport;
   deferredReport = null;
@@ -1401,8 +1454,8 @@ function finishOpening(): void {
 /** Existing tree, at boot: keep the interface hidden (and night cards waiting) while the preload screen is up. */
 function holdOpening(): void {
   opening = true;
-  document.documentElement.classList.add('preplant');
-  document.documentElement.classList.remove('hud-in');
+  document.documentElement.classList.add('preplant', 'boot-block');
+  document.documentElement.classList.remove('hud-in', 'hud-ready');
   banner(false);
 }
 
@@ -2111,6 +2164,10 @@ function doAction(action: string, target: HTMLElement): void {
       return;
     case 'post-tip-done':
       finishPostTourTip();
+      return;
+    case 'vig-day-done':
+      markVigDay(today());
+      closeModal();
       return;
     case 'tour-replay':
       openTour(0);
@@ -3136,7 +3193,11 @@ async function preloadThenOpen(): Promise<void> {
   // 1.4.34: put the camera on the opening vista first, so the fade reveals the shot the glide starts from
   // (the hold phase of the intro covers the fade), instead of fading to one view and cutting to another.
   if (startedAtBoot && state.started && opening) beginOpening();
-  else if (!startedAtBoot) window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
+  else {
+    window.setTimeout(releaseAudioExtras, AFTER_OPENING_MS);
+    // No opening glide (fresh install / pick screen): unlock after preload fades.
+    window.setTimeout(unlockHudInput, reducedMotion ? 120 : 520);
+  }
   await hidePreload();
 }
 void preloadThenOpen();
