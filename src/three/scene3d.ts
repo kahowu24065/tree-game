@@ -2490,11 +2490,21 @@ export class Scene3D {
   }
 
   /**
-   * 1.4.59 / 1.4.67 分享樹卡: render at the card size using the fixed HUD overview camera
-   * (same height/distance as when the interface first appears — not the player's zoom/orbit),
-   * then restore the live canvas before the browser paints.
+   * 1.4.59 分享樹卡 preview: the view as the player sees it now, rendered at the card size.
+   * (same task, so no preserveDrawingBuffer); canvas size and camera are restored before paint.
    */
   captureView(w = 1200, h = 950): HTMLCanvasElement | null {
+    return this.captureAt(w, h, false);
+  }
+
+  /**
+   * 1.4.67 成長日誌 / timelapse: fixed HUD overview (game-open height/distance), not the player's orbit.
+   */
+  captureOverviewView(w = 1200, h = 950): HTMLCanvasElement | null {
+    return this.captureAt(w, h, true);
+  }
+
+  private captureAt(w: number, h: number, overview: boolean): HTMLCanvasElement | null {
     const r = this.renderer;
     const cam = this.camera;
     const size = r.getSize(new THREE.Vector2());
@@ -2514,21 +2524,22 @@ export class Scene3D {
       cam.aspect = w / h;
       cam.fov = cam.aspect < 0.8 ? 46 : 36;
       cam.clearViewOffset();
-      // Fixed overview pose: zoom 1, base azimuth / elevation, no pan / follow / idle spin.
-      const target = new THREE.Vector3(0, this.camTargetY, 0);
-      const dist = Math.max(0.3, this.camDist);
-      const az = BASE_AZIMUTH;
-      const el = ELEVATION;
-      cam.position.set(
-        target.x + Math.sin(az) * Math.cos(el) * dist,
-        target.y + Math.sin(el) * dist,
-        target.z + Math.cos(az) * Math.cos(el) * dist,
-      );
-      cam.lookAt(target);
-      cam.near = clamp(dist * 0.02, 0.005, 2);
-      cam.far = Math.max(900, dist * 3 + 500);
-      this.sky.position.copy(cam.position);
-      this.sea.position.set(cam.position.x, -22 * this.islandK, cam.position.z);
+      if (overview) {
+        const target = new THREE.Vector3(0, this.camTargetY, 0);
+        const dist = Math.max(0.3, this.camDist);
+        const az = BASE_AZIMUTH;
+        const el = ELEVATION;
+        cam.position.set(
+          target.x + Math.sin(az) * Math.cos(el) * dist,
+          target.y + Math.sin(el) * dist,
+          target.z + Math.cos(az) * Math.cos(el) * dist,
+        );
+        cam.lookAt(target);
+        cam.near = clamp(dist * 0.02, 0.005, 2);
+        cam.far = Math.max(900, dist * 3 + 500);
+        this.sky.position.copy(cam.position);
+        this.sea.position.set(cam.position.x, -22 * this.islandK, cam.position.z);
+      }
       cam.updateProjectionMatrix();
       r.render(this.scene, cam);
       const cv = document.createElement('canvas');

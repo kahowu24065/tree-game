@@ -1771,6 +1771,7 @@ const table: Record<string, string> = {
  "postTip.title3": "三樣好用嘅功能",
  "timelapse.savedMp4": "成長短片（MP4）已準備好分享。",
  "vigDay.eyebrow": "今日小事",
- "vigDay.ok": "好呀"
+ "vigDay.ok": "好呀",
+ "log.snapFront": "已同時存入一張小樹正面照入成長日誌"
 };
 export default table;

@@ -2012,16 +2012,18 @@ async function shareTreeCard(): Promise<void> {
       .map((w) => tl('share.weather', { name: weatherTrackCopy(w.id).name, n: w.n }));
     const vig = eventTitle(state);
     const data = { treeName: state.treeName, species: speciesDef(state.species).name, age: tl('ui.073', { p0: shownAge(state), p1: '' }), height: formatHeight(state.heightCm), weather, vignette: vig };
+    // Preview / share: player's current camera. Growth-log + timelapse: fixed HUD overview (正面照).
     const card = await drawShareCard(data, scene3d?.captureView() ?? null);
     pendingShareCard = card;
     playTok();
     playShareFlash();
     openModal(sharePreviewModal(card.toDataURL('image/png')), 'share-preview-card');
-    // 1.4.66: as soon as the preview appears, file the day's snap in 成長日誌 (toast above modal, z-index 70)
-    // and complete the 「分享樹卡」 daily goal when it is one of today's.
-    if (rememberLogPhoto(today(), card)) {
+    // 1.4.66/1.4.67: file a second card with the overview framing into 成長日誌 (toast above modal).
+    const front = scene3d?.captureOverviewView() ?? null;
+    const logCard = front ? await drawShareCard(data, front) : card;
+    if (rememberLogPhoto(today(), logCard)) {
       invalidateSheet();
-      toast(tl('log.snapSaved'));
+      toast(tl('log.snapFront'));
     }
     bumpShareStreak(state, today());
     noteDailyGoal('share');
