@@ -346,7 +346,7 @@ const table: Record<string, string> = {
  "content.019": "The neighbours' compost",
  "content.020": "A neighbour from downstairs gave you a bag of compost.",
  "content.021": "+2 health",
- "content.022": "A bird drops by",
+ "content.022": "The birds are here",
  "content.023": "A little bird landed and flew off again; the treetop feels a bit livelier.",
  "content.024": "-10 moisture",
  "content.025": "Dry wind",
