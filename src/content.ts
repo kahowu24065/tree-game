@@ -1,5 +1,5 @@
 import type { GameState, LogReward } from './types';
-import { clamp, hashString } from './util';
+import { clamp, hashString, mulberry32 } from './util';
 
 import { STAGE_NAMES, STAGE_SHARES } from './data/species';
 import { t as tl, live } from './i18n';
@@ -144,7 +144,8 @@ export const EVENTS: DailyEvent[] = live(() => ([
     title: tl('content.034'),
     text: tl('content.035'),
     apply: (s) => {
-      if (!s.pest.active) s.pest.lowNDays = Math.max(s.pest.lowNDays, 1);
+      // 1.4.70: vignette only picked when pests already active — slight extra stress, no new outbreak.
+      if (s.pest.active) s.health = Math.max(0, s.health - 2);
     },
   },
   {
@@ -170,9 +171,45 @@ export const EVENTS: DailyEvent[] = live(() => ([
   },
 ]));
 
-export function eventForDate(date: string): DailyEvent {
-  const idx = hashString(date) % EVENTS.length;
-  return EVENTS[idx] ?? EVENTS[0]!;
+/** 1.4.70: which daily vignettes fit today's weather / tree state. */
+export function dailyEventAllowed(
+  id: string,
+  ctx: { pestActive: boolean; rainy: boolean },
+): boolean {
+  if (id === 'aphids') return ctx.pestActive;
+  // Rainy day: no dry wind, sunbeams, morning mist, outdoor drawing, or napping cat.
+  if (ctx.rainy && (id === 'sunbeam' || id === 'drywind' || id === 'mist' || id === 'drawing' || id === 'cat')) {
+    return false;
+  }
+  return true;
+}
+
+export type DailyEventPickCtx = {
+  date: string;
+  treeName: string;
+  pestActive: boolean;
+  rainy: boolean;
+};
+
+/**
+ * 1.4.70: random per player (treeName) per day, then re-pick from the allowed set.
+ * Fallback pool if everything is filtered: quiet / birds / compost / leaves.
+ */
+export function pickDailyEvent(ctx: DailyEventPickCtx): DailyEvent {
+  const allowed = EVENTS.filter((e) => dailyEventAllowed(e.id, ctx));
+  const pool =
+    allowed.length > 0
+      ? allowed
+      : EVENTS.filter((e) => e.id === 'quiet' || e.id === 'birds' || e.id === 'compost' || e.id === 'leaves');
+  const safe = pool.length > 0 ? pool : [EVENTS.find((e) => e.id === 'quiet')!];
+  const rng = mulberry32(hashString(`${ctx.date}|${ctx.treeName}|vignette`));
+  const idx = Math.floor(rng() * safe.length) % safe.length;
+  return safe[idx]!;
+}
+
+/** Deterministic date-only pick (no weather/pest filters) — prefer pickDailyEvent. */
+export function eventForDate(date: string, treeName = ''): DailyEvent {
+  return pickDailyEvent({ date, treeName, pestActive: false, rainy: false });
 }
 
 export function eventById(id: string): DailyEvent {

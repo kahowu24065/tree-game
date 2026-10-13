@@ -346,7 +346,7 @@ const table: Record<string, string> = {
  "content.019": "鄰居的堆肥",
  "content.020": "樓下鄰居分了一袋堆肥給你。",
  "content.021": "+2 健康度",
- "content.022": "小鳥來訪",
+ "content.022": "雀仔都來啦",
  "content.023": "有小鳥停下又飛走，樹頂多了幾分生氣。",
  "content.024": "-10 水分",
  "content.025": "乾風",

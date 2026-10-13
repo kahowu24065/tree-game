@@ -45,7 +45,7 @@ import {
   type WeatherEventId,
   type WeatherTrackId,
 } from './balance';
-import { ANIMALS, eventById, eventForDate, stageFor, stagesFor } from './content';
+import { ANIMALS, eventById, pickDailyEvent, stageFor, stagesFor } from './content';
 import { outAt } from './data/animals';
 import { defaultSpecies, speciesDef, speciesTargetCm, STAGE_NAMES, type SpeciesId } from './data/species';
 import { addDays, daysBetween } from './dates';
@@ -182,10 +182,19 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
   return state;
 }
 
-export function ensureToday(state: GameState, today: string): string | null {
+export function ensureToday(state: GameState, today: string, weather: readonly WeatherEventId[] = []): string | null {
   if (state.dailyEventDate === today) return null;
   state.eventBonus = 1;
-  const event = eventForDate(today);
+  const rainy =
+    isRainDay(weather) ||
+    isRainDay(state.dayEvents[today]?.events ?? []) ||
+    observedRain(state, today).length > 0;
+  const event = pickDailyEvent({
+    date: today,
+    treeName: state.treeName,
+    pestActive: Boolean(state.pest.active),
+    rainy,
+  });
   state.dailyEventDate = today;
   state.dailyEventId = event.id;
   event.apply(state);
@@ -1602,7 +1611,7 @@ export function catchUp(
   let eventText: string | null = null;
   let animals: string[] = [];
   if (!state.over) {
-    eventText = ensureToday(state, today);
+    eventText = ensureToday(state, today, eventsFor(today));
     animals = refreshUnlocks(state, { date: today, events: [...(settlements.at(-1)?.events ?? []), ...eventsFor(today)], night });
     if (gap === 1) state.morningNote = nightNote(settlements[0]);
     else if (gap > 1) state.morningNote = tl('sim.148', { gap, p1: Math.round(healthBefore), p2: Math.round(state.health), p3: growthCm >= 0 ? '+' : '', p4: growthCm.toFixed(1) });
