@@ -147,6 +147,8 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
     waterFx: {},
     animals: [],
     seenAnimals: [],
+    vignettes: [],
+    seenVignettes: [],
     residents: [],
     highStreak: 0,
     scars: 0,
@@ -185,18 +187,29 @@ export function createGame(today: string, opts: { name?: string; legacyBonus?: n
 export function ensureToday(state: GameState, today: string, weather: readonly WeatherEventId[] = []): string | null {
   if (state.dailyEventDate === today) return null;
   state.eventBonus = 1;
+  const dayWx = [...weather, ...(state.dayEvents[today]?.events ?? [])];
   const rainy =
     isRainDay(weather) ||
     isRainDay(state.dayEvents[today]?.events ?? []) ||
     observedRain(state, today).length > 0;
+  const typhoon = dayWx.includes('typhoon1') || dayWx.includes('typhoon8');
+  const windy =
+    typhoon || dayWx.includes('thunder') || dayWx.includes('landslip') || dayWx.includes('typhoon1') || dayWx.includes('typhoon8');
+  const hot = dayWx.includes('hot');
+  const cold = dayWx.includes('cold');
   const event = pickDailyEvent({
     date: today,
     treeName: state.treeName,
     pestActive: Boolean(state.pest.active),
     rainy,
+    windy,
+    hot,
+    cold,
+    typhoon,
   });
   state.dailyEventDate = today;
   state.dailyEventId = event.id;
+  if (!state.vignettes.includes(event.id)) state.vignettes.push(event.id);
   event.apply(state);
   if (event.id !== 'quiet') addLog(state, today, event.text, { kind: 'event', title: tl('sim.006', { title: event.title }), reward: event.chip });
   state.health = clamp100(state.health);

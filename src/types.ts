@@ -187,6 +187,10 @@ export interface GameState {
   waterFx: Record<string, WaterFx>;
   animals: string[];
   seenAnimals: string[];
+  /** 1.4.71: 今日小事 event ids unlocked (fired at least once). */
+  vignettes: string[];
+  /** 1.4.71: vignette ids the player opened in 圖鑑 (clears 新). */
+  seenVignettes: string[];
   residents: string[];
   highStreak: number;
   scars: number;
