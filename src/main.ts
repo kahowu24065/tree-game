@@ -1414,7 +1414,12 @@ let vigDayTimer = 0;
 function openTodayVignetteCard(): void {
   if (!state.started || state.over) return;
   const ev = eventTitle(state);
-  openModal(vignetteDayModal(state.dailyEventId || 'quiet', ev.title, ev.text), 'vignette-day-card');
+  const vigId = state.dailyEventId || 'quiet';
+  if ((state.vignettes ?? []).includes(vigId) && !(state.seenVignettes ?? []).includes(vigId)) {
+    state.seenVignettes.push(vigId);
+    persist();
+  }
+  openModal(vignetteDayModal(vigId, ev.title, ev.text), 'vignette-day-card');
 }
 
 function queueDailyVignetteCard(): void {
@@ -2518,7 +2523,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-seen-vig], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -2540,7 +2545,8 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (target.dataset.albumMode) {
-    setAlbumMode(target.dataset.albumMode === 'species' ? 'species' : 'animals');
+    const m = target.dataset.albumMode;
+    setAlbumMode(m === 'species' ? 'species' : m === 'vignettes' ? 'vignettes' : 'animals');
     render();
     return;
   }
@@ -2560,6 +2566,15 @@ document.addEventListener('click', (event) => {
     toast(res.message);
     persist();
     render();
+    return;
+  }
+  if (target.dataset.seenVig) {
+    const id = target.dataset.seenVig;
+    if ((state.vignettes ?? []).includes(id) && !(state.seenVignettes ?? []).includes(id)) {
+      state.seenVignettes.push(id);
+      persist();
+      render();
+    }
     return;
   }
   if (target.dataset.seen) {

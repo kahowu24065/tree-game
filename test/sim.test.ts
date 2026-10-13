@@ -212,7 +212,9 @@ describe('瀕死、枯死、遺產', () => {
     expect(meta.badges).toEqual({ '1': 0, '2': 0, '3': 0 });
     expect(meta.pendingLegacy).toBe(true);
     const next = newGame(meta, '2026-07-21', '第二棵');
-    expect(next.nutrients).toBe(90);
+    // 1.4.71: ensureToday may apply a nutrient vignette (compost/leaves/ember-warmth/…) on plant day
+    expect(next.nutrients).toBeGreaterThanOrEqual(90);
+    expect(next.nutrients).toBeLessThanOrEqual(100);
     expect(next.ageDays).toBe(0);
     expect(meta.pendingLegacy).toBe(false);
   });

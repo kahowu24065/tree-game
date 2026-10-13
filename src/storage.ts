@@ -188,6 +188,14 @@ export function migrateLogI18n(data: Pick<GameState, 'log'>): { total: number; m
   return { total, migrated };
 }
 
+/** 1.4.71: 今日小事 album — unlocked / reviewed lists. */
+export function migrateVignettes(data: GameState): void {
+  if (!Array.isArray(data.vignettes)) data.vignettes = [];
+  if (!Array.isArray(data.seenVignettes)) data.seenVignettes = [];
+  const id = data.dailyEventId;
+  if (id && !data.vignettes.includes(id)) data.vignettes.push(id);
+}
+
 /** Parse and migrate a `sekai-tree-v2` save (pure, testable). */
 export function parseSave(raw: string): GameState | null {
   try {
@@ -210,6 +218,7 @@ export function parseSave(raw: string): GameState | null {
     migrateWind(data);
     migrateV14(data);
     migrateV16(data);
+    migrateVignettes(data);
     migrateWx(data);
     migrateLogI18n(data);
     data.nest ??= { hatched: 0, awards: [], egg: null, laidOn: '', revealedBuilds: 0, revealBirds: [] };

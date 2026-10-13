@@ -1,7 +1,7 @@
 import { BADGES, CARE, COLLAPSE_MAX, EMERGENCY, H_MULT_TIERS, N_DAILY_USE, N_FACTOR, N_MALNOURISHED, N_OPTIMAL, PREPS, R_DAILY_DECAY, R_MAX, RESIDENT_LEAVE_H, RESIDENT_MIN_H, RESIDENT_PEST_CUT, RESIDENT_PEST_MAX_SPECIES, RESIDENT_STREAKS, RESIDENT_STREAK_LATER, pestDamageWith, AGE_MILESTONES, MILESTONE_TIER_LABEL, RECORD_MILESTONE, START, W_MAX, W_NIGHT_LOSS, W_OPTIMAL, W_SATURATED, W_TIERS, WEATHER_EVENTS, WX_CATEGORY_LABEL, WX_TRACKS, nextWxAwardCount, parseWxAwardId, wxAwardId, type PrepId, type WeatherEventId } from './balance';
 import { coachTasks, type Coach } from './coach';
 import { ISLE_AWARDS } from './grove';
-import { ANIMALS, animalById, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
+import { ANIMALS, animalById, EVENTS, HYPERION_M, MILESTONES, SHERMAN_M, stageFor, stageProgress, stagesFor } from './content';
 import { CATEGORY_LABEL, CATEGORY_ORDER, unlockHint } from './data/animals';
 import { FEATURE_LABEL, habitatDef } from './data/habitat';
 import { SPECIES, STAGE_NAMES, realAgeDays, speciesDef, speciesTargetCm, stageSampleCm, type SpeciesId } from './data/species';
@@ -22,7 +22,7 @@ import { NEST_HATCH_MS, NEST_MIN_HEALTH, nestAwardTitle, nestBirdName, nestBuild
 import { actionLimit, advice, nextWaterTime, doubleRActive, emergencyOptions, eventTitle, nextMilestone, prepAmount, recordShare, shownAge, type NightPlan } from './sim';
 import { logPhotoDates, logPhotoFor } from './logPhotos';
 import { TIMELAPSE_MIN_FRAMES, timelapseDates, timelapseUnlocked } from './timelapse';
-import { vignetteArtHtml } from './vignetteArt';
+import { vignetteArtHtml, vignetteArtUrl } from './vignetteArt';
 import type { DayCond, ForecastDay, GameState, LogEntry, LogKind, MetaState, MilestoneAward, TabId, WeatherAward } from './types';
 import { esc, formatHeight, percentOf } from './util';
 import { dayLabel, nightLabel, weatherLabel, type WeatherProvider } from './weather';
@@ -1065,7 +1065,7 @@ export function renderPanel(view: View): void {
   const panel = document.getElementById('panel');
   if (!panel) return;
   const scroll = panel.scrollTop;
-  panel.innerHTML = `${tabs(view.tab, view.state.animals.filter((id) => !view.state.seenAnimals.includes(id)).length)}<div class="panel-body">${body(view)}</div>`;
+  panel.innerHTML = `${tabs(view.tab, view.state.animals.filter((id) => !view.state.seenAnimals.includes(id)).length + (view.state.vignettes ?? []).filter((id) => !(view.state.seenVignettes ?? []).includes(id)).length)}<div class="panel-body">${body(view)}</div>`;
   panel.scrollTop = scroll;
   paintThumbs();
 }
@@ -1374,14 +1374,47 @@ export function weatherPageHtml(view: View): string {
   return tl('ui.276', { p0: sourceLabel(wx), warnCard, now, p3: outlook ? tl('ui.273', { p0: esc(outlook) }) : '', p4: rows ? `<div class="days">${rows}</div>` : tl('ui.274'), p5: esc(view.statusLine), p6: simulated ? tl('ui.275') : '' });
 }
 
-let albumMode: 'animals' | 'species' = 'animals';
-export function setAlbumMode(mode: 'animals' | 'species'): void {
+let albumMode: 'animals' | 'species' | 'vignettes' = 'animals';
+export function setAlbumMode(mode: 'animals' | 'species' | 'vignettes'): void {
   albumMode = mode;
 }
 
 function albumTab(view: View): string {
-  const toggle = tl('ui.277', { p0: albumMode === 'animals' ? 'on' : '', length: view.state.animals.length, length_: ANIMALS.length, p3: albumMode === 'species' ? 'on' : '', length__: SPECIES.length });
-  return toggle + (albumMode === 'species' ? speciesAlbum(view) : animalAlbum(view));
+  const toggle = tl('ui.277', {
+    p0: albumMode === 'animals' ? 'on' : '',
+    length: view.state.animals.length,
+    length_: ANIMALS.length,
+    pV: albumMode === 'vignettes' ? 'on' : '',
+    vGot: view.state.vignettes?.length ?? 0,
+    vTotal: EVENTS.length,
+    p3: albumMode === 'species' ? 'on' : '',
+    length__: SPECIES.length,
+  });
+  const body =
+    albumMode === 'species' ? speciesAlbum(view) : albumMode === 'vignettes' ? vignetteAlbum(view) : animalAlbum(view);
+  return toggle + body;
+}
+
+/** 1.4.71: 今日小事 illustrations in 圖鑑 — unlock when the daily event has fired. */
+function vignetteAlbum(view: View): string {
+  const unlocked = view.state.vignettes ?? [];
+  const seen = view.state.seenVignettes ?? [];
+  const cards = EVENTS.map((ev) => {
+    const got = unlocked.includes(ev.id);
+    const fresh = got && !seen.includes(ev.id);
+    const art = got
+      ? `<span class="thumb vig-thumb"><img src="${esc(vignetteArtUrl(ev.id))}" alt="" width="160" height="107" loading="lazy" decoding="async" /></span>`
+      : `<span class="thumb vig-thumb locked-art" aria-hidden="true"></span>`;
+    return tl('ui.371', {
+      p0: got ? '' : 'locked',
+      id: ev.id,
+      p4: got ? esc(ev.title) : tl('ui.278'),
+      p5: fresh ? tl('ui.279') : '',
+      p10: got ? `<small>${esc(ev.text)}</small>` : tl('ui.372'),
+      art,
+    });
+  }).join('');
+  return tl('ui.373', { unlocked: unlocked.length, length: EVENTS.length, cards });
 }
 
 function animalAlbum(view: View): string {

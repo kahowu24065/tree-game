@@ -169,31 +169,177 @@ export const EVENTS: DailyEvent[] = live(() => ([
     text: tl('content.042'),
     apply: () => {},
   },
+  {
+    id: 'puddle-mirror',
+    title: tl('content.043'),
+    text: tl('content.044'),
+    apply: () => {},
+  },
+  {
+    id: 'petrichor',
+    title: tl('content.045'),
+    text: tl('content.046'),
+    apply: (s) => { s.nutrients = Math.min(100, s.nutrients + 4); },
+  },
+  {
+    id: 'snails',
+    title: tl('content.047'),
+    text: tl('content.048'),
+    apply: () => {},
+  },
+  {
+    id: 'leaf-drip',
+    title: tl('content.049'),
+    text: tl('content.050'),
+    apply: (s) => { if (s.moisture < 100) s.moisture = Math.min(100, s.moisture + 3); },
+  },
+  {
+    id: 'rain-patter',
+    title: tl('content.051'),
+    text: tl('content.052'),
+    apply: () => {},
+  },
+  {
+    id: 'butterfly',
+    chip: { text: tl('content.053'), tone: 'green' },
+    title: tl('content.054'),
+    text: tl('content.055'),
+    apply: (s) => { s.health = Math.min(100, s.health + 1); },
+  },
+  {
+    id: 'warm-grass',
+    title: tl('content.056'),
+    text: tl('content.057'),
+    apply: () => {},
+  },
+  {
+    id: 'bird-song',
+    chip: { text: tl('content.058'), tone: 'green' },
+    title: tl('content.059'),
+    text: tl('content.060'),
+    apply: (s) => { s.health = Math.min(100, s.health + 2); },
+  },
+  {
+    id: 'leaf-shadow',
+    title: tl('content.061'),
+    text: tl('content.062'),
+    apply: () => {},
+  },
+  {
+    id: 'cicada-hum',
+    title: tl('content.063'),
+    text: tl('content.064'),
+    apply: () => {},
+  },
+  {
+    id: 'tumble-leaf',
+    title: tl('content.065'),
+    text: tl('content.066'),
+    apply: () => {},
+  },
+  {
+    id: 'rustle',
+    title: tl('content.067'),
+    text: tl('content.068'),
+    apply: () => {},
+  },
+  {
+    id: 'grass-wave',
+    title: tl('content.069'),
+    text: tl('content.070'),
+    apply: () => {},
+  },
+  {
+    id: 'seed-fluff',
+    title: tl('content.071'),
+    text: tl('content.072'),
+    apply: () => {},
+  },
+  {
+    id: 'animal-shade',
+    chip: { text: tl('content.073'), tone: 'orange' },
+    title: tl('content.074'),
+    text: tl('content.075'),
+    apply: (s) => { s.health = Math.min(100, s.health + 2); },
+  },
+  {
+    id: 'hot-stones',
+    title: tl('content.076'),
+    text: tl('content.077'),
+    apply: () => {},
+  },
+  {
+    id: 'animal-hide',
+    title: tl('content.078'),
+    text: tl('content.079'),
+    apply: () => {},
+  },
+  {
+    id: 'heavy-sway',
+    chip: { text: tl('content.080'), tone: 'red' },
+    title: tl('content.081'),
+    text: tl('content.082'),
+    apply: (s) => { s.moisture = Math.max(0, s.moisture - 4); },
+  },
+  {
+    id: 'nest-hold',
+    title: tl('content.083'),
+    text: tl('content.084'),
+    apply: () => {},
+  },
+  {
+    id: 'crisp-air',
+    chip: { text: tl('content.085'), tone: 'blue' },
+    title: tl('content.086'),
+    text: tl('content.087'),
+    apply: (s) => { s.health = Math.min(100, s.health + 1); },
+  },
+  {
+    id: 'ember-warmth',
+    chip: { text: tl('content.088'), tone: 'blue' },
+    title: tl('content.089'),
+    text: tl('content.090'),
+    apply: (s) => { s.nutrients = Math.min(100, s.nutrients + 6); },
+  },
 ]));
 
-/** 1.4.70: which daily vignettes fit today's weather / tree state. */
-export function dailyEventAllowed(
-  id: string,
-  ctx: { pestActive: boolean; rainy: boolean },
-): boolean {
-  if (id === 'aphids') return ctx.pestActive;
-  // Rainy day: no dry wind, sunbeams, morning mist, outdoor drawing, or napping cat.
-  if (ctx.rainy && (id === 'sunbeam' || id === 'drywind' || id === 'mist' || id === 'drawing' || id === 'cat')) {
-    return false;
-  }
-  return true;
-}
-
+/** 1.4.70/1.4.71: weather / state gates for daily vignettes. */
 export type DailyEventPickCtx = {
   date: string;
   treeName: string;
   pestActive: boolean;
   rainy: boolean;
+  windy: boolean;
+  hot: boolean;
+  cold: boolean;
+  typhoon: boolean;
 };
 
+const RAIN_BLOCKED = new Set(['sunbeam', 'drywind', 'mist', 'drawing', 'cat']);
+const RAIN_ONLY = new Set(['puddle-mirror', 'petrichor', 'snails', 'leaf-drip', 'rain-patter']);
+const CLEAR_OK = new Set(['butterfly', 'warm-grass', 'bird-song', 'leaf-shadow']); // also need !rainy !typhoon
+const CLEAR_HOT = new Set(['cicada-hum']);
+const WINDY_ONLY = new Set(['tumble-leaf', 'rustle', 'grass-wave', 'seed-fluff']);
+const HOT_ONLY = new Set(['animal-shade', 'hot-stones']);
+const TYPHOON_ONLY = new Set(['animal-hide', 'heavy-sway', 'nest-hold']);
+const COOL_OK = new Set(['crisp-air', 'ember-warmth']);
+
+export function dailyEventAllowed(id: string, ctx: Omit<DailyEventPickCtx, 'date' | 'treeName'>): boolean {
+  if (id === 'aphids') return ctx.pestActive;
+  if (RAIN_BLOCKED.has(id) && (ctx.rainy || ctx.typhoon)) return false;
+  if (RAIN_ONLY.has(id)) return ctx.rainy;
+  if (CLEAR_OK.has(id)) return !ctx.rainy && !ctx.typhoon;
+  if (CLEAR_HOT.has(id)) return !ctx.rainy && !ctx.typhoon && (ctx.hot || (!ctx.cold && !ctx.windy));
+  if (WINDY_ONLY.has(id)) return ctx.windy && !ctx.rainy;
+  if (HOT_ONLY.has(id)) return ctx.hot && !ctx.rainy;
+  if (TYPHOON_ONLY.has(id)) return ctx.typhoon;
+  if (COOL_OK.has(id)) return (ctx.cold || (!ctx.hot && !ctx.rainy && !ctx.typhoon)) && !ctx.rainy;
+  return true;
+}
+
 /**
- * 1.4.70: random per player (treeName) per day, then re-pick from the allowed set.
- * Fallback pool if everything is filtered: quiet / birds / compost / leaves.
+ * 1.4.70/1.4.71: random per player (treeName) per day among the allowed set.
+ * Fallback: quiet (and a few gentle anytime ids).
  */
 export function pickDailyEvent(ctx: DailyEventPickCtx): DailyEvent {
   const allowed = EVENTS.filter((e) => dailyEventAllowed(e.id, ctx));
@@ -209,9 +355,18 @@ export function pickDailyEvent(ctx: DailyEventPickCtx): DailyEvent {
 
 /** Deterministic date-only pick (no weather/pest filters) — prefer pickDailyEvent. */
 export function eventForDate(date: string, treeName = ''): DailyEvent {
-  return pickDailyEvent({ date, treeName, pestActive: false, rainy: false });
+  return pickDailyEvent({
+    date,
+    treeName,
+    pestActive: false,
+    rainy: false,
+    windy: false,
+    hot: false,
+    cold: false,
+    typhoon: false,
+  });
 }
 
 export function eventById(id: string): DailyEvent {
-  return EVENTS.find((e) => e.id === id) ?? EVENTS[9]!;
+  return EVENTS.find((e) => e.id === id) ?? EVENTS.find((e) => e.id === 'quiet')!;
 }
