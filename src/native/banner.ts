@@ -5,13 +5,17 @@ import { shouldRequestAtt } from './att';
 
 interface TreeBannerPlugin {
   setVisible(options: { visible: boolean }): Promise<void>;
+  addListener(
+    eventName: 'adLoaded' | 'adFailed',
+    listenerFunc: (data: { code?: number; message?: string }) => void,
+  ): Promise<{ remove: () => void }>;
 }
 
-/** Android: the app's own AdMob banner view (TreeBannerPlugin.java). iOS: @capacitor-community/admob. */
+/** Android: TreeBannerPlugin.java. iOS: @capacitor-community/admob. */
 const TreeBanner = registerPlugin<TreeBannerPlugin>('TreeBanner');
 
 const env = import.meta.env as Record<string, string | undefined>;
-/** Google's sample banner unit (always test ads) until the real iOS unit is set at build time (VITE_ADMOB_IOS_BANNER). */
+/** Google's sample banner unit until VITE_ADMOB_IOS_BANNER is set at build time. */
 export const IOS_TEST_BANNER = 'ca-app-pub-3940256099942544/2934735716';
 export function iosBannerId(): string {
   return env.VITE_ADMOB_IOS_BANNER || IOS_TEST_BANNER;
@@ -19,24 +23,82 @@ export function iosBannerId(): string {
 
 let premium = false;
 let want = false;
-/** UMP consent (+ iOS ATT) finished: ads may be requested. */
+/** UMP consent finished: ads may be requested. */
 let consentDone = false;
 let consentStarted = false;
 let iosShown = false;
+/** True after a banner ad actually loaded. */
+let filled = false;
+let listenersReady = false;
 
-/** Ads show only in the app, after consent, never for members. Pure, for tests. */
+/** Ads show only in the app, after consent, never for members. */
 export function adsWanted(o: { native: boolean; visible: boolean; premium: boolean; consent: boolean }): boolean {
   return o.native && o.visible && !o.premium && o.consent;
 }
 
+/** 1.4.72: hide empty「廣告」until fill; web never gets ad-filled. */
+function syncSlotClass(): void {
+  if (typeof document === 'undefined') return;
+  const show = filled && !premium;
+  document.documentElement.classList.toggle('ad-filled', show);
+  document.documentElement.classList.toggle('no-ad', premium || !show);
+}
+
+function setFilled(on: boolean): void {
+  filled = on;
+  syncSlotClass();
+}
+
+function safeAreaBottomPx(): number {
+  if (typeof document === 'undefined') return 0;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--safe-b').trim();
+  const n = parseFloat(raw);
+  if (Number.isFinite(n) && n > 0) return Math.round(n);
+  const h = window.screen?.height ?? 0;
+  return h >= 800 ? 34 : 0;
+}
+
+async function ensureListeners(): Promise<void> {
+  if (listenersReady || !isNative()) return;
+  listenersReady = true;
+  try {
+    if (platformName() === 'ios') {
+      const { AdMob, BannerAdPluginEvents } = await import('@capacitor-community/admob');
+      await AdMob.addListener(BannerAdPluginEvents.Loaded, () => setFilled(true));
+      await AdMob.addListener(BannerAdPluginEvents.FailedToLoad, () => {
+        setFilled(false);
+        iosShown = false;
+        void AdMob.hideBanner().catch(() => {});
+      });
+    } else {
+      await TreeBanner.addListener('adLoaded', () => setFilled(true));
+      await TreeBanner.addListener('adFailed', () => {
+        setFilled(false);
+        void TreeBanner.setVisible({ visible: false }).catch(() => {});
+      });
+    }
+  } catch {
+    /* events unavailable */
+  }
+}
+
 function apply(): void {
-  if (!isNative()) return;
-  const on = adsWanted({ native: true, visible: want, premium, consent: consentDone });
-  if (platformName() === 'ios') {
-    void iosBanner(on);
+  syncSlotClass();
+  if (!isNative()) {
+    setFilled(false);
     return;
   }
-  void TreeBanner.setVisible({ visible: on }).catch(() => {});
+  const on = adsWanted({ native: true, visible: want, premium, consent: consentDone });
+  if (!on) {
+    setFilled(false);
+    if (platformName() === 'ios') void iosBanner(false);
+    else void TreeBanner.setVisible({ visible: false }).catch(() => {});
+    return;
+  }
+  void ensureListeners().then(() => {
+    if (platformName() === 'ios') void iosBanner(true);
+    else void TreeBanner.setVisible({ visible: true }).catch(() => {});
+  });
 }
 
 async function iosBanner(on: boolean): Promise<void> {
@@ -44,24 +106,30 @@ async function iosBanner(on: boolean): Promise<void> {
     const { AdMob, BannerAdPosition, BannerAdSize } = await import('@capacitor-community/admob');
     if (on && !iosShown) {
       iosShown = true;
-      await AdMob.showBanner({ adId: iosBannerId(), adSize: BannerAdSize.BANNER, position: BannerAdPosition.BOTTOM_CENTER, margin: 0, isTesting: iosBannerId() === IOS_TEST_BANNER });
+      await AdMob.showBanner({
+        adId: iosBannerId(),
+        adSize: BannerAdSize.BANNER,
+        position: BannerAdPosition.BOTTOM_CENTER,
+        margin: safeAreaBottomPx(),
+        isTesting: iosBannerId() === IOS_TEST_BANNER,
+      });
     } else if (on) {
       await AdMob.resumeBanner();
     } else if (iosShown) {
       await AdMob.hideBanner();
+      iosShown = false;
     }
   } catch {
-    /* no ad (offline / no fill / plugin missing) */
+    setFilled(false);
+    iosShown = false;
   }
 }
 
 /**
- * Once per launch, after onboarding: Google UMP consent form when required (EEA / UK etc.).
- * Refusing still shows non-personalised ads. Members skip it.
- * 1.4.62: the iOS ATT prompt is NOT here. It runs at launch (requestAttAtLaunch), before this and before AdMob starts.
+ * Once per launch, after onboarding: Google UMP when required.
+ * 1.4.62: ATT is at launch (requestAttAtLaunch), not here.
  */
 async function gatherConsent(): Promise<void> {
-  // 1.4.45: no UMP form before onboarding is over (retryConsent() runs it after the other prompts).
   if (consentStarted || !isNative() || premium || !permsReady()) return;
   consentStarted = true;
   try {
@@ -70,7 +138,7 @@ async function gatherConsent(): Promise<void> {
     const info = await AdMob.requestConsentInfo();
     if (info.isConsentFormAvailable && info.status === AdmobConsentStatus.REQUIRED) await AdMob.showConsentForm();
   } catch {
-    /* consent SDK unavailable: Google serves limited ads by itself */
+    /* Android / SDK missing: still allow requests */
   }
   consentDone = true;
   apply();
@@ -82,7 +150,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-/** ATT is ignored (and its callback may never fire) unless the app is already active. */
 async function waitUntilActive(): Promise<void> {
   try {
     const { App } = await import('@capacitor/app');
@@ -104,15 +171,11 @@ async function waitUntilActive(): Promise<void> {
       });
     });
   } catch {
-    /* plugin missing: the two frames below are enough */
+    /* plugin missing */
   }
 }
 
-/**
- * 1.4.62: iOS App Tracking Transparency at launch, before the first screen and before any ad SDK starts.
- * Once per install (only while the status is notDetermined). The HTML splash is hidden so it cannot cover the dialog.
- * One retry covers the case where iOS drops a request made a moment too early.
- */
+/** 1.4.62: iOS ATT at launch, before the first screen and before AdMob starts. */
 export async function requestAttAtLaunch(): Promise<void> {
   if (attStarted || !isNative() || !shouldRequestAtt(platformName(), 'notDetermined')) return;
   attStarted = true;
@@ -133,28 +196,49 @@ export async function requestAttAtLaunch(): Promise<void> {
       await ask();
     }
   } catch {
-    /* no ATT on this device: carry on, still without starting the ad SDK here */
+    /* no ATT */
   } finally {
     if (preload) preload.style.visibility = visibility;
   }
 }
 
-/** Show or hide the banner (hidden during the opening / modals that cover it). Browsers keep the empty slot. */
+/**
+ * 1.4.72: request ads when the game wants the banner; HTML slot stays hidden until onAdLoaded.
+ * Web never shows the empty grey「廣告」bar.
+ */
 export function syncBanner(visible: boolean): void {
   want = visible;
-  if (visible) void gatherConsent();
+  if (!isNative()) {
+    setFilled(false);
+    return;
+  }
+  if (visible) {
+    // Android (no UMP path required): allow load after opening.
+    if (platformName() !== 'ios' && !consentDone) consentDone = true;
+    void gatherConsent();
+  }
   apply();
 }
 
-/** 1.4.45: onboarding just finished — run the UMP step now if the banner is wanted. ATT already ran at launch. */
+/** 1.4.45: onboarding finished — run UMP if the banner is wanted. */
 export function retryConsent(): void {
+  consentStarted = false;
   if (want) void gatherConsent();
 }
 
 /** Members: no banner, no slot. */
 export function setAdsPremium(on: boolean): void {
   premium = on;
-  if (typeof document !== 'undefined') document.documentElement.classList.toggle('no-ad', on);
-  if (!on && want) void gatherConsent();
+  if (on) setFilled(false);
+  syncSlotClass();
+  if (!on && want) {
+    consentStarted = false;
+    void gatherConsent();
+  }
   apply();
+}
+
+/** Call once at boot so web/app start without an empty ad strip. */
+export function initAdSlot(): void {
+  setFilled(false);
 }

@@ -25,7 +25,8 @@
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
   --dock-body: 92px;
-  --banner-h: calc(50px + var(--safe-b));
+  /* 1.4.72: no reserved ad strip until an ad fills (html.ad-filled). */
+  --banner-h: var(--safe-b);
   --dock-h: calc(var(--dock-body) + var(--banner-h));
   --pad: 12px;
   color-scheme: light;
@@ -127,12 +128,15 @@ body.night .glass {
   transition: opacity 2.4s ease;
 }
 
-/* iOS app: no banner ad → no empty slot (keep the home-indicator inset). */
+/* 1.4.72: hide empty 廣告 slot; only reserve 50px when an ad actually filled. */
+html.ad-filled {
+  --banner-h: calc(50px + var(--safe-b));
+}
 html.no-ad {
   --banner-h: var(--safe-b);
 }
-
-html.no-ad .ad-banner {
+html.no-ad .ad-banner,
+html:not(.ad-filled) .ad-banner {
   display: none;
 }
 
@@ -2035,20 +2039,20 @@ body.sheet-open .sheet-backdrop {
   color: var(--ink-soft);
 }
 
-/* Bottom banner slot. Sits under the dock; drawers and the log stop above it. */
+/* Bottom banner slot (1.4.72): 50px above the home-indicator; no white safe-area padding band. */
 .ad-banner {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: var(--safe-b);
   z-index: 8;
-  height: var(--banner-h);
-  padding-bottom: var(--safe-b);
+  height: 50px;
+  padding-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.94);
-  border-top: 1px solid rgba(35, 53, 44, 0.08);
+  background: transparent;
+  border-top: none;
   pointer-events: none;
 }
 
@@ -4381,11 +4385,7 @@ body.sheet-open .animal-toast.show {
 html[lang='en'] .status-sub {
   white-space: normal;
   line-height: 1.25;
-  overflow-wrap: break-word;
-}
-
-.prem-price .nw {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 /* Stat rows: the letter keys (H/W/N/R) only; full names stay in the title tooltip. */
 html[lang='en'] .bar {
@@ -4454,257 +4454,6 @@ html[lang='en'] .dock-btn:not(.short):has(small) .dock-label {
 }
 html[lang='en'] .emerg > span {
   white-space: normal;
-}
-
-/* 世界之樹會員 (premium) */
-.prem-note {
-  color: #8a948d;
-  font-size: 13px;
-}
-
-.modal-card .prem-lead {
-  font-weight: 600;
-}
-
-.prem-perks {
-  margin: 8px 0 6px;
-  padding-left: 20px;
-  line-height: 1.55;
-}
-
-.modal-card p.prem-small,
-.prem-small {
-  color: #7d877f;
-  font-size: 12.5px;
-  margin: 4px 0 8px;
-}
-
-.prem-note-box,
-.modal-card .prem-status {
-  background: #f1f6ee;
-  border-radius: 12px;
-  padding: 10px 12px;
-}
-
-.prem-buy {
-  width: 100%;
-  margin: 6px 0 10px;
-}
-
-/* 1.4.39/1.4.40: 月費 | 年費 | 永久 in three equal columns; the store price sits on a second line inside each button. */
-.prem-plans {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin: 6px 0 10px;
-}
-
-.prem-plans .prem-buy {
-  min-width: 0;
-  width: auto;
-  height: auto;
-  min-height: 46px;
-  margin: 0;
-  padding: 7px 4px;
-  line-height: 1.25;
-}
-
-.prem-price {
-  display: block;
-  font-size: 11.5px;
-  font-weight: 500;
-  opacity: 0.9;
-  overflow-wrap: anywhere;
-}
-
-.prem-buy[aria-disabled='true'] {
-  opacity: 0.5;
-}
-
-.modal-card p.prem-disclosure {
-  color: #8a948d;
-  font-size: 11.5px;
-  line-height: 1.45;
-  margin: 10px 0 4px;
-}
-
-.prem-legal {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 18px;
-  margin: 10px 0 4px;
-  font-size: 12.5px;
-}
-
-.prem-legal a,
-.prem-legal button {
-  color: #5e7f63;
-  font-size: 12.5px;
-  font-weight: 500;
-  text-decoration: underline;
-}
-
-.skins {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.skin {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 8px 4px;
-  border-radius: 12px;
-  background: #f4f6f3;
-  font-size: 12px;
-  line-height: 1.2;
-  text-align: center;
-}
-
-.skin.on {
-  outline: 2px solid #5e9e36;
-  background: #eaf4e4;
-}
-
-.skin.locked {
-  opacity: 0.45;
-}
-
-.skin small {
-  color: #8a948d;
-  font-size: 10.5px;
-}
-
-.skin-dot {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-}
-
-.skin-dot.plain {
-  background: linear-gradient(135deg, #6fae46, #3f7f2b);
-}
-
-.wx-album {
-  list-style: none;
-  margin: 0 0 10px;
-  padding: 0;
-}
-
-.wx-day {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 6px 0;
-  border-bottom: 1px solid #edf0ec;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.wx-art svg {
-  width: 34px;
-  height: 34px;
-}
-
-.wx-main em {
-  color: #b2552f;
-  font-style: normal;
-}
-
-.wx-main small {
-  color: #8a948d;
-}
-
-/* 1.4.49: 世界之樹 Premium card at the top of 設定 (full width, same 16px radius as the modal buttons; soft green → gold). */
-.prem-card {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  margin: 2px 0 8px;
-  padding: 11px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(200, 150, 15, 0.28);
-  background: linear-gradient(120deg, #e8f5e1 0%, #f4f6e2 55%, #fcf1cf 100%);
-  box-shadow: 0 4px 12px rgba(63, 154, 75, 0.12);
-  color: var(--ink);
-  text-align: left;
-  font: inherit;
-}
-
-.prem-card:active {
-  transform: scale(0.99);
-}
-
-.prem-card-icon {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(150deg, #5cb85f, #c8960f);
-  color: #fffbea;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.prem-card-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1.3;
-}
-
-.prem-card-text b {
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.prem-card-text small {
-  font-size: 12.5px;
-  color: var(--ink-soft);
-}
-
-.prem-card-cta {
-  flex: none;
-  padding: 7px 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #5cb85f, #3f9a4b);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-  box-shadow: 0 3px 8px rgba(63, 154, 75, 0.28);
-}
-
-.prem-card.on {
-  padding: 8px 12px;
-  background: linear-gradient(120deg, #eef7e9, #f8f4e2);
-  box-shadow: none;
-}
-
-.prem-card.on .prem-card-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-}
-
-.prem-card.on .prem-card-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.prem-card.on .prem-card-text b {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #2f7a3a;
 }
 
 /* 1.4.50 資料來源及授權 */
