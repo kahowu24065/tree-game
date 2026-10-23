@@ -4,18 +4,23 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import androidx.annotation.NonNull;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.LoadAdError;
 import com.google.android.gms.ads.MobileAds;
 
 /**
- * Banner over the web slot at the bottom of the screen. The page reserves 50px;
- * this view uses the same bottom inset as the WebView so it sits in that slot.
+ * Banner over the web slot at the bottom of the screen. The page reserves 50px above the
+ * home-indicator / nav inset when an ad has filled (html.ad-filled); this view uses the same
+ * bottom inset as the WebView so it sits in that slot.
  */
 @CapacitorPlugin(name = "TreeBanner")
 public class TreeBannerPlugin extends Plugin {
@@ -40,6 +45,22 @@ public class TreeBannerPlugin extends Plugin {
         banner.setAdSize(AdSize.BANNER);
         banner.setAdUnitId(activity.getString(R.string.admob_banner_id));
         banner.setVisibility(View.GONE);
+        banner.setAdListener(new AdListener() {
+            @Override
+            public void onAdLoaded() {
+                notifyListeners("adLoaded", new JSObject());
+            }
+
+            @Override
+            public void onAdFailedToLoad(@NonNull LoadAdError error) {
+                requested = false;
+                if (adView != null) adView.setVisibility(View.GONE);
+                JSObject o = new JSObject();
+                o.put("code", error.getCode());
+                o.put("message", error.getMessage());
+                notifyListeners("adFailed", o);
+            }
+        });
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -88,8 +109,10 @@ public class TreeBannerPlugin extends Plugin {
     private void apply() {
         if (adView == null) return;
         if (wantVisible) {
-            adView.setVisibility(View.VISIBLE);
-            if (requested) adView.resume();
+            if (requested) {
+                adView.setVisibility(View.VISIBLE);
+                adView.resume();
+            }
             if (sdkReady && !requested) {
                 requested = true;
                 adView.loadAd(new AdRequest.Builder().build());

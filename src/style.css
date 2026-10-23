@@ -25,7 +25,8 @@
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
   --dock-body: 92px;
-  --banner-h: calc(50px + var(--safe-b));
+  /* 1.4.72: no reserved ad strip until an ad fills (html.ad-filled). */
+  --banner-h: var(--safe-b);
   --dock-h: calc(var(--dock-body) + var(--banner-h));
   --pad: 12px;
   color-scheme: light;
@@ -125,6 +126,18 @@ body.night .glass {
   pointer-events: none;
   z-index: 2;
   transition: opacity 2.4s ease;
+}
+
+/* 1.4.72: hide empty 廣告 slot; only reserve 50px when an ad actually filled. */
+html.ad-filled {
+  --banner-h: calc(50px + var(--safe-b));
+}
+html.no-ad {
+  --banner-h: var(--safe-b);
+}
+html.no-ad .ad-banner,
+html:not(.ad-filled) .ad-banner {
+  display: none;
 }
 
 /* Opening: nothing on screen until the seedling has broken the soil. */
@@ -2026,20 +2039,20 @@ body.sheet-open .sheet-backdrop {
   color: var(--ink-soft);
 }
 
-/* Bottom banner slot. Sits under the dock; drawers and the log stop above it. */
+/* Bottom banner slot (1.4.72): 50px above the home-indicator; no white safe-area padding band. */
 .ad-banner {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: var(--safe-b);
   z-index: 8;
-  height: var(--banner-h);
-  padding-bottom: var(--safe-b);
+  height: 50px;
+  padding-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.94);
-  border-top: 1px solid rgba(35, 53, 44, 0.08);
+  background: transparent;
+  border-top: none;
   pointer-events: none;
 }
 

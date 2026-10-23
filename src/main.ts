@@ -146,7 +146,7 @@ import { reverseGeocode } from './place';
 import { sunForDate } from './sun';
 import { creditsModal } from './credits';
 import { defaultDev, loadDev, saveDev, type DevSettings } from './dev/settings';
-import { syncBanner } from './native/banner';
+import { initAdSlot, syncBanner } from './native/banner';
 import { isNative } from './native/platform';
 import { onboardingDone, openPerms, permsReady } from './native/permGate';
 import { flushPersist, hydrateInfo, hydrateNative, mirrorProbe, nativeQueue, observeNativeWrites, STAMP_KEY } from './native/persist';
@@ -173,6 +173,7 @@ const QUALITY_KEY = 'yiri-yisyu-quality';
 await hydrateNative();
 // 1.4.54 iPhone: adopt the iCloud copy before the save is read (fresh install / newer elsewhere). Other platforms: no-op.
 await bootCloud();
+initAdSlot();
 // 1.4.55: the height unit may only now be in localStorage (native Preferences / iCloud restore).
 if (loadHeightUnit() !== getHeightUnit()) {
   useHeightUnit(loadHeightUnit());
