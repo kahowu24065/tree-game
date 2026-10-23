@@ -68,7 +68,7 @@ function legal(mode: PremiumMode): string {
   const terms = mode === 'ios' ? APPLE_EULA_URL : TERMS_URL;
   // iOS: Apple's standard EULA is the subscription's Terms of Use (named as such for App Review).
   const label = mode === 'ios' ? `${tl('prem.terms')} (EULA)` : tl('prem.terms');
-  return `<p class="prem-legal">${link(terms, label)}${link(PRIVACY_URL, tl('prem.privacy'))}</p>`;
+  return `<p class="prem-legal">${link(terms, label)}<span class="prem-legal-sep" aria-hidden="true"> · </span>${link(PRIVACY_URL, tl('prem.privacy'))}</p>`;
 }
 
 function dateText(iso: string | null): string {
@@ -103,7 +103,7 @@ export function premiumModal(o: { mode: PremiumMode; store: PremiumStore; billin
   const album = !extras ? '' : `<div class="setting-row"><span>${esc(tl('prem.albumTitle'))}</span><button type="button" class="ghost" data-action="weather-album">${esc(tl('prem.albumOpen'))}</button></div>`;
   const back = `<button type="button" class="primary" data-action="settings">${esc(tl('prem.back'))}</button>`;
   if (mode === 'web') return `${head}${perks}<p class="prem-note-box">${esc(tl('prem.webOnly'))}</p>${back}`;
-  const manage = `<p class="prem-legal">${link(billing.manageUrl, tl('prem.manage'))}<button type="button" data-action="premium-restore">${esc(tl('prem.restore'))}</button></p>`;
+  const manage = `<p class="prem-legal">${link(billing.manageUrl, tl('prem.manage'))}<span class="prem-legal-sep" aria-hidden="true"> · </span><button type="button" data-action="premium-restore">${esc(tl('prem.restore'))}</button></p>`;
   if (store.active) {
     const when = dateText(billing.expires);
     const status = billing.lifetime ? tl('prem.lifetimeActive') : when ? tl(billing.willRenew ? 'prem.renews' : 'prem.expires', { date: when }) : '';
