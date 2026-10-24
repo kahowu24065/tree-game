@@ -24,9 +24,15 @@ export async function createSender() {
           tokens: batch,
           notification: { title: msg.title, body: msg.body },
           data: { category: msg.category, level: String(msg.level) },
-          android: { priority: 'high', notification: { channelId: 'weather-warnings', tag: `warn-${msg.category}` } },
+          android: {
+            priority: msg.daily ? 'normal' : 'high',
+            notification: {
+              channelId: msg.channelId || 'weather-warnings',
+              tag: msg.daily ? `daily-${msg.category}` : `warn-${msg.category}`,
+            },
+          },
           // iOS (FCM → APNs): sound + group by warning type, like the Android tag.
-          apns: { payload: { aps: { sound: 'default', 'thread-id': `warn-${msg.category}` } } },
+          apns: { payload: { aps: { sound: 'default', 'thread-id': msg.daily ? `daily-${msg.category}` : `warn-${msg.category}` } } },
         });
         sent += res.successCount;
         res.responses.forEach((r, j) => {

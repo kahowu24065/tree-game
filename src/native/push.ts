@@ -9,6 +9,7 @@ import { permsReady } from './permGate';
 /** tree-push-server (Oracle VM, Caddy HTTPS). Sends a push when HKO issues / upgrades a warning. */
 export const PUSH_SERVER = 'https://158-101-140-210.sslip.io';
 export const PUSH_CHANNEL = 'weather-warnings';
+export const DAILY_CHANNEL = 'weather-daily';
 const TOKEN_KEY = 'sekai-tree-push-token';
 
 let listening = false;
@@ -41,6 +42,8 @@ export interface PushState {
   locale?: string;
   /** 1.4.60 天氣預告 opt-in: heads-ups before forecast typhoon / rainstorm / heat / cold. */
   headsUp?: boolean;
+  /** 1.4.75 每日天氣 brief at 08:00 local. */
+  dailyBrief?: boolean;
 }
 
 let latest: PushState | null = null;
@@ -115,7 +118,10 @@ export async function syncPush(enabled: boolean): Promise<void> {
     if ((perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale') && permsReady()) perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
     // Channels are Android-only (the call rejects on iOS and would skip register()).
-    if (platformName() === 'android') await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
+    if (platformName() === 'android') {
+      await PushNotifications.createChannel({ id: PUSH_CHANNEL, name: tl('ui.267'), description: tl('push.001'), importance: 5, visibility: 1, vibration: true });
+      await PushNotifications.createChannel({ id: DAILY_CHANNEL, name: tl('daily.channel'), description: tl('daily.channelHint'), importance: 3, visibility: 1, vibration: false });
+    }
     // Without FCM the permission + channel still serve local reminders; only the server pushes are off.
     if (!fcm) return;
     await listen();

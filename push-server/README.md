@@ -62,6 +62,11 @@ Rate limit: 30 device calls per IP per 10 min. Tokens FCM reports as unregistere
 
 Push: `sendEachForMulticast` in batches of 500, Android high priority, channel `weather-warnings`.
 
+## 1.4.75 daily weather brief
+- Devices with `dailyBrief: true` in `/state` get one FCM at **08:00 local** every day (channel `weather-daily`, normal priority).
+- Copy covers today's forecast + tips when very hot / rain likely; separate from heads-up and instant warnings.
+- Tracked in `alerts.json` → `daily` (one send per token per local date).
+
 ## Deploy (Oracle VM 158.101.140.210, Ubuntu 22.04 arm64 — live since 2026-09-27)
 The VM already runs nginx (80/443) for another site plus pm2 apps on :3000 and :8080, so the relay sits beside them:
 - own Node `v20.20.2` in `/opt/tree-push/node` (the system Node is left alone), app in `/opt/tree-push/app`

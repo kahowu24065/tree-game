@@ -85,6 +85,8 @@ export function parseState(body, now = Date.now()) {
     locale: LOCALES.includes(body.locale) ? body.locale : null,
     // 1.4.60 weather heads-up pushes (app setting; only an explicit true opts in).
     headsUp: body.headsUp === true,
+    // 1.4.75 daily weather brief at 08:00 local (app setting; only an explicit true opts in).
+    dailyBrief: body.dailyBrief === true,
     resist: Number.isFinite(Number(body.resist)) ? Math.max(0, Math.min(100, Math.round(Number(body.resist)))) : null,
     at: now,
   };
