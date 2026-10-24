@@ -7,11 +7,11 @@ import { dailyEventAllowed, pickDailyEvent, EVENTS } from '../src/content';
 import { createGame, ensureToday } from '../src/sim';
 
 describe('1.4.70 artist vignettes + pick rules', () => {
-  it('version 1.4.73 / versionCode 80', () => {
-    expect(APP_VERSION).toBe('1.4.73');
+  it('version 1.4.74 / versionCode 81', () => {
+    expect(APP_VERSION).toBe('1.4.74');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+80/);
-    expect(g).toContain('1.4.73');
+    expect(g).toMatch(/versionCode\s+81/);
+    expect(g).toContain('1.4.74');
   });
 
   it('WebP assets exist and are substantial (artist crops, not tiny SVG raster)', () => {

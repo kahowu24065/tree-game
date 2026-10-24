@@ -132,6 +132,11 @@ body.night .glass {
 html.ad-filled {
   --banner-h: calc(50px + var(--safe-b));
 }
+/* 1.4.74: native banner paints the ad; hide grey「廣告」chrome under it. */
+html.ad-filled .ad-slot {
+  opacity: 0;
+  background: transparent;
+}
 html.no-ad {
   --banner-h: var(--safe-b);
 }
