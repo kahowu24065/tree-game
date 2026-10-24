@@ -4,11 +4,11 @@ import { APP_VERSION } from '../src/version';
 import { adsWanted } from '../src/native/banner';
 
 describe('1.4.73 ad slot: hide until fill, no white safe-area band', () => {
-  it('version 1.4.73 / versionCode 80', () => {
-    expect(APP_VERSION).toBe('1.4.73');
+  it('version 1.4.74 / versionCode 81', () => {
+    expect(APP_VERSION).toBe('1.4.74');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+80/);
-    expect(g).toContain('1.4.73');
+    expect(g).toMatch(/versionCode\s+81/);
+    expect(g).toContain('1.4.74');
   });
 
   it('CSS: default banner-h is safe-b only; ad-filled adds 50px; ad-banner sits on safe-b without padding-bottom', () => {
@@ -22,6 +22,8 @@ describe('1.4.73 ad slot: hide until fill, no white safe-area band', () => {
     expect(ad).toMatch(/height:\s*50px/);
     expect(ad).toMatch(/padding-bottom:\s*0/);
     expect(ad).not.toMatch(/padding-bottom:\s*var\(--safe-b\)/);
+    expect(css).toMatch(/html\.ad-filled \.ad-slot/);
+    expect(css).toMatch(/opacity:\s*0/);
   });
 
   it('Android plugin notifies adLoaded / adFailed', () => {
@@ -45,6 +47,6 @@ describe('1.4.73 ad slot: hide until fill, no white safe-area band', () => {
     expect(src).toContain('ad-filled');
     expect(src).toContain('BannerAdPluginEvents.Loaded');
     expect(src).toContain('BannerAdPluginEvents.FailedToLoad');
-    expect(src).toContain('safeAreaBottomPx');
+    expect(src).toMatch(/margin:\s*0/);
   });
 });

@@ -49,15 +49,6 @@ function setFilled(on: boolean): void {
   syncSlotClass();
 }
 
-function safeAreaBottomPx(): number {
-  if (typeof document === 'undefined') return 0;
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--safe-b').trim();
-  const n = parseFloat(raw);
-  if (Number.isFinite(n) && n > 0) return Math.round(n);
-  const h = window.screen?.height ?? 0;
-  return h >= 800 ? 34 : 0;
-}
-
 async function ensureListeners(): Promise<void> {
   if (listenersReady || !isNative()) return;
   listenersReady = true;
@@ -106,11 +97,12 @@ async function iosBanner(on: boolean): Promise<void> {
     const { AdMob, BannerAdPosition, BannerAdSize } = await import('@capacitor-community/admob');
     if (on && !iosShown) {
       iosShown = true;
+      // AdMob iOS pins to safeAreaLayoutGuide.bottom; margin:0 avoids double-counting --safe-b.
       await AdMob.showBanner({
         adId: iosBannerId(),
         adSize: BannerAdSize.BANNER,
         position: BannerAdPosition.BOTTOM_CENTER,
-        margin: safeAreaBottomPx(),
+        margin: 0,
         isTesting: iosBannerId() === IOS_TEST_BANNER,
       });
     } else if (on) {
