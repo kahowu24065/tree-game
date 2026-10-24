@@ -3,11 +3,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { APP_VERSION } from '../src/version';
 
 describe('1.4.73 Premium card CSS + legal link spacing', () => {
-  it('version 1.4.74 / versionCode 81', () => {
-    expect(APP_VERSION).toBe('1.4.74');
+  it('version 1.4.75 / versionCode 82', () => {
+    expect(APP_VERSION).toBe('1.4.75');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+81/);
-    expect(g).toContain('1.4.74');
+    expect(g).toMatch(/versionCode\s+82/);
+    expect(g).toContain('1.4.75');
   });
 
   it('style.css has prem-card and prem-legal; settings uses .prem-card not .premium-card', () => {

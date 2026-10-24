@@ -28,6 +28,7 @@ import { createSender } from './fcm.js';
 import { createOfficialClient, feedDropMessageFor, feedLevels, feedMessageFor } from './official.js';
 import { WARNING_SETS, createCwaClient, cwaWarnings, forecastDays, inTaiwan, twDropMessageFor, twLevels, twMessageFor } from './cwa.js';
 import { cwaHeadsUps, feedHeadsUps, headsUpMessage, hkoHeadsUps, localDate, metHeadsUps, planHeadsUps, smgHeadsUps } from './headsup.js';
+import { briefFromCwa, briefFromHko, briefFromMet, briefFromSmg, dailyBriefMessage, planDailyBriefs } from './daily.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -40,6 +41,7 @@ const TW_POLL_MS = Number(process.env.TW_POLL_MS || 5 * 60_000);
 const HKO = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc';
 const HKO_FND = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc';
 const HEADSUP_POLL_MS = Number(process.env.HEADSUP_POLL_MS || 10 * 60_000);
+const DAILY_BRIEF_POLL_MS = Number(process.env.DAILY_BRIEF_POLL_MS || 5 * 60_000);
 const ALERTS_FILE = path.join(DATA, 'alerts.json');
 const LEGACY_LEVELS = path.join(DATA, 'last-levels.json');
 
@@ -79,6 +81,8 @@ alerts.mo ??= null;
 alerts.tw ??= {};
 // 1.4.60 heads-ups already sent: { [token]: { 'typhoon|2026-10-09': at } } (one per device per event).
 alerts.headsup ??= {};
+// 1.4.75 daily briefs already sent: { [token]: { '2026-10-25': at } } (one per device per local day).
+alerts.daily ??= {};
 
 const isMoDevice = (r) => r.state?.isMO === true;
 const isTwDevice = (r) => r.state?.isTW === true && !isMoDevice(r);
@@ -199,6 +203,90 @@ async function pollHeadsUps() {
   // Forget devices that are gone.
   const live = new Set(store.records().map((r) => r.token));
   for (const tok of Object.keys(alerts.headsup)) if (!live.has(tok)) delete alerts.headsup[tok];
+}
+
+
+const wantsDailyBrief = (r) => r.state?.dailyBrief === true;
+
+/** 1.4.75: at 08:00 local, one daily weather brief per opted-in device. */
+async function pollDailyBriefs() {
+  const due = planDailyBriefs(store.records().filter(wantsDailyBrief), alerts.daily, Date.now());
+  if (!due.length) return;
+  writeJson(ALERTS_FILE, alerts); // recorded before sending
+  // Group by source so we fetch each forecast once.
+  const hk = due.filter((d) => isHkDevice(d.record));
+  const mo = due.filter((d) => isMoDevice(d.record));
+  const tw = due.filter((d) => isTwDevice(d.record));
+  const other = due.filter((d) => !isHkDevice(d.record) && !isMoDevice(d.record) && !isTwDevice(d.record));
+
+  const sendOne = async (record, brief) => {
+    if (!brief) return;
+    const msg = dailyBriefMessage(brief, { loc: recordLocale(record) });
+    const { sent, dead } = await fcm.send([record.token], msg);
+    const removed = store.remove(dead);
+    console.log(`[daily] ${msg.title} → sent ${sent}/1, removed ${removed} dead tokens`);
+  };
+
+  if (hk.length) {
+    try {
+      const fnd = JSON.parse(await cachedText(HKO_FND));
+      const levels = alerts.hk?.levels ?? {};
+      for (const { record, day } of hk) await sendOne(record, briefFromHko(fnd, day, levels));
+    } catch (e) {
+      console.error('[daily hko]', String(e?.message ?? e));
+    }
+  }
+  if (mo.length) {
+    try {
+      const xml = await cachedText(`${SMG_HOST.xml}/c_7daysforecast.xml`);
+      const levels = alerts.mo?.levels ?? {};
+      for (const { record, day } of mo) await sendOne(record, briefFromSmg(xml, day, levels));
+    } catch (e) {
+      console.error('[daily smg]', String(e?.message ?? e));
+    }
+  }
+  if (tw.length && cwa.enabled) {
+    try {
+      const sets = await cwa.sets(['week']);
+      const locs = sets.week?.records?.Locations?.[0]?.Location ?? [];
+      for (const { record, day } of tw) {
+        const county = record.state?.twCounty;
+        const loc = locs.find((l) => l.LocationName === county);
+        if (!loc) continue;
+        const levels = { typhoon: 0, rain: 0, heat: 0, cold: 0 };
+        for (const [k, st] of Object.entries(alerts.tw)) if (k.startsWith(`${county}|`)) for (const c of Object.keys(levels)) levels[c] = Math.max(levels[c], st?.levels?.[c] ?? 0);
+        await sendOne(record, briefFromCwa(forecastDays(loc), day, levels));
+      }
+    } catch (e) {
+      console.error('[daily cwa]', String(e?.message ?? e));
+    }
+  }
+  // Elsewhere: MET Norway per ~0.1° / region, cached by met client.
+  const byCell = new Map();
+  for (const item of other) {
+    const s = item.record.state;
+    const p = s?.area ?? s?.region;
+    if (!p) continue;
+    const key = `${Number(p.lat).toFixed(2)},${Number(p.lon).toFixed(2)}|${item.tz}|${item.day}`;
+    if (!byCell.has(key)) byCell.set(key, []);
+    byCell.get(key).push(item);
+  }
+  for (const [key, items] of byCell) {
+    try {
+      const [ll, tz, day] = key.split('|');
+      const [lat, lon] = ll.split(',').map(Number);
+      const fc = await met.forecast(lat, lon, tz);
+      // Observed-cell levels if we have them.
+      const cell = `${(Math.round(lat * 2) / 2).toFixed(1)},${(Math.round(lon * 2) / 2).toFixed(1)}`;
+      const levels = alerts.cells[`o:${cell}`]?.levels ?? alerts.cells[`f:${(Math.round(lat * 10) / 10).toFixed(1)},${(Math.round(lon * 10) / 10).toFixed(1)}`]?.levels ?? {};
+      const brief = briefFromMet(fc, day, levels);
+      for (const { record } of items) await sendOne(record, brief);
+    } catch (e) {
+      console.error('[daily met]', key, String(e?.message ?? e));
+    }
+  }
+  const live = new Set(store.records().map((r) => r.token));
+  for (const tok of Object.keys(alerts.daily)) if (!live.has(tok)) delete alerts.daily[tok];
 }
 
 async function pollHko() {
@@ -531,6 +619,7 @@ const server = http.createServer(async (req, res) => {
       cwa: cwa.enabled,
       twAreas: Object.keys(alerts.tw).length,
       lastError,
+      dailyBriefs: Object.keys(alerts.daily ?? {}).length,
       levels: alerts.hk?.levels ?? null,
     });
   }
@@ -572,3 +661,5 @@ setInterval(() => void pollTw(), TW_POLL_MS);
 setInterval(() => void pollCells(), CELL_POLL_MS);
 setTimeout(() => void pollHeadsUps(), 45_000);
 setInterval(() => void pollHeadsUps(), HEADSUP_POLL_MS);
+setTimeout(() => void pollDailyBriefs(), 60_000);
+setInterval(() => void pollDailyBriefs(), DAILY_BRIEF_POLL_MS);

@@ -4,11 +4,11 @@ import { APP_VERSION } from '../src/version';
 import { adsWanted } from '../src/native/banner';
 
 describe('1.4.73 ad slot: hide until fill, no white safe-area band', () => {
-  it('version 1.4.74 / versionCode 81', () => {
-    expect(APP_VERSION).toBe('1.4.74');
+  it('version 1.4.75 / versionCode 82', () => {
+    expect(APP_VERSION).toBe('1.4.75');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+81/);
-    expect(g).toContain('1.4.74');
+    expect(g).toMatch(/versionCode\s+82/);
+    expect(g).toContain('1.4.75');
   });
 
   it('CSS: default banner-h is safe-b only; ad-filled adds 50px; ad-banner sits on safe-b without padding-bottom', () => {

@@ -15,6 +15,7 @@ import { alertInForce, type AlertSource, type OfficialAlert } from './alerts';
 import { FAUNA_SCORE_MAX, GOAL_REWARD, goalDone, goalLabel, goalProgress, goalSub } from './goals';
 import { faunaExtraUnlocked, faunaScoreOf } from './faunaScore';
 import { headsUpEnabled } from './headsUp';
+import { dailyBriefEnabled } from './dailyBrief';
 import type { EventMode } from './events';
 import { baseDailyGrowth, carbonKg, carbonParts, emergencyBonusText, expectedShare, pickEvent } from './rules';
 import { emergencyName, eventLabel, regionalize, weatherAchievementCopy, weatherTrackCopy } from './labels';
@@ -1836,7 +1837,7 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   const lapseRow = state ? timelapseSettingsRow(state) : '';
   const html = tl('ui.355', { p0: esc(treeName), p1: soundOn ? 'on' : '', soundOn, p3: soundOn ? '' : 'on', soundOn_: !soundOn, p5: langRow + unitRow + tourRow + lapseRow + (notify === null
         ? ''
-        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' }) + headsUpRow(notify)), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
+        : tl('ui.354', { p0: notify ? 'on' : '', p1: notify ? '' : 'on' }) + dailyBriefRow(notify) + headsUpRow(notify)), p6: esc(APP_VERSION), privacyUrl: PRIVACY_URL, termsUrl: TERMS_URL }).replace(
     'data-action="disclaimer"',
     // 1.4.50 資料來源及授權 sits with the other legal links (before 免責聲明).
     `data-action="credits">${esc(tl('credits.link'))}</button><button type="button" data-action="disclaimer"`,
@@ -1845,6 +1846,12 @@ export function settingsModal(treeName: string, notify: boolean | null = null, p
   if (!premiumCardHtml) return html;
   const at = html.indexOf('</h2>');
   return at < 0 ? premiumCardHtml + html : html.slice(0, at + 5) + premiumCardHtml + html.slice(at + 5);
+}
+
+/** 1.4.75 每日天氣 row (under 提醒通知; needs notifications on). */
+function dailyBriefRow(notify: boolean): string {
+  const on = dailyBriefEnabled();
+  return `<div class="setting-row daily-brief-row${notify ? '' : ' muted'}"><span>${esc(tl('daily.row'))}<small>${esc(tl('daily.hint'))}</small></span><div class="seg"><button type="button" class="${on ? 'on' : ''}" data-dailybrief="on">${esc(tl('daily.on'))}</button><button type="button" class="${on ? '' : 'on'}" data-dailybrief="off">${esc(tl('daily.off'))}</button></div></div>`;
 }
 
 /** 1.4.60 天氣預告 row (under 提醒通知; needs notifications on). */
