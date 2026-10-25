@@ -342,6 +342,7 @@ function pushTab(): string {
     h(tl('guide.190')),
     p(tl('guide.191')),
     p(tl('guide.daily')),
+    p(tl('guide.waterLowHour')),
     p(tl('guide.headsup')),
     h(tl('guide.192')),
     table(

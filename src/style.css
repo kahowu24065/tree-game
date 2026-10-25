@@ -4979,7 +4979,7 @@ html[lang='en'] .emerg > span {
 }
 
 
-/* 1.4.66: settings as a smaller, lighter sheet — less height, more breathing room; scrolls if needed. */
+/* 1.4.66 / 1.4.76: settings sheet — fixed title + close; body scrolls (same idea as .credits). */
 .modal-card.settings-sheet {
   width: min(340px, 92vw);
   max-height: min(68vh, 560px);
@@ -4987,13 +4987,26 @@ html[lang='en'] .emerg > span {
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 18px 48px rgba(35, 53, 44, 0.16);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .modal-card.settings-sheet > .eyebrow {
   margin-bottom: 2px;
+  flex: 0 0 auto;
 }
 .modal-card.settings-sheet > h2 {
   margin: 0 0 8px;
   font-size: 1.25rem;
+  flex: 0 0 auto;
+}
+.modal-card.settings-sheet .settings-body {
+  max-height: 58vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
+  text-align: left;
 }
 .modal-card.settings-sheet .setting-row {
   padding: 11px 0;
@@ -5014,9 +5027,35 @@ html[lang='en'] .emerg > span {
   margin-top: 2px;
   padding: 4px 0 2px;
 }
-/* Keep iOS premium card breathing room inside the lighter sheet. */
+.modal-card.settings-sheet > .primary {
+  flex: 0 0 auto;
+  margin-top: 10px;
+}
+/* Keep iOS premium card breathing room inside the scroll body. */
 .modal-card.settings-sheet .prem-card {
   margin: 8px 0 12px;
+}
+
+/* 1.4.76: 玩法 — fixed title + tabs + OK; only .guide-body scrolls. */
+.modal-card:has(> .guide-tabs) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 720px);
+}
+.modal-card:has(> .guide-tabs) > .eyebrow,
+.modal-card:has(> .guide-tabs) > h2,
+.modal-card:has(> .guide-tabs) > .guide-tabs,
+.modal-card:has(> .guide-tabs) > .primary {
+  flex: 0 0 auto;
+}
+.modal-card:has(> .guide-tabs) > .guide-body {
+  max-height: 58vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
+  text-align: left;
 }
 
 

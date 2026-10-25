@@ -159,6 +159,7 @@ import { Clipboard } from '@capacitor/clipboard';
 import { NOTIFY_KEY, applyNotifications, notifyEnabled, planNotifications } from './native/notify';
 import { HEADSUP_KEY, headsUpEnabled } from './headsUp';
 import { DAILY_BRIEF_KEY, dailyBriefEnabled } from './dailyBrief';
+import { WATER_LOW_REMIND_KEY, waterLowRemindEnabled } from './waterLowRemind';
 import { App } from '@capacitor/app';
 import { reportPushState, syncPush } from './native/push';
 import { LOCALES, getHeightUnit, getLocale, isHeightUnit, loadHeightUnit, saveHeightUnit, saveLocale, switchLocale, t as tl, tName, useHeightUnit, type HeightUnit, type Locale } from './i18n';
@@ -1200,6 +1201,8 @@ function scheduleReminders(background: boolean): void {
         if (!state.started || state.over || state.dying) return false;
         return previewNight(state, today(), events, meta).wTone === 'dry';
       })(),
+      moisture: state.moisture,
+      waterLowHourly: waterLowRemindEnabled(),
       pendingEmergencies: pending,
       background,
       hatchAt: (() => {
@@ -2526,7 +2529,7 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target : null;
   if (!el) return;
   if (el.closest('#dev-root')) return;
-  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-seen-vig], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-dailybrief], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap]');
+  const target = el.closest<HTMLElement>('[data-open], [data-action], [data-tab], [data-prep], [data-seen], [data-seen-vig], [data-place], [data-quality], [data-sound], [data-species], [data-album-mode], [data-guide], [data-notify], [data-dailybrief], [data-waterlow], [data-headsup], [data-cal], [data-cal-nav], [data-log-snap]');
   if (!target) {
     // v1.4.1: a tap anywhere on the 樹木狀態 card opens its pop box (照顧／圖鑑／里程碑).
     if (el.closest('#status-card') && state.started && !state.over) {
@@ -2602,7 +2605,7 @@ document.addEventListener('click', (event) => {
   }
   if (target.dataset.guide) {
     openModal(guideModal(target.dataset.guide as GuideTab));
-    document.querySelector('.modal-card')?.scrollTo({ top: 0 });
+    document.querySelector('.guide-body')?.scrollTo({ top: 0 });
     return;
   }
   if (target.dataset.notify === 'on' || target.dataset.notify === 'off') {
@@ -2621,6 +2624,12 @@ document.addEventListener('click', (event) => {
     kvSet(DAILY_BRIEF_KEY, target.dataset.dailybrief === 'on' ? '1' : '0');
     scheduleReminders(false); // re-sends /state with the new choice
     target.closest('.seg')?.querySelectorAll<HTMLElement>('button').forEach((btn) => btn.classList.toggle('on', btn.dataset.dailybrief === target.dataset.dailybrief));
+    return;
+  }
+  if (target.dataset.waterlow === 'on' || target.dataset.waterlow === 'off') {
+    kvSet(WATER_LOW_REMIND_KEY, target.dataset.waterlow === 'on' ? '1' : '0');
+    scheduleReminders(false);
+    target.closest('.seg')?.querySelectorAll<HTMLElement>('button').forEach((btn) => btn.classList.toggle('on', btn.dataset.waterlow === target.dataset.waterlow));
     return;
   }
   if (target.dataset.headsup === 'on' || target.dataset.headsup === 'off') {

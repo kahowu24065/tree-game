@@ -1,4 +1,4 @@
-// 1.4.75: daily weather brief (settings + /state + push channel).
+// 1.4.76: daily weather brief (settings + /state + push channel).
 import { describe, expect, it, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import { useLocale, tables } from '../src/i18n';
@@ -21,11 +21,11 @@ beforeEach(() => {
 });
 
 describe('daily weather brief opt-in', () => {
-  it('version 1.4.75 / versionCode 82', () => {
-    expect(APP_VERSION).toBe('1.4.75');
+  it('version 1.4.76 / versionCode 83', () => {
+    expect(APP_VERSION).toBe('1.4.76');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+82/);
-    expect(g).toContain('1.4.75');
+    expect(g).toMatch(/versionCode\s+83/);
+    expect(g).toContain('1.4.76');
   });
 
   it('defaults on, "0" turns it off', () => {
