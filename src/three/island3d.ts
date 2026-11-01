@@ -374,10 +374,10 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     [-5.3, -1.2, 0.5], [-1.6, -5.2, 0.6], [0.8, -5.6, 0.4], [1.8, 4.4, 0.3], [-2.4, 4.8, 0.45],
   ].filter((spot): spot is [number, number, number] => {
     const [x, z] = spot;
-    // 1.4.66: keep the campfire pocket (prefer ≈ 2.2) free of fixed rocks.
+    // 1.4.77: keep the campfire pocket (prefer ≈ 1.55) free of fixed rocks.
     const fireAng = Math.atan2(z, x);
     const fireDist = Math.hypot(x, z);
-    const dAng = Math.abs(((fireAng - 2.2 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    const dAng = Math.abs(((fireAng - 1.55 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     return !(fireDist > 0.9 && fireDist < 2.8 && dAng < 0.85);
   });
   const P = GARDEN_POND;
@@ -396,10 +396,10 @@ function buildGardenProps(pk: number, bridgeAt: { x: number; z: number }): THREE
     const x = Math.cos(a) * r;
     const z = Math.sin(a) * r;
     if (wet(x, z, 0.35)) continue;
-    // 1.4.66: leave the front-left campfire pocket empty (prefer angle ≈ 2.2).
+    // 1.4.77: leave the front campfire pocket empty (prefer angle ≈ 1.55).
     const fireAng = Math.atan2(z, x);
     const fireDist = Math.hypot(x, z);
-    if (fireDist > 0.9 && fireDist < 2.8 && Math.abs(((fireAng - 2.2 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.85) continue;
+    if (fireDist > 0.9 && fireDist < 2.8 && Math.abs(((fireAng - 1.55 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.85) continue;
     rockSpots.push([x, z, 0.18 + rand() * 0.32]);
     i++;
   }
