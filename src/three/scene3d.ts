@@ -7,6 +7,7 @@ import { BLOCK, DRY, WATER, WalkNav, type NavObstacle } from './walkNav';
 import { buildFence, buildIsland, buildSeedlingBody, ISLAND_R, onGardenWater, type Fence, type Island } from './island3d';
 import { bucketScale, propBucket, propScaleFor, propUniforms } from './propScale';
 import { animalFactor, FENCE_INSET_UNITS, fenceHeightUnits, islandScaleFor, shoreRadius } from '../scale';
+import { overviewFrame, overviewWantDist } from './camFrame';
 import { addNearFade, buildTree, healthUniforms, peekUniform, treeKey, windUniforms, type TreeBuild, type TreeParams } from './tree3d';
 import { FallFx, LeafLoop, fallenLog, disposeGroup, type FallMode } from './treeFx';
 import { buildNestDecor, nestSite } from './nestDecor3d';
@@ -2212,16 +2213,18 @@ export class Scene3D {
 
     // Camera: keep the whole tree framed at a 45-degree look-down, rising as it grows.
     // v16: while the collapse replays the (taller) tree as it stood, frame that one.
+    // 1.4.78: hybrid overview — tree screen fraction ~40%→60% (cap) so growth reads as the tree
+    // getting taller, not the island shrinking; island stage term still floors the frame.
     const H = Math.max(tree.height * tree.group.scale.y, this.fall?.mode === 'collapse' && !this.fallSwapped ? this.fall.split.build.height : 0);
-    // v6 framing, in metres: every v6 constant is multiplied by the scene scale K.
     const KF = this.islandK;
     const W = Math.max(1.0 * KF, tree.canopyRadius * tree.group.scale.x);
-    const R = Math.max(2.0 * KF, Math.sqrt((H * 0.55) ** 2 + W * W) * 1.14, islandR * [0.2, 0.28, 0.32, 0.36, 0.38][islandStage]!);
+    const framed = overviewFrame({ treeM: H, canopyM: W, islandK: KF, islandR, islandStage });
+    const R = framed.R;
     const vHalf = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
     const portrait = this.camera.aspect < 0.8;
-    const want = Math.max(R / Math.sin(vHalf) * (portrait ? 1.3 : 1.18), R / Math.sin(hHalf) * (portrait ? 1.12 : 1.05));
-    const wantY = H * 0.47 + (portrait ? H * 0.02 : 0);
+    const want = overviewWantDist(R, vHalf, hHalf, portrait);
+    const wantY = framed.wantY + (portrait ? H * 0.02 : 0);
     const k = 1 - Math.exp(-dt * 1.6);
     const cdt = this.camDt;
     if (this.seedPhase === 'pull' || this.seedPhase === 'sprout' || this.seedPhase === 'settle' || this.seedPhase === 'intro') {

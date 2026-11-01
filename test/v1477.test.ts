@@ -1,4 +1,4 @@
-// 1.4.77: campfire off garden pond; iOS growth MP4 upright (no Y-flip).
+// 1.4.78: campfire off garden pond; iOS growth MP4 upright (no Y-flip).
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
@@ -6,12 +6,12 @@ import { campfireSpot } from '../src/campfire';
 import { GARDEN_POND, onGardenWater } from '../src/three/island3d';
 import { APP_VERSION } from '../src/version';
 
-describe('1.4.77 campfire clear of pond + iOS MP4 upright', () => {
-  it('version 1.4.77 / versionCode 84', () => {
-    expect(APP_VERSION).toBe('1.4.77');
+describe('1.4.78 campfire clear of pond + iOS MP4 upright', () => {
+  it('version 1.4.78 / versionCode 85', () => {
+    expect(APP_VERSION).toBe('1.4.78');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+84/);
-    expect(g).toContain('1.4.77');
+    expect(g).toMatch(/versionCode\s+85/);
+    expect(g).toContain('1.4.78');
   });
 
   it('scene prefers ~1.55 and wet keep-out covers the ash pad', () => {

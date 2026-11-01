@@ -1,2 +1,2 @@
 /** Shown in Settings; bump with each store / Pages release. */
-export const APP_VERSION = '1.4.77';
+export const APP_VERSION = '1.4.78';

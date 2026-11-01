@@ -6,12 +6,12 @@ import { VIGNETTE_ART_IDS, vignetteArtUrl } from '../src/vignetteArt';
 import { dailyEventAllowed, pickDailyEvent, EVENTS } from '../src/content';
 import { createGame, ensureToday } from '../src/sim';
 
-describe('1.4.70 artist vignettes + pick rules', () => {
-  it('version 1.4.77 / versionCode 84', () => {
-    expect(APP_VERSION).toBe('1.4.77');
+describe('1.4.78 artist vignettes + pick rules', () => {
+  it('version 1.4.78 / versionCode 85', () => {
+    expect(APP_VERSION).toBe('1.4.78');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+84/);
-    expect(g).toContain('1.4.77');
+    expect(g).toMatch(/versionCode\s+85/);
+    expect(g).toContain('1.4.78');
   });
 
   it('WebP assets exist and are substantial (artist crops, not tiny SVG raster)', () => {
