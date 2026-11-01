@@ -118,8 +118,8 @@ public class TreeTimelapsePlugin: CAPPlugin, CAPBridgedPlugin {
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
         ), let cg = image.cgImage else { return }
         ctx.clear(CGRect(x: 0, y: 0, width: width, height: height))
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: 1, y: -1)
+        // 1.4.77: CVPixelBuffer CGContext is already bottom-left like CGImage — do NOT flip.
+        // Prior translateBy + scaleBy(1, -1) made growth MP4s upside-down on iOS.
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
     }
 
