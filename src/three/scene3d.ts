@@ -2661,9 +2661,9 @@ export class Scene3D {
   }
 
   /**
-   * v15.2 campfire spot (island units): beside the trunk, front-left in the default view (clear of the height rail on
-   * phones), outside the mulch ring, clear of water, props and the 養分地標. Re-picked only when the trunk / fire size
-   * or the habitat changes. The fire itself only shows at night.
+   * v15.2 campfire spot (island units): beside the trunk, front in the default view (clear of the height rail on
+   * phones and of the garden pond), outside the mulch ring, clear of water, props and the 養分地標. Re-picked only
+   * when the trunk / fire size or the habitat changes. The fire itself only shows at night.
    */
   private ensureCampfire(input: SceneInput, tree: TreeBuild, K: number, propK: number): CampfireSpot & { rU: number; key: string } {
     const kS = islandScaleFor(tree.metricScale);
@@ -2672,7 +2672,8 @@ export class Scene3D {
     this.mulchR = mulchRadii(trunkU, dirtU);
     const rU = campfireRadiusUnits(animalFactor(tree.height), kS, tree.height / Math.max(1e-3, kS));
     const log = this.logWant && this.logProp && this.logProp.key !== 'pending' ? this.logProp : null;
-    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}|${this.nestKey}|${log ? log.key : ''}`;
+    // 1.4.77: |pc1 forces a re-pick after moving the fire off the garden pond.
+    const key = `${this.habitatKey}|${trunkU.toFixed(2)}|${rU.toFixed(2)}|${this.mulchR.outer.toFixed(2)}|${input.landmark ? 1 : 0}|${this.nestKey}|${log ? log.key : ''}|pc1`;
     if (!this.fireSpot || this.fireSpot.key !== key) {
       const hab = this.habitat;
       const props = [...this.island.obstacles().map((o) => ({ x: o.x, z: o.z, r: o.r * propK })), ...(hab && hab.stage > 0 ? resolveObstacles(hab.obstacles, propK) : [])];
@@ -2686,10 +2687,12 @@ export class Scene3D {
         trunkU: trunkU * 2.2,
         clearU: this.mulchR.outer * 1.06,
         fireU: rU,
-        prefer: 2.2,
+        // 1.4.77: was 2.2 (front-left) → sat on the garden pond; ~1.55 is front / dry grass, clear of height rail.
+        prefer: 1.55,
         // 1.4.66: bigger keep-out so rocks / bushes never sit on the firepit rim.
         margin: 0.5,
-        blocked: (x, z, r) => this.wetOrBlocked(x, z, r + 0.08) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + Math.max(0.45, rU * 1.4)),
+        // 1.4.77: clearPad visual radius ≈ 1.8×rU — wet keep-out must cover the ash bed, not just the flame ring.
+        blocked: (x, z, r) => this.wetOrBlocked(x, z, Math.max(r * 2.0 + 0.35, r + 0.55)) || props.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + Math.max(0.45, rU * 1.4)),
       });
       this.fireSpot = { ...spot, rU, key };
     }

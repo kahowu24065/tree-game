@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { APP_VERSION } from '../src/version';
 
 describe('1.4.74 iOS ad: no double safe-area; hide filled HTML chrome', () => {
-  it('version 1.4.76 / versionCode 83', () => {
-    expect(APP_VERSION).toBe('1.4.76');
+  it('version 1.4.77 / versionCode 84', () => {
+    expect(APP_VERSION).toBe('1.4.77');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+83/);
-    expect(g).toContain('1.4.76');
+    expect(g).toMatch(/versionCode\s+84/);
+    expect(g).toContain('1.4.77');
   });
 
   it('iOS showBanner uses margin 0 (plugin pins to safeArea)', () => {
