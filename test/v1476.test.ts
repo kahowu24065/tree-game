@@ -1,4 +1,4 @@
-// 1.4.76: hourly low-water local reminder + settings/guide fixed chrome (credits-style scroll).
+// 1.4.78: hourly low-water local reminder + settings/guide fixed chrome (credits-style scroll).
 import { describe, expect, it, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import { readFileSync } from 'node:fs';
@@ -22,12 +22,12 @@ beforeEach(() => {
   } as Storage;
 });
 
-describe('1.4.76 water-low hourly + modal scroll', () => {
-  it('version 1.4.77 / versionCode 84', () => {
-    expect(APP_VERSION).toBe('1.4.77');
+describe('1.4.78 water-low hourly + modal scroll', () => {
+  it('version 1.4.78 / versionCode 85', () => {
+    expect(APP_VERSION).toBe('1.4.78');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+84/);
-    expect(g).toContain('1.4.77');
+    expect(g).toMatch(/versionCode\s+85/);
+    expect(g).toContain('1.4.78');
   });
 
   it('water-low remind defaults on; "0" turns it off', () => {

@@ -25,12 +25,12 @@ const base = {
   typhoon: false,
 };
 
-describe('1.4.73 twenty-one more weather vignettes', () => {
-  it('version 1.4.77 / versionCode 84', () => {
-    expect(APP_VERSION).toBe('1.4.77');
+describe('1.4.78 twenty-one more weather vignettes', () => {
+  it('version 1.4.78 / versionCode 85', () => {
+    expect(APP_VERSION).toBe('1.4.78');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+84/);
-    expect(g).toContain('1.4.77');
+    expect(g).toMatch(/versionCode\s+85/);
+    expect(g).toContain('1.4.78');
   });
 
   it('EVENTS has 31 ids and all new ones are present with i18n', () => {
