@@ -31,13 +31,13 @@ export function drawAnimal(
 
   switch (id) {
     case 'butterfly':
-      drawButterfly(ctx, time, paint);
+      drawButterfly(ctx, time, paint, id);
       break;
     case 'ladybug':
       drawLadybug(ctx, paint);
       break;
     case 'sparrow':
-      drawBird(ctx, paint, stroke, '#8a623c', '#c4956a', '#5c3b28', 1);
+      drawBird(ctx, paint, stroke, '#8a623c', '#c4956a', '#5c3b28', 1, animalById('sparrow')?.look.f);
       break;
     case 'squirrel':
       drawSquirrel(ctx, time, paint);
@@ -58,7 +58,7 @@ export function drawAnimal(
       drawWoodpecker(ctx, paint, stroke);
       break;
     case 'dove':
-      drawBird(ctx, paint, stroke, '#8d8a86', '#d9d3cc', '#6d5a62', 1.15);
+      drawBird(ctx, paint, stroke, '#8d8a86', '#d9d3cc', '#6d5a62', 1.15, animalById('dove')?.look.f);
       break;
     case 'owl':
       drawOwl(ctx, paint, Boolean(opts.night), sil);
@@ -70,8 +70,8 @@ export function drawAnimal(
       // Generic 2D fallback by category (the 3D scene has proper models for every species).
       const a = animalById(id);
       const c = a?.look.c ?? ['#8a623c', '#c4956a', '#5c3b28'];
-      if (!a || a.category === 'bird') drawBird(ctx, paint, stroke, c[0] ?? '#8a623c', c[1] ?? '#c4956a', c[2] ?? '#5c3b28', 1);
-      else if (a.category === 'butterfly') drawButterfly(ctx, time, paint);
+      if (!a || a.category === 'bird') drawBird(ctx, paint, stroke, c[0] ?? '#8a623c', c[1] ?? '#c4956a', c[2] ?? '#5c3b28', 1, a?.look.f);
+      else if (a.category === 'butterfly') drawButterfly(ctx, time, paint, id);
       else if (a.category === 'mammal') drawSquirrel(ctx, time, paint);
       else if (a.category === 'insect') drawLadybug(ctx, paint);
       else {
@@ -89,27 +89,151 @@ export function drawAnimal(
   ctx.restore();
 }
 
+function tone(hex: string, k: number): string {
+  const n = hex.replace('#', '');
+  if (n.length < 6) return hex;
+  const v = parseInt(n.slice(0, 6), 16);
+  const ch = (s: number) => Math.max(0, Math.min(255, Math.round(((v >> s) & 255) * k)));
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
 function drawButterfly(
   ctx: CanvasRenderingContext2D,
   time: number,
   paint: (c: string) => void,
+  id: string,
 ): void {
+  const look = animalById(id)?.look;
+  const wing = look?.c[0] ?? '#f4f1e4';
+  const pat = look?.c[1] ?? '#9ccf6a';
+  const body = look?.c[2] ?? '#333333';
+  const spot = look?.c[3] ?? '#ffffff';
+  const f = look?.f ?? [];
   const flap = 0.35 + Math.abs(Math.sin(time * 0.01)) * 0.75;
-  paint('#f4f1e4');
+  const plan = f.includes('atlas') ? 'atlas' : f.includes('moth') ? 'moth' : f.includes('birdwing') ? 'birdwing' : f.includes('tails') ? 'swallow' : f.includes('tiger') ? 'tiger' : 'pierid';
+  const wingPath = (side: number) => {
+    ctx.beginPath();
+    const s = side;
+    if (plan === 'pierid') {
+      ctx.moveTo(s * 1, -1);
+      ctx.quadraticCurveTo(s * 11, -8 * flap, s * 14, -2 * flap);
+      ctx.quadraticCurveTo(s * 8, 2 * flap, s * 1, 1);
+      ctx.fill();
+      paint(tone(wing, 0.62));
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.lineWidth = 1.15;
+      ctx.stroke();
+      paint(pat);
+      ctx.beginPath();
+      ctx.moveTo(s * 1, 1);
+      ctx.quadraticCurveTo(s * 10, 7 * flap, s * 5, 9 * flap);
+      ctx.quadraticCurveTo(s * -2, 5 * flap, s * 1, 1);
+      ctx.fill();
+      paint(body);
+      ctx.beginPath();
+      ctx.moveTo(s * 9, -6 * flap);
+      ctx.lineTo(s * 14, -2 * flap);
+      ctx.lineTo(s * 8, 0);
+      ctx.fill();
+    } else if (plan === 'tiger') {
+      ctx.ellipse(s * 8, -1, 9, 7 * flap, s * 0.2, 0, Math.PI * 2);
+      ctx.ellipse(s * 6, 6, 8, 5.5 * flap, s * -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      paint(body);
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      paint(spot);
+      for (const [x, y] of [[11, -4], [8, -7], [4, 2], [9, 6]] as const) {
+        ctx.beginPath();
+        ctx.arc(s * x, y * flap, 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (plan === 'swallow') {
+      ctx.moveTo(s * 2, 0);
+      ctx.lineTo(s * 14, -8 * flap);
+      ctx.lineTo(s * 4, -2 * flap);
+      ctx.lineTo(s * 2, 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(s * 1, 2);
+      ctx.lineTo(s * 8, 7 * flap);
+      ctx.lineTo(s * 16, 12 * flap);
+      ctx.lineTo(s * 6, 4);
+      ctx.fill();
+      paint(pat);
+      ctx.beginPath();
+      ctx.moveTo(s * 3, -1);
+      ctx.lineTo(s * 11, -5 * flap);
+      ctx.lineTo(s * 7, 5 * flap);
+      ctx.lineTo(s * 2, 2);
+      ctx.fill();
+    } else if (plan === 'birdwing') {
+      ctx.moveTo(s * 1, -1);
+      ctx.lineTo(s * 16, -10 * flap);
+      ctx.lineTo(s * 6, 1);
+      ctx.fill();
+      paint(pat);
+      ctx.beginPath();
+      ctx.moveTo(s * 1, 1);
+      ctx.lineTo(s * 12, 8 * flap);
+      ctx.lineTo(s * 4, 10 * flap);
+      ctx.lineTo(s * -1, 3);
+      ctx.fill();
+    } else if (plan === 'moth') {
+      ctx.moveTo(s * 1, 1);
+      ctx.lineTo(s * 12, -1 * flap);
+      ctx.lineTo(s * 6, -8 * flap);
+      ctx.lineTo(s * -1, -2);
+      ctx.fill();
+      paint(pat);
+      ctx.beginPath();
+      ctx.moveTo(s * 4, -1);
+      ctx.lineTo(s * 9, -3 * flap);
+      ctx.lineTo(s * 5, -5 * flap);
+      ctx.fill();
+    } else {
+      ctx.moveTo(s * 2, 0);
+      ctx.lineTo(s * 13, -3 * flap);
+      ctx.lineTo(s * 17, -8 * flap);
+      ctx.lineTo(s * 9, -13 * flap);
+      ctx.lineTo(s * 14, -9 * flap);
+      ctx.lineTo(s * 7, -8 * flap);
+      ctx.lineTo(s * 5, -5 * flap);
+      ctx.lineTo(s * 1, -2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0, 1);
+      ctx.lineTo(s * 9, 5 * flap);
+      ctx.lineTo(s * 15, 10 * flap);
+      ctx.lineTo(s * 8, 12 * flap);
+      ctx.lineTo(s * 13, 7 * flap);
+      ctx.lineTo(s * 3, 4 * flap);
+      ctx.fill();
+      paint(pat);
+      ctx.beginPath();
+      ctx.arc(s * 9, 6 * flap, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      paint(body);
+      ctx.beginPath();
+      ctx.arc(s * 9.4, 6 * flap, 1, 0, Math.PI * 2);
+      ctx.fill();
+      paint(spot);
+      ctx.beginPath();
+      ctx.arc(s * 8.6, 5.4 * flap, 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  paint(wing);
+  wingPath(1);
+  paint(wing);
+  wingPath(-1);
+  paint(body);
+  const bodyW = plan === 'atlas' ? 2.4 : plan === 'moth' ? 2 : 1.5;
+  const bodyL = plan === 'atlas' ? 14 : plan === 'moth' ? 12 : 11;
+  ctx.fillRect(-bodyW / 2, -bodyL / 2, bodyW, bodyL);
   ctx.beginPath();
-  ctx.ellipse(-7, -1, 8, 6 * flap, -0.4, 0, Math.PI * 2);
-  ctx.ellipse(-6, 4, 6, 4.5 * flap, 0.5, 0, Math.PI * 2);
-  ctx.fill();
-  paint('#f7f4ea');
-  ctx.beginPath();
-  ctx.ellipse(7, -1, 8, 6 * flap, 0.4, 0, Math.PI * 2);
-  ctx.ellipse(6, 4, 6, 4.5 * flap, -0.5, 0, Math.PI * 2);
-  ctx.fill();
-  paint('#6d8a48');
-  ctx.fillRect(-0.8, -6, 1.6, 12);
-  paint('#2c3330');
-  ctx.beginPath();
-  ctx.arc(0, -6, 1.3, 0, Math.PI * 2);
+  ctx.arc(0, -bodyL / 2, plan === 'atlas' ? 2 : 1.4, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -139,39 +263,68 @@ function drawBird(
   belly: string,
   beak: string,
   size: number,
+  flags: string[] = [],
 ): void {
   ctx.scale(size, size);
+  const pointed = flags.includes('pointed');
+  const bighead = flags.includes('bighead');
+  const rx = pointed ? 11.5 : bighead ? 7.2 : 9;
+  const ry = pointed ? 3.8 : bighead ? 5.2 : 6.4;
+  const headR = pointed ? 3.1 : bighead ? 5.5 : 4.2;
+  const headX = pointed ? 8.4 : bighead ? 5.4 : 7;
+  const beakLen = flags.includes('spoon') ? 12 : flags.includes('longBeak') ? (bighead ? 11 : 8) : flags.includes('thickBeak') ? 4.2 : 5;
   paint(body);
   ctx.beginPath();
-  ctx.ellipse(0, 0, 9, 6, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(pointed ? -1 : 0, 0, rx, ry, pointed ? -0.05 : -0.2, 0, Math.PI * 2);
   ctx.fill();
   paint(belly);
   ctx.beginPath();
-  ctx.ellipse(2, 1.5, 5, 3.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(2, 1.4, rx * 0.5, ry * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
   paint(body);
   ctx.beginPath();
-  ctx.arc(7, -2, 4.2, 0, Math.PI * 2);
+  ctx.arc(headX, bighead ? -2.4 : -2, headR, 0, Math.PI * 2);
   ctx.fill();
   paint(beak);
   ctx.beginPath();
-  ctx.moveTo(10, -2);
-  ctx.lineTo(15, -1);
-  ctx.lineTo(10, 0.5);
+  ctx.moveTo(headX + headR * 0.7, -2);
+  ctx.lineTo(headX + headR * 0.7 + beakLen, -1);
+  ctx.lineTo(headX + headR * 0.7, bighead ? 0.8 : 0.4);
   ctx.fill();
   paint('#2c241c');
   ctx.beginPath();
-  ctx.arc(8.3, -3, 0.8, 0, Math.PI * 2);
+  ctx.arc(headX + headR * 0.35, -2.6, bighead ? 1 : 0.75, 0, Math.PI * 2);
   ctx.fill();
   stroke(body);
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = pointed ? 1.15 : 1.5;
   ctx.beginPath();
-  ctx.moveTo(-7, -1);
-  ctx.quadraticCurveTo(-12, -6, -8, -7);
+  if (pointed) {
+    ctx.moveTo(-2, -0.5);
+    ctx.quadraticCurveTo(-16, -1, -20, 2.5);
+  } else if (bighead) {
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(-8, -2.5);
+  } else {
+    ctx.moveTo(-6, -1);
+    ctx.quadraticCurveTo(-11, -6, -7, -8);
+  }
   ctx.stroke();
+  if (flags.includes('forkTail')) {
+    ctx.beginPath();
+    ctx.moveTo(-rx + 2, -1);
+    ctx.lineTo(-rx - 11, -5);
+    ctx.moveTo(-rx + 2, 1);
+    ctx.lineTo(-rx - 11, 5);
+    ctx.stroke();
+  } else if (flags.includes('veryLongTail') || flags.includes('longTail')) {
+    ctx.beginPath();
+    ctx.moveTo(-rx + 1, 0.5);
+    ctx.lineTo(-rx - (flags.includes('veryLongTail') ? 18 : 11), 2);
+    ctx.stroke();
+  }
   paint('#5c4636');
-  ctx.fillRect(2, 5, 1.2, 4);
-  ctx.fillRect(5, 5, 1.2, 4);
+  ctx.fillRect(1, ry * 0.7, 1.1, 4);
+  ctx.fillRect(4, ry * 0.7, 1.1, 4);
 }
 
 function drawSquirrel(ctx: CanvasRenderingContext2D, time: number, paint: (c: string) => void): void {
@@ -296,35 +449,35 @@ function drawCicada(
 function drawKingfisher(ctx: CanvasRenderingContext2D, paint: (c: string) => void, stroke: (c: string) => void): void {
   paint('#1f7a8a');
   ctx.beginPath();
-  ctx.ellipse(-1, 1, 8, 5, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(-2, 1.5, 6.4, 4.6, -0.1, 0, Math.PI * 2);
   ctx.fill();
   paint('#e7a15a');
   ctx.beginPath();
-  ctx.ellipse(2, 2, 4, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.5, 2.2, 3.4, 2.2, 0, 0, Math.PI * 2);
   ctx.fill();
   paint('#1b6e86');
   ctx.beginPath();
-  ctx.arc(6, -2, 4, 0, Math.PI * 2);
+  ctx.arc(4.2, -2.2, 5.2, 0, Math.PI * 2);
   ctx.fill();
   paint('#e7a15a');
   ctx.beginPath();
-  ctx.moveTo(9, -1);
+  ctx.moveTo(8, -1.2);
   ctx.lineTo(18, -0.2);
-  ctx.lineTo(9, 1.2);
+  ctx.lineTo(8, 1.4);
   ctx.fill();
   paint('#f4f1ea');
   ctx.beginPath();
-  ctx.arc(6.6, -3.2, 1.5, 0, Math.PI * 2);
+  ctx.arc(5.2, -3.4, 1.7, 0, Math.PI * 2);
   ctx.fill();
   paint('#241c16');
   ctx.beginPath();
-  ctx.arc(7, -3.2, 0.6, 0, Math.PI * 2);
+  ctx.arc(5.6, -3.4, 0.7, 0, Math.PI * 2);
   ctx.fill();
   stroke('#176070');
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.moveTo(-7, -1);
-  ctx.lineTo(-12, -5);
+  ctx.moveTo(-5, 0);
+  ctx.lineTo(-9, -2);
   ctx.stroke();
 }
 

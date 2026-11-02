@@ -127,6 +127,49 @@ function flat(shape: THREE.Shape, s: number, curve = 4): THREE.BufferGeometry {
   return g;
 }
 
+type Pt = [number, number];
+
+function shapeOf(pts: Pt[]): THREE.Shape {
+  const s = new THREE.Shape();
+  s.moveTo(pts[0]![0], pts[0]![1]);
+  for (let i = 1; i < pts.length; i++) s.lineTo(pts[i]![0], pts[i]![1]);
+  return s;
+}
+
+/** Shrink a polygon toward its centroid so a darker copy underneath reads as a margin. */
+function insetPts(pts: Pt[], k: number): Pt[] {
+  let cx = 0;
+  let cy = 0;
+  for (const p of pts) {
+    cx += p[0];
+    cy += p[1];
+  }
+  cx /= pts.length;
+  cy /= pts.length;
+  return pts.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k]);
+}
+
+/** Thin tapered vein from a to b, width w at the root. */
+function wedge(a: Pt, b: Pt, w: number): THREE.Shape {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * w;
+  const py = (dx / len) * w;
+  return shapeOf([
+    [a[0] + px, a[1] + py],
+    [b[0] + px * 0.3, b[1] + py * 0.3],
+    [b[0] - px * 0.3, b[1] - py * 0.3],
+    [a[0] - px, a[1] - py],
+  ]);
+}
+
+function disc(r: number, seg = 7): THREE.BufferGeometry {
+  const c = new THREE.CircleGeometry(r, seg);
+  c.rotateX(-Math.PI / 2);
+  return c;
+}
+
 /**
  * Two-segment leg: `name` pivots at the hip/shoulder, `name2` at the knee/elbow.
  * `foot`: 'hoof' | 'paw' | 'hand' | 'none'.
@@ -172,19 +215,55 @@ function tailChain(k: Kit, parent: string, base: XYZ, n: number, segLen: number,
 
 /* ---------- Birds ---------- */
 
+/** Body and wing proportions. Flags such as crest, longTail, longBeak and soar still layer on top. */
+type BirdBuild = 'round' | 'pointed' | 'bighead';
+
+interface BirdProp {
+  bx: number;
+  bry: number;
+  bz: number;
+  rumpR: number;
+  rumpL: number;
+  belX: number;
+  belY: number;
+  belZ: number;
+  head: number;
+  span: number;
+  chord: number;
+  shoulderZ: number;
+  tail: number;
+}
+
+const BIRD_PROP: Record<BirdBuild, BirdProp> = {
+  // Plump songbird: short rounded wings, round head.
+  round: { bx: 0.27, bry: 0.24, bz: 0.23, rumpR: 0.16, rumpL: 0.34, belX: 0.21, belY: 0.175, belZ: 0.19, head: 0.15, span: 0.4, chord: 0.3, shoulderZ: 0.15, tail: 0.28 },
+  // Slim aerial bird: small head, long sickle wings.
+  pointed: { bx: 0.38, bry: 0.145, bz: 0.12, rumpR: 0.1, rumpL: 0.5, belX: 0.28, belY: 0.1, belZ: 0.1, head: 0.1, span: 0.64, chord: 0.16, shoulderZ: 0.07, tail: 0.22 },
+  // Compact body, oversized head, stubby wings (kingfisher, woodpecker).
+  bighead: { bx: 0.2, bry: 0.17, bz: 0.17, rumpR: 0.11, rumpL: 0.2, belX: 0.15, belY: 0.125, belZ: 0.145, head: 0.21, span: 0.28, chord: 0.22, shoulderZ: 0.11, tail: 0.15 },
+};
+
+function birdBuildOf(look: Look): BirdBuild {
+  if (has(look, 'bighead')) return 'bighead';
+  if (has(look, 'pointed')) return 'pointed';
+  return 'round';
+}
+
 function birdFig(look: Look): THREE.Group {
   const [body, belly, headC, beak, wingC, accent = '#ffffff'] = look.c as [string, string, string, string, string, string?];
   const k = new Kit();
+  const build = birdBuildOf(look);
+  const prop = BIRD_PROP[build];
   const long = has(look, 'longLegs');
   const legs = long ? 0.6 : 0.14;
-  const by = legs + 0.2;
-  const tilt = long ? 0.05 : 0.22;
+  const by = legs + (build === 'pointed' ? 0.16 : 0.2);
+  const tilt = long ? 0.05 : build === 'pointed' ? 0.08 : 0.22;
   const legC = long ? '#2a2a2a' : '#7a5b3a';
   k.part('body');
-  // Teardrop body: rounded breast tapering into the rump.
-  k.add('body', E(0.29, 0.22, 0.21), body, [0.04, by, 0], [0, 0, tilt]);
-  k.add('body', new THREE.ConeGeometry(0.17, 0.4, 8), body, [-0.26, by + 0.05 + tilt * 0.25, 0], [0, 0, Math.PI / 2 + tilt]);
-  k.add('body', E(0.23, 0.16, 0.17), belly, [0.09, by - 0.07, 0], [0, 0, tilt]);
+  // Teardrop body: rounded breast tapering into the rump. The preset changes the silhouette at overview distance.
+  k.add('body', E(prop.bx, prop.bry, prop.bz), body, [0.04, by, 0], [0, 0, tilt]);
+  k.add('body', new THREE.ConeGeometry(prop.rumpR, prop.rumpL, 8), body, [-0.18 - prop.bx * 0.35, by + 0.05 + tilt * 0.25, 0], [0, 0, Math.PI / 2 + tilt]);
+  k.add('body', E(prop.belX, prop.belY, prop.belZ), belly, [0.08, by - prop.bry * 0.32, 0], [0, 0, tilt]);
   // Legs (separate so waders can step): thigh feathers, thin tarsus, three toes forward and one back.
   for (const [name, s] of [['legL', 1], ['legR', -1]] as const) {
     k.part(name, [0.02, legs + 0.02, s * 0.07], 'solid');
@@ -193,76 +272,83 @@ function birdFig(look: Look): THREE.Group {
     for (const a of [-0.45, 0, 0.45]) k.add(name, new THREE.BoxGeometry(long ? 0.14 : 0.09, 0.012, 0.018), legC, [0.07, 0.008, s * 0.07 + Math.sin(a) * 0.03], [0, a, 0]);
     k.add(name, new THREE.BoxGeometry(0.06, 0.012, 0.016), legC, [-0.02, 0.008, s * 0.07]);
   }
-  // Tail: a fan (or fork) of feathers.
-  const tailLen = has(look, 'veryLongTail') ? 0.95 : has(look, 'longTail') ? 0.5 : 0.28;
+  // Tail: a fan (or fork) of feathers. longTail / veryLongTail / forkTail still win over the preset length.
+  const tailLen = has(look, 'veryLongTail') ? 0.95 : has(look, 'longTail') ? 0.5 : has(look, 'forkTail') && build === 'pointed' ? 0.46 : prop.tail;
   const tailUp = has(look, 'cocked') ? 0.6 : -0.3;
   k.part('tail', [-0.4, by + 0.07, 0]);
   const tail = new THREE.Shape();
-  const tw = has(look, 'veryLongTail') ? 0.07 : 0.1;
+  const tw = has(look, 'veryLongTail') ? 0.07 : build === 'pointed' ? 0.055 : 0.1;
   tail.moveTo(0, -0.05);
   if (has(look, 'forkTail')) {
-    tail.lineTo(-tailLen, -tw * 1.3);
-    tail.lineTo(-tailLen * 0.7, 0);
-    tail.lineTo(-tailLen, tw * 1.3);
+    tail.lineTo(-tailLen, -tw * 1.6);
+    tail.lineTo(-tailLen * 0.55, 0);
+    tail.lineTo(-tailLen, tw * 1.6);
   } else {
     tail.lineTo(-tailLen * 0.92, -tw);
     tail.quadraticCurveTo(-tailLen * 1.05, 0, -tailLen * 0.92, tw);
   }
   tail.lineTo(0, 0.05);
   k.add('tail', flat(tail, 1), has(look, 'veryLongTail') ? accent : wingC, [-0.38, by + 0.07, 0], [0, 0, -tailUp * 0.7]);
-  // Neck + head.
+  // Neck + head. bighead sits a large skull on a short body; pointed tucks a small head into the shoulders.
   const longNeck = has(look, 'longNeck');
-  const hy = longNeck ? by + 0.52 : by + 0.24;
-  const hx = longNeck ? 0.36 : 0.28;
-  k.part('head', longNeck ? [0.2, by + 0.12, 0] : [hx - 0.06, hy - 0.1, 0]);
+  const headR = prop.head;
+  const hy = longNeck ? by + 0.52 : by + (build === 'bighead' ? 0.3 : build === 'pointed' ? 0.16 : 0.24);
+  const hx = longNeck ? 0.36 : build === 'bighead' ? 0.2 : build === 'pointed' ? 0.34 : 0.28;
+  k.part('head', longNeck ? [0.2, by + 0.12, 0] : [hx - headR * 0.4, hy - headR * 0.7, 0]);
   if (longNeck) {
     seg(k, 'head', [0.2, by + 0.1, 0], [0.26, by + 0.32, 0], 0.07, 0.05, body);
     seg(k, 'head', [0.26, by + 0.32, 0], [hx - 0.02, hy - 0.05, 0], 0.05, 0.045, body);
+  } else if (build === 'pointed') {
+    seg(k, 'head', [hx - 0.12, by + 0.06, 0], [hx - 0.02, hy - 0.02, 0], 0.055, 0.04, body, 5);
   }
-  k.add('head', E(0.15, 0.14, 0.14), headC, [hx, hy, 0]);
-  const bl = has(look, 'longBeak') ? 0.34 : has(look, 'spoon') ? 0.4 : has(look, 'thickBeak') ? 0.13 : 0.13;
-  const bw = has(look, 'thickBeak') ? 0.07 : has(look, 'hooked') ? 0.06 : 0.035;
-  k.add('head', new THREE.ConeGeometry(bw, bl, 5), beak, [hx + 0.12 + bl / 2 - 0.05, hy - (has(look, 'hooked') ? 0.035 : 0.02), 0], [0, 0, -Math.PI / 2 - (has(look, 'hooked') ? 0.35 : 0.05)]);
-  if (has(look, 'spoon')) k.add('head', E(0.07, 0.015, 0.06, 0), beak, [hx + 0.12 + bl - 0.04, hy - 0.03, 0]);
+  k.add('head', E(headR, headR * 0.92, headR * 0.92), headC, [hx, hy, 0]);
+  const bl = has(look, 'longBeak') ? 0.34 : has(look, 'spoon') ? 0.4 : has(look, 'thickBeak') ? 0.13 : build === 'bighead' ? 0.16 : 0.12;
+  const bw = has(look, 'thickBeak') ? 0.07 : has(look, 'hooked') ? 0.06 : build === 'bighead' ? 0.045 : 0.032;
+  const beakRoot = hx + headR * 0.72;
+  k.add('head', new THREE.ConeGeometry(bw, bl, 5), beak, [beakRoot + bl / 2 - 0.02, hy - (has(look, 'hooked') ? 0.035 : 0.02), 0], [0, 0, -Math.PI / 2 - (has(look, 'hooked') ? 0.35 : 0.05)]);
+  if (has(look, 'spoon')) k.add('head', E(0.07, 0.015, 0.06, 0), beak, [beakRoot + bl - 0.06, hy - 0.03, 0]);
+  const eyeR = build === 'bighead' ? 0.034 : build === 'pointed' ? 0.02 : 0.027;
   for (const s of [-1, 1]) {
-    if (has(look, 'eyering')) k.add('head', E(0.042, 0.042, 0.02, 0), '#ffffff', [hx + 0.07, hy + 0.035, s * 0.12]);
-    if (has(look, 'mask')) k.add('head', E(0.09, 0.035, 0.02, 0), '#1a1a1a', [hx + 0.05, hy + 0.03, s * 0.125]);
-    k.add('head', new THREE.IcosahedronGeometry(0.027, 0), has(look, 'redEye') ? '#c8302a' : '#111111', [hx + 0.08, hy + 0.035, s * 0.125]);
-    k.add('head', new THREE.IcosahedronGeometry(0.009, 0), '#ffffff', [hx + 0.1, hy + 0.05, s * 0.14]);
-    if (has(look, 'cheek')) k.add('head', E(0.055, 0.04, 0.02, 0), accent, [hx + 0.03, hy - 0.04, s * 0.13]);
+    const ex = hx + headR * 0.48;
+    const ez = s * headR * 0.78;
+    if (has(look, 'eyering')) k.add('head', E(eyeR * 1.55, eyeR * 1.55, 0.02, 0), '#ffffff', [ex - 0.01, hy + headR * 0.22, ez]);
+    if (has(look, 'mask')) k.add('head', E(headR * 0.55, eyeR * 1.3, 0.02, 0), '#1a1a1a', [ex - 0.02, hy + headR * 0.15, ez]);
+    k.add('head', new THREE.IcosahedronGeometry(eyeR, 0), has(look, 'redEye') ? '#c8302a' : '#111111', [ex, hy + headR * 0.22, ez]);
+    k.add('head', new THREE.IcosahedronGeometry(Math.max(0.006, eyeR * 0.33), 0), '#ffffff', [ex + eyeR * 0.7, hy + headR * 0.32, ez + s * eyeR * 0.45]);
+    if (has(look, 'cheek')) k.add('head', E(headR * 0.38, headR * 0.28, 0.02, 0), accent, [hx + headR * 0.1, hy - headR * 0.28, ez]);
   }
   if (has(look, 'crest')) {
     const n = has(look, 'bigCrest') ? 3 : 1;
-    for (let i = 0; i < n; i++) k.add('head', new THREE.ConeGeometry(0.045, has(look, 'bigCrest') ? 0.28 : 0.15, 4), has(look, 'bigCrest') ? accent : headC === '#ffffff' ? accent : headC, [hx - 0.06 - i * 0.03, hy + 0.15 + i * 0.02, 0], [0, 0, 0.5 + i * 0.25]);
+    for (let i = 0; i < n; i++) k.add('head', new THREE.ConeGeometry(0.045, has(look, 'bigCrest') ? 0.28 : 0.15, 4), has(look, 'bigCrest') ? accent : headC === '#ffffff' ? accent : headC, [hx - 0.06 - i * 0.03, hy + headR * 0.85 + i * 0.02, 0], [0, 0, 0.5 + i * 0.25]);
   }
-  if (has(look, 'cap')) k.add('head', E(0.11, 0.06, 0.11, 0), accent, [hx - 0.02, hy + 0.1, 0]);
-  if (has(look, 'collar')) k.add('body', new THREE.TorusGeometry(0.11, 0.03, 4, 10), accent, [hx - 0.1, hy - 0.15, 0], [0, Math.PI / 2, 0.4]);
-  // Wings: inner arm (wingL) + outer hand (wingL2), spread along ±z, folded along the flank when perched.
+  if (has(look, 'cap')) k.add('head', E(headR * 0.72, headR * 0.4, headR * 0.72, 0), accent, [hx - 0.02, hy + headR * 0.65, 0]);
+  if (has(look, 'collar')) k.add('body', new THREE.TorusGeometry(Math.max(0.09, headR * 0.75), 0.03, 4, 10), accent, [hx - headR * 0.7, hy - headR * 0.9, 0], [0, Math.PI / 2, 0.4]);
+  // Wings: inner arm (wingL) + outer hand (wingL2). soar and long legs still lengthen the wing; the preset sets the resting shape.
   const soar = has(look, 'soar');
-  const span = soar ? 0.8 : long ? 0.62 : 0.44;
-  const chord = soar ? 0.34 : 0.28;
+  const span = soar ? 0.88 : long ? Math.max(prop.span, 0.62) : prop.span;
+  const chord = soar ? 0.36 : prop.chord;
   for (const [name, s] of [['wingL', 1], ['wingR', -1]] as const) {
-    const sh: XYZ = [0.04, by + 0.1, s * 0.14];
+    const sh: XYZ = [0.02, by + prop.bry * 0.45, s * prop.shoulderZ];
     k.part(name, sh, 'double');
     const inner = new THREE.Shape();
     inner.moveTo(chord * 0.45, 0);
-    inner.quadraticCurveTo(chord * 0.55, span * 0.25, chord * 0.35, span * 0.5);
-    inner.lineTo(-chord * 0.5, span * 0.5);
-    inner.quadraticCurveTo(-chord * 0.62, span * 0.2, -chord * 0.5, 0);
+    inner.quadraticCurveTo(chord * 0.55, span * 0.25, chord * (build === 'pointed' ? 0.18 : 0.35), span * 0.5);
+    inner.lineTo(-chord * (build === 'pointed' ? 0.35 : 0.5), span * 0.5);
+    inner.quadraticCurveTo(-chord * 0.62, span * 0.2, -chord * 0.45, 0);
     k.add(name, flat(inner, s), wingC, sh);
     const cov = new THREE.Shape();
-    cov.moveTo(chord * 0.44, 0.01);
-    cov.quadraticCurveTo(chord * 0.5, span * 0.25, chord * 0.33, span * 0.48);
-    cov.lineTo(0, span * 0.46);
+    cov.moveTo(chord * 0.42, 0.01);
+    cov.quadraticCurveTo(chord * 0.48, span * 0.22, chord * 0.28, span * 0.46);
+    cov.lineTo(0, span * 0.44);
     cov.lineTo(-0.02, 0.01);
     k.add(name, flat(cov, s), body, [sh[0], sh[1] + 0.004, sh[2]]);
     const name2 = `${name}2`;
-    const el: XYZ = [sh[0], sh[1], s * (0.14 + span * 0.5)];
+    const el: XYZ = [sh[0], sh[1], s * (prop.shoulderZ + span * 0.5)];
     k.part(name2, el, 'double', name);
     const outer = new THREE.Shape();
-    outer.moveTo(chord * 0.35, 0);
     if (soar) {
-      // Raptor "fingers".
+      // Raptor "fingers" — soar still owns the outline, whatever the body preset is.
+      outer.moveTo(chord * 0.35, 0);
       outer.quadraticCurveTo(chord * 0.3, span * 0.3, chord * 0.1, span * 0.45);
       for (let f = 0; f < 4; f++) {
         const fx = chord * (0.05 - f * 0.12);
@@ -270,14 +356,30 @@ function birdFig(look: Look): THREE.Group {
         outer.lineTo(fx - chord * 0.07, span * (0.44 - f * 0.03));
       }
       outer.lineTo(-chord * 0.5, span * 0.12);
+      outer.lineTo(-chord * 0.45, 0);
+    } else if (build === 'pointed') {
+      // Long sickle primaries. A forked tail (swallow) also notches the trailing edge.
+      outer.moveTo(chord * 0.22, 0);
+      outer.quadraticCurveTo(chord * 0.05, span * 0.48, -chord * (has(look, 'forkTail') ? 1.05 : 0.7), span * 0.98);
+      if (has(look, 'forkTail')) {
+        outer.lineTo(-chord * 0.35, span * 0.62);
+        outer.quadraticCurveTo(-chord * 0.15, span * 0.28, -chord * 0.4, 0);
+      } else {
+        outer.quadraticCurveTo(-chord * 0.05, span * 0.42, -chord * 0.38, 0);
+      }
     } else if (has(look, 'forkTail')) {
+      outer.moveTo(chord * 0.35, 0);
       outer.quadraticCurveTo(chord * 0.2, span * 0.35, -chord * 0.6, span * 0.7);
       outer.quadraticCurveTo(-chord * 0.4, span * 0.3, -chord * 0.5, 0);
+    } else if (build === 'bighead') {
+      outer.moveTo(chord * 0.48, 0);
+      outer.quadraticCurveTo(chord * 0.55, span * 0.22, chord * 0.05, span * 0.4);
+      outer.quadraticCurveTo(-chord * 0.45, span * 0.32, -chord * 0.42, 0);
     } else {
-      outer.quadraticCurveTo(chord * 0.3, span * 0.35, 0, span * 0.55);
-      outer.quadraticCurveTo(-chord * 0.35, span * 0.45, -chord * 0.5, span * 0.18);
+      outer.moveTo(chord * 0.4, 0);
+      outer.quadraticCurveTo(chord * 0.5, span * 0.22, chord * 0.08, span * 0.42);
+      outer.quadraticCurveTo(-chord * 0.42, span * 0.36, -chord * 0.46, 0);
     }
-    outer.lineTo(-chord * 0.5, 0);
     k.add(name2, flat(outer, s), wingC, el);
     if (has(look, 'wingpatch')) k.add(name2, E(0.06, 0.012, 0.07, 0), accent === '#111111' ? '#ffffff' : accent, [el[0] - 0.02, el[1] + 0.01, el[2] + s * span * 0.15]);
     if (has(look, 'barred')) for (let i = 0; i < 3; i++) k.add(name2, new THREE.BoxGeometry(0.025, 0.01, span * 0.4), '#f2f2f2', [el[0] - 0.08 + i * 0.06, el[1] + 0.01, el[2] + s * span * 0.2]);
@@ -538,51 +640,124 @@ function batFig(look: Look): THREE.Group {
 
 /* ---------- Insects ---------- */
 
+/** Wing plan. Same materials and rig; the outline and markings change per species. */
+type WingPlan = 'pierid' | 'tiger' | 'swallow' | 'birdwing' | 'moth' | 'atlas';
+
+function wingPlan(look: Look): WingPlan {
+  if (has(look, 'atlas')) return 'atlas';
+  if (has(look, 'moth')) return 'moth';
+  if (has(look, 'birdwing')) return 'birdwing';
+  if (has(look, 'tails')) return 'swallow';
+  if (has(look, 'tiger')) return 'tiger';
+  return 'pierid';
+}
+
 function butterflyFig(look: Look): THREE.Group {
-  const [wing, pattern, bodyC, spot] = look.c as [string, string, string, string?];
-  const moth = has(look, 'moth');
+  const [wing, pattern, bodyC, spot = '#ffffff'] = look.c as [string, string, string, string?];
+  const plan = wingPlan(look);
+  const moth = plan === 'moth' || plan === 'atlas';
   const k = new Kit();
   const y = 0.03;
+  const fat = plan === 'atlas' ? 1.25 : plan === 'moth' ? 1.12 : 1;
   k.part('body');
-  k.add('body', E(0.07, 0.035, 0.035), bodyC, [0.04, y, 0]);
-  k.add('body', E(0.14, 0.028, 0.028), bodyC, [-0.13, y - 0.005, 0]);
-  k.add('body', new THREE.IcosahedronGeometry(0.03, 0), bodyC, [0.13, y + 0.005, 0]);
+  k.add('body', E(0.07 * fat, 0.04 * fat, 0.038 * fat), bodyC, [0.05, y, 0]);
+  k.add('body', E(plan === 'atlas' ? 0.17 : plan === 'moth' ? 0.15 : 0.13, 0.03 * fat, 0.028 * fat), bodyC, [plan === 'atlas' ? -0.15 : -0.12, y - 0.004, 0]);
+  k.add('body', new THREE.IcosahedronGeometry(0.03 * fat, 0), bodyC, [0.13, y + 0.006, 0]);
+  for (const s of [-1, 1]) k.add('body', new THREE.IcosahedronGeometry(0.011, 0), '#1a1a1a', [0.15, y + 0.02, s * 0.016]);
+  const ant = plan === 'atlas' ? 1.3 : 1;
   for (const s of [-1, 1]) {
-    seg(k, 'body', [0.14, y + 0.02, s * 0.01], [0.28, y + 0.1, s * 0.07], 0.004, 0.004, bodyC, 3);
-    k.add('body', moth ? E(0.03, 0.006, 0.02, 0) : new THREE.IcosahedronGeometry(0.012, 0), bodyC, [0.28, y + 0.1, s * 0.07]);
+    seg(k, 'body', [0.15, y + 0.02, s * 0.012], [0.26 * ant, y + 0.1 * ant, s * 0.07 * ant], 0.004, 0.004, bodyC, 3);
+    k.add('body', moth ? E(0.034 * ant, 0.008, 0.022 * ant, 0) : new THREE.IcosahedronGeometry(0.012, 0), bodyC, [0.26 * ant, y + 0.1 * ant, s * 0.07 * ant]);
   }
-  const sc = moth ? 1.25 : 1;
   for (const [name, s] of [['wingL', 1], ['wingR', -1]] as const) {
     k.part(name, [0, y, s * 0.02], 'double');
-    const fore = new THREE.Shape();
-    fore.moveTo(0.06 * sc, 0);
-    fore.bezierCurveTo(0.16 * sc, 0.06 * sc, 0.26 * sc, 0.22 * sc, 0.2 * sc, 0.34 * sc);
-    fore.quadraticCurveTo(0.06 * sc, 0.33 * sc, -0.03 * sc, 0.1 * sc);
-    fore.lineTo(-0.03 * sc, 0);
-    k.add(name, flat(fore, s, 6), wing, [0, y, s * 0.02]);
-    const band = new THREE.Shape();
-    band.moveTo(0.15 * sc, 0.2 * sc);
-    band.quadraticCurveTo(0.24 * sc, 0.28 * sc, 0.19 * sc, 0.33 * sc);
-    band.quadraticCurveTo(0.1 * sc, 0.31 * sc, 0.08 * sc, 0.22 * sc);
-    k.add(name, flat(band, s, 4), moth ? (spot ?? '#ffffff') : pattern, [0, y + 0.002 * s, s * 0.02]);
-    const hind = new THREE.Shape();
-    hind.moveTo(0.0, 0);
-    hind.bezierCurveTo(0.02 * sc, 0.14 * sc, -0.06 * sc, 0.26 * sc, -0.17 * sc, 0.23 * sc);
-    hind.quadraticCurveTo(-0.26 * sc, 0.1 * sc, -0.08 * sc, 0);
-    k.add(name, flat(hind, s, 6), moth ? wing : pattern, [0, y - 0.002, s * 0.02]);
-    if (spot) {
-      const c = new THREE.CircleGeometry(0.025 * sc, 6);
-      c.rotateX(-Math.PI / 2);
-      k.add(name, c, spot, [0.17 * sc, y + 0.004, s * (0.02 + 0.27 * sc)]);
-      if (moth) k.add(name, c.clone(), spot, [-0.1 * sc, y + 0.004, s * (0.02 + 0.15 * sc)]);
-    }
-    if (has(look, 'tails')) {
-      const t = new THREE.Shape();
-      t.moveTo(-0.15 * sc, 0.2 * sc);
-      t.lineTo(-0.3 * sc, 0.3 * sc);
-      t.lineTo(-0.28 * sc, 0.33 * sc);
-      t.lineTo(-0.12 * sc, 0.23 * sc);
-      k.add(name, flat(t, s), pattern, [0, y - 0.003, s * 0.02]);
+    const paint = (sh: THREE.Shape, colour: string, lift: number, curve = 2) => {
+      k.add(name, flat(sh, s, curve), colour, [0, y + lift, s * 0.02]);
+    };
+    const dot = (x: number, zy: number, r: number, colour: string, lift: number) => {
+      k.add(name, disc(r), colour, [x, y + lift, s * (0.02 + zy)]);
+    };
+    const eye = (x: number, zy: number, r: number, lift: number) => {
+      dot(x, zy, r, bodyC, lift);
+      dot(x, zy, r * 0.62, pattern, lift + 0.004);
+      dot(x + r * 0.08, zy + r * 0.05, r * 0.28, bodyC, lift + 0.008);
+      dot(x + r * 0.16, zy + r * 0.1, r * 0.1, spot, lift + 0.012);
+    };
+    if (plan === 'pierid') {
+      const fore = new THREE.Shape();
+      fore.moveTo(0.02, 0.02);
+      fore.quadraticCurveTo(0.2, 0.0, 0.22, 0.15);
+      fore.quadraticCurveTo(0.2, 0.3, 0.06, 0.27);
+      fore.quadraticCurveTo(-0.05, 0.16, -0.02, 0.02);
+      paint(fore, wing, 0, 3);
+      const hind = new THREE.Shape();
+      hind.moveTo(0.02, 0.02);
+      hind.quadraticCurveTo(-0.02, 0.14, -0.14, 0.2);
+      hind.quadraticCurveTo(-0.24, 0.14, -0.16, 0.03);
+      hind.quadraticCurveTo(-0.06, 0.0, 0.02, 0.02);
+      paint(hind, pattern, 0.006, 3);
+      paint(shapeOf([[0.12, 0.18], [0.21, 0.14], [0.16, 0.27], [0.07, 0.24]]), bodyC, 0.012);
+      dot(0.1, 0.12, 0.016, bodyC, 0.016);
+    } else if (plan === 'tiger') {
+      const fore: Pt[] = [[0.04, 0.02], [0.2, 0.05], [0.3, 0.2], [0.22, 0.4], [0.06, 0.38], [-0.06, 0.2], [-0.03, 0.03]];
+      const hind: Pt[] = [[0.03, 0.02], [-0.02, 0.16], [-0.16, 0.32], [-0.28, 0.24], [-0.22, 0.08], [-0.08, 0.02]];
+      paint(shapeOf(fore), pattern, 0);
+      paint(shapeOf(insetPts(fore, 0.78)), wing, 0.008);
+      paint(shapeOf(hind), pattern, 0.004);
+      paint(shapeOf(insetPts(hind, 0.76)), wing, 0.012);
+      const veins: [Pt, Pt][] = [
+        [[0.06, 0.06], [0.2, 0.32]],
+        [[0.08, 0.05], [0.1, 0.34]],
+        [[0.02, 0.06], [-0.02, 0.28]],
+        [[-0.02, 0.08], [-0.14, 0.26]],
+        [[0.0, 0.06], [-0.2, 0.16]],
+      ];
+      for (const [a, b] of veins) paint(wedge(a, b, 0.012), pattern, 0.018);
+      for (const [x, zy] of [[0.24, 0.18], [0.18, 0.32], [0.08, 0.36], [-0.01, 0.26], [-0.18, 0.26], [-0.24, 0.16], [-0.14, 0.1]] as Pt[]) {
+        dot(x, zy, 0.016, spot, 0.024);
+      }
+    } else if (plan === 'swallow') {
+      paint(shapeOf([[0.1, 0.01], [0.24, 0.08], [0.14, 0.3], [0.0, 0.48], [-0.1, 0.28], [-0.05, 0.06]]), wing, 0);
+      paint(shapeOf([[0.02, 0.02], [-0.04, 0.14], [-0.16, 0.22], [-0.22, 0.14], [-0.1, 0.04]]), wing, 0.004);
+      paint(shapeOf([[-0.14, 0.18], [-0.32, 0.32], [-0.28, 0.36], [-0.1, 0.2]]), wing, 0.008);
+      paint(shapeOf([[-0.16, 0.1], [-0.42, 0.05], [-0.38, 0.14], [-0.12, 0.16]]), wing, 0.008);
+      paint(shapeOf([[0.16, 0.08], [0.12, 0.2], [0.0, 0.28], [-0.08, 0.2], [-0.16, 0.14], [-0.1, 0.08], [0.02, 0.12], [0.12, 0.06]]), pattern, 0.016);
+    } else if (plan === 'birdwing') {
+      paint(shapeOf([[0.08, 0.02], [0.3, 0.1], [0.2, 0.38], [0.04, 0.66], [-0.1, 0.3], [-0.04, 0.04]]), wing, 0);
+      const hind: Pt[] = [[0.04, 0.02], [-0.04, 0.2], [-0.12, 0.44], [-0.3, 0.52], [-0.4, 0.28], [-0.22, 0.06], [-0.06, 0.02]];
+      paint(shapeOf(hind), wing, 0.004);
+      paint(shapeOf(insetPts(hind, 0.8)), pattern, 0.012);
+      paint(shapeOf([[0.02, 0.04], [0.16, 0.12], [0.06, 0.24], [-0.04, 0.1]]), pattern, 0.016);
+      const veins: [Pt, Pt][] = [
+        [[-0.02, 0.1], [-0.22, 0.42]],
+        [[-0.04, 0.08], [-0.32, 0.24]],
+        [[0.0, 0.08], [-0.14, 0.36]],
+      ];
+      for (const [a, b] of veins) paint(wedge(a, b, 0.014), wing, 0.02);
+    } else if (plan === 'moth') {
+      paint(shapeOf([[0.04, 0.02], [0.2, 0.03], [0.24, 0.18], [0.06, 0.34], [-0.08, 0.16], [-0.02, 0.02]]), wing, 0);
+      paint(shapeOf([[0.0, 0.02], [-0.08, 0.12], [-0.16, 0.18], [-0.2, 0.06], [-0.06, 0.02]]), wing, 0.004);
+      paint(shapeOf([[0.14, 0.06], [0.18, 0.14], [0.06, 0.22], [-0.02, 0.14], [0.08, 0.1], [0.08, 0.05]]), pattern, 0.012);
+      paint(shapeOf([[-0.04, 0.05], [-0.12, 0.12], [-0.14, 0.08], [-0.06, 0.04]]), pattern, 0.012);
+      dot(0.08, 0.14, 0.02, spot, 0.018);
+    } else {
+      // Atlas: hooked tip, scalloped margin, snake-head eyes. Wings are large next to a thick body.
+      const fore: Pt[] = [
+        [0.06, 0.02], [0.26, 0.1], [0.38, 0.32], [0.28, 0.52], [0.12, 0.66],
+        [0.24, 0.54], [0.1, 0.5], [0.02, 0.42], [0.12, 0.36], [0.0, 0.3],
+        [-0.06, 0.2], [-0.1, 0.08],
+      ];
+      const hind: Pt[] = [
+        [0.02, 0.02], [-0.06, 0.18], [-0.1, 0.36], [-0.22, 0.52], [-0.38, 0.58],
+        [-0.48, 0.42], [-0.36, 0.32], [-0.5, 0.22], [-0.36, 0.12], [-0.22, 0.05], [-0.06, 0.02],
+      ];
+      paint(shapeOf(fore), wing, 0);
+      paint(shapeOf(hind), wing, 0.004);
+      paint(shapeOf([[0.18, 0.34], [0.32, 0.42], [0.16, 0.52], [0.08, 0.4]]), pattern, 0.012);
+      paint(shapeOf(insetPts(hind, 0.55)), pattern, 0.01);
+      eye(0.12, 0.28, 0.055, 0.016);
+      eye(-0.24, 0.34, 0.1, 0.016);
+      paint(shapeOf([[-0.22, 0.42], [-0.16, 0.54], [-0.32, 0.52], [-0.3, 0.4]]), pattern, 0.028);
     }
   }
   return k.build({ rig: 'butterfly' });
