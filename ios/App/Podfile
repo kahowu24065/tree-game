@@ -14,6 +14,7 @@ def capacitor_pods
   pod 'CapacitorCommunityAdmob', :path => '../../node_modules/@capacitor-community/admob'
   pod 'CapacitorApp', :path => '../../node_modules/@capacitor/app'
   pod 'CapacitorClipboard', :path => '../../node_modules/@capacitor/clipboard'
+  pod 'CapacitorFilesystem', :path => '../../node_modules/@capacitor/filesystem'
   pod 'CapacitorGeolocation', :path => '../../node_modules/@capacitor/geolocation'
   pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
   pod 'CapacitorPreferences', :path => '../../node_modules/@capacitor/preferences'
@@ -24,6 +25,9 @@ end
 
 target 'App' do
   capacitor_pods
+  # Vendored Ionic ION* binaries — GitHub release CDN often 504s in Actions (iad).
+  pod 'IONFilesystemLib', :path => '../vendor/IONFilesystemLib'
+  pod 'IONGeolocationLib', :path => '../vendor/IONGeolocationLib'
   # iOS push: APNs token -> FCM token (see AppDelegate.swift); same Firebase project as Android.
   pod 'FirebaseMessaging', '~> 12.0'
 end
