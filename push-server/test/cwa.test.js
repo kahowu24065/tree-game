@@ -39,6 +39,12 @@ test('rain tiers and the Taiwan → game event table', () => {
   assert.deepEqual(ev('heat', 1), ['hot']);
   assert.deepEqual(ev('fog', 1), []);
   assert.deepEqual(ev('thunder', 1), ['thunder']);
+  const fog = twLevels([{ type: 'fog', level: 1, name: '濃霧特報', active: true }, { type: 'rain', level: 1, name: '大雨特報', active: true }, { type: 'thunder', level: 1, name: '大雷雨即時訊息', active: true }]);
+  assert.equal(fog.levels.fog, 1);
+  assert.equal(fog.levels.rain, 1);
+  assert.equal(fog.levels.typhoon, 2);
+  assert.match(twMessageFor({ category: 'fog', level: 1 }, fog.names).body, /留意|天氣/);
+  assert.equal(twLevels([{ type: 'fog', level: 1, name: '濃霧特報', active: false }]).levels.fog, 0);
 });
 
 test('county hazards (W-C0033-001) and CAP rain / typhoon', () => {

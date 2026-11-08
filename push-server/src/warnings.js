@@ -3,25 +3,46 @@
 
 import { HK_LABELS, str } from './i18n.js';
 
-export const CATEGORIES = ['heat', 'rain', 'typhoon', 'cold', 'landslip'];
+/** Categories with a tree emergency action (issue can be skipped once that action is done; one reminder). */
+export const ACTION_CATEGORIES = ['heat', 'rain', 'typhoon', 'cold', 'landslip'];
+/**
+ * Information only: pushed on issue / upgrade / cancel, no emergency action and no 2 h reminder.
+ * thunder = HKO/SMG 雷暴; monsoon = 強烈季候風; fire = 火災危險; flood = 新界北水浸 / 洪水警報;
+ * frost = 霜凍; tsunami = 海嘯; fog = 濃霧; snow = 大雪／暴風雪 (feeds that have them).
+ */
+export const INFO_CATEGORIES = ['thunder', 'monsoon', 'fire', 'flood', 'frost', 'tsunami', 'fog', 'snow'];
+export const CATEGORIES = [...ACTION_CATEGORIES, ...INFO_CATEGORIES];
+export const INFO = new Set(INFO_CATEGORIES);
 /** Categories the game handles with 加固 (wind / reinforcement). */
 export const WIND_CATEGORIES = new Set(['typhoon', 'landslip']);
+
+/** All categories at 0. Saved alert state always uses this shape after one poll. */
+export function emptyLevels() {
+  return Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
+}
 
 const RAIN = { WRAINA: 1, WRAINR: 2, WRAINB: 3 };
 const TC = { TC1: 1, TC3: 2, TC8NE: 3, TC8SE: 3, TC8NW: 3, TC8SW: 3, TC9: 4, TC10: 5 };
 
 /** Levels in force now, e.g. { heat: 1, rain: 2, typhoon: 0, cold: 0, landslip: 0 }. */
 export function levelsFromWarnsum(data) {
-  const out = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+  const out = emptyLevels();
   if (!data || typeof data !== 'object') return out;
   for (const [group, raw] of Object.entries(data)) {
     if (!raw || typeof raw !== 'object' || raw.actionCode === 'CANCEL') continue;
     const code = raw.code || group;
+    // ISSUE / REISSUE / EXTEND / UPDATE all stay at the same level, so a 雷暴 EXTEND does not push again.
     if (group === 'WHOT') out.heat = 1;
     else if (group === 'WCOLD') out.cold = 1;
     else if (group === 'WL') out.landslip = 1;
     else if (group === 'WRAIN') out.rain = Math.max(out.rain, RAIN[code] ?? 1);
     else if (group === 'WTCSGNL') out.typhoon = Math.max(out.typhoon, TC[code] ?? 1);
+    else if (group === 'WTS') out.thunder = 1;
+    else if (group === 'WMSGNL') out.monsoon = 1;
+    else if (group === 'WFIRE') out.fire = Math.max(out.fire, code === 'WFIRER' ? 2 : 1);
+    else if (group === 'WFNTSA') out.flood = 1;
+    else if (group === 'WFROST') out.frost = 1;
+    else if (group === 'WTMW') out.tsunami = 1;
   }
   return out;
 }
@@ -34,7 +55,7 @@ export function diffLevels(prev, next) {
 
 /** Issue push text in the game's wording (action call to action), in the device's language. */
 export function messageFor({ category, level }, loc = 'zh-HK', names = HK_LABELS) {
-  const body = category === 'typhoon' ? str(level >= 3 ? 'act_typhoonHigh' : 'act_typhoonLow', loc) : str(`act_${category}`, loc);
+  const body = INFO.has(category) ? str('infoBody', loc) : category === 'typhoon' ? str(level >= 3 ? 'act_typhoonHigh' : 'act_typhoonLow', loc) : str(`act_${category}`, loc);
   return { title: str('issue', loc, { label: names.label(category, level, loc) }), body, category, level };
 }
 
@@ -85,6 +106,7 @@ const safetyOnly = (state, category) => WIND_CATEGORIES.has(category) && state?.
  *  • reminder: only while the action is still undone and doable (not before 青年樹 for wind, not for a dead tree).
  */
 export function shouldNotify(state, category, now = Date.now(), kind = 'issue') {
+  if (INFO.has(category)) return kind !== 'reminder';
   if (kind === 'drop') return true;
   if (kind === 'reminder' && state && (state.alive === false || state.tree === 'dead' || safetyOnly(state, category))) return false;
   if (kind === 'issue' && safetyOnly(state, category)) return true;

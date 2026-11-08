@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { REMINDER_MS, stepScope } from '../src/alerts.js';
-import { deviceMessage, dropMessageFor, levelsFromWarnsum, localDate, messageFor, reminderFor, shouldNotify } from '../src/warnings.js';
+import { deviceMessage, dropMessageFor, emptyLevels, levelsFromWarnsum, localDate, messageFor, reminderFor, shouldNotify } from '../src/warnings.js';
 import { parseState } from '../src/tokens.js';
 import { cellKey, currentEventsIntl, intlDropMessageFor, intlMessageFor, levelsFromEvents, parseOpenMeteo } from '../src/intl.js';
 import { warnsumFromSmg } from '../src/smg.js';
 
-const Z = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+const Z = emptyLevels();
 const T0 = Date.parse('2026-09-27T02:00:00Z');
 
 test('stepScope: first sight silent; issue fires; one reminder after 2 h; cancel clears', () => {
@@ -119,6 +119,61 @@ test('SMG warnings become the same levels as HKO, and a cancelled alert does not
     temp: '<item><title>黃色高溫提示</title><description>黃色高溫提示已經取消。</description></item>',
   }));
   assert.deepEqual(off, Z);
+  const mo = levelsFromWarnsum(warnsumFromSmg({
+    thunder: '<Thunderstorm><Action>ISSUE</Action><Status>1</Status><Inforce>1</Inforce></Thunderstorm>',
+    monsoon: '<Monsoon><Action>CANCEL</Action><Status>2</Status></Monsoon>',
+  }));
+  assert.equal(mo.thunder, 1);
+  assert.equal(mo.monsoon, 0);
+  const wind = levelsFromWarnsum(warnsumFromSmg({
+    monsoon: '<Monsoon><Action>ISSUE</Action><Status>1</Status><Inforce>1</Inforce></Monsoon>',
+  }));
+  assert.equal(wind.monsoon, 1);
+  assert.equal(wind.thunder, 0);
+});
+
+test('info warnings: issue once, EXTEND is silent, no reminder, cancel still pushes', () => {
+  const issue = levelsFromWarnsum({
+    WTS: { code: 'WTS', actionCode: 'ISSUE' },
+    WMSGNL: { code: 'WMSGNL', actionCode: 'ISSUE' },
+    WFIRE: { code: 'WFIREY', actionCode: 'ISSUE' },
+    WFNTSA: { code: 'WFNTSA', actionCode: 'ISSUE' },
+    WFROST: { code: 'WFROST', actionCode: 'ISSUE' },
+    WTMW: { code: 'WTMW', actionCode: 'ISSUE' },
+  });
+  assert.deepEqual(
+    { thunder: issue.thunder, monsoon: issue.monsoon, fire: issue.fire, flood: issue.flood, frost: issue.frost, tsunami: issue.tsunami },
+    { thunder: 1, monsoon: 1, fire: 1, flood: 1, frost: 1, tsunami: 1 },
+  );
+  assert.equal(levelsFromWarnsum({ WFIRE: { code: 'WFIRER', actionCode: 'ISSUE' } }).fire, 2);
+  const extend = levelsFromWarnsum({ WTS: { code: 'WTS', actionCode: 'EXTEND', updateTime: '2026-09-27T04:00:00+08:00' } });
+  assert.equal(extend.thunder, 1);
+  let s = stepScope({ levels: Z, alerts: {} }, issue, T0);
+  assert.ok(s.fresh.some((x) => x.category === 'thunder' && x.level === 1));
+  assert.match(messageFor({ category: 'thunder', level: 1 }).title, /雷暴警告生效/);
+  assert.match(messageFor({ category: 'thunder', level: 1 }).body, /留意最新天氣/);
+  assert.doesNotMatch(messageFor({ category: 'monsoon', level: 1 }).body, /加固|澆水/);
+  assert.equal(shouldNotify({ day: localDate('Asia/Hong_Kong', T0), tz: 'Asia/Hong_Kong', done: { heat: true } }, 'thunder', T0), true);
+  assert.equal(shouldNotify(undefined, 'thunder', T0, 'reminder'), false);
+  s = stepScope(s.state, { ...issue, thunder: extend.thunder }, T0 + REMINDER_MS);
+  assert.deepEqual(s.fresh, []);
+  assert.deepEqual(s.reminders, []);
+  const red = stepScope(s.state, { ...issue, fire: 2 }, T0);
+  assert.deepEqual(red.fresh, [{ category: 'fire', level: 2 }]);
+  const gone = stepScope(red.state, Z, T0);
+  assert.ok(gone.drops.some((d) => d.category === 'thunder' && d.to === 0));
+  assert.equal(dropMessageFor({ category: 'thunder', from: 1, to: 0 }).title, '雷暴警告已取消');
+});
+
+test('a category missing from saved state is recorded without a push', () => {
+  const old = { levels: { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 }, alerts: {} };
+  const next = { ...Z, thunder: 1, fire: 1 };
+  const s = stepScope(old, next, T0);
+  assert.deepEqual(s.fresh, []);
+  assert.equal(s.state.levels.thunder, 1);
+  assert.equal(s.state.alerts.thunder.reminded, true);
+  const up = stepScope(s.state, { ...next, fire: 2 }, T0);
+  assert.deepEqual(up.fresh, [{ category: 'fire', level: 2 }]);
 });
 
 test('parseState validates and rounds the region to 0.5°', () => {
@@ -153,8 +208,8 @@ test('non-HK: Open-Meteo → game events → levels', () => {
   const ev = currentEventsIntl(w.current, w.today, w.normals);
   // precip 5 mm/h × 6 = 30 → 大雨; 32 °C ≥ 28 and ≥ 26 + 5 → 酷熱
   assert.deepEqual(ev.sort(), ['hot', 'rainstorm']);
-  assert.deepEqual(levelsFromEvents(ev), { heat: 1, rain: 1, typhoon: 0, cold: 0, landslip: 0 });
-  assert.deepEqual(levelsFromEvents(['typhoon1', 'thunder', 'blackrain']), { heat: 0, rain: 2, typhoon: 2, cold: 0, landslip: 0 });
+  assert.deepEqual(levelsFromEvents(ev), { ...Z, heat: 1, rain: 1 });
+  assert.deepEqual(levelsFromEvents(['typhoon1', 'thunder', 'blackrain']), { ...Z, rain: 2, typhoon: 2 });
   assert.equal(cellKey(35.68, 139.77), '35.5,140.0');
   assert.match(intlMessageFor({ category: 'rain', level: 2 }).title, /豪雨/);
   assert.match(intlMessageFor({ category: 'rain', level: 1 }).body, /大雨疏水/);

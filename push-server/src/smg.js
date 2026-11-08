@@ -1,5 +1,5 @@
 // SMG (地球物理氣象局) warnings → the same level object HKO warnsum uses.
-// Thunderstorm and monsoon are shown in the app but, like HKO, are not push categories.
+// Thunderstorm and strong monsoon are information pushes (no tree action), same as HKO WTS / WMSGNL.
 
 function inner(xml, name) {
   const m = String(xml ?? '').match(new RegExp(`<${name}(?![A-Za-z0-9_])[^>]*>([\\s\\S]*?)</${name}>`));
@@ -43,12 +43,14 @@ function rainCode(block) {
 }
 
 /** Fake HKO warnsum, so levelsFromWarnsum stays the only category mapping. */
-export function warnsumFromSmg({ typhoon = '', rain = '', temp = '' } = {}) {
+export function warnsumFromSmg({ typhoon = '', rain = '', temp = '', thunder = '', monsoon = '' } = {}) {
   const data = {};
   const tc = blocks(typhoon, 'TropicalCyclone').find(active);
   if (tc) data.WTCSGNL = { code: tcCode(tc), actionCode: 'ISSUE' };
   const rs = blocks(rain, 'Rainstorm').find(active);
   if (rs) data.WRAIN = { code: rainCode(rs), actionCode: 'ISSUE' };
+  if (blocks(thunder, 'Thunderstorm').find(active)) data.WTS = { code: 'WTS', actionCode: 'ISSUE' };
+  if (blocks(monsoon, 'Monsoon').find(active)) data.WMSGNL = { code: 'WMSGNL', actionCode: 'ISSUE' };
   for (const item of blocks(temp, 'item')) {
     const title = inner(item, 'title');
     const desc = inner(item, 'description');

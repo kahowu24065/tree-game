@@ -25,13 +25,15 @@ and the very first run only records the current state.
 | ~2 h reminder (max one per firing) | action still undone, doable (not dead, not pre-青年樹 wind) |
 | Downgrade / cancel (紅雨轉黃雨, 八號風球轉三號風球, 酷熱天氣警告已取消…) | everyone in scope (info). Non-HK cells need 2 consecutive lower readings (~40 min) so forecasts don't flap |
 - HK categories: 酷熱, 寒冷, 暴雨 (黃／紅／黑), 風球 (1/3/8/9/10), **山泥傾瀉警告 (HKO warnsum `WL`, handled by 加固)**.
+- Information pushes (no emergency action, no 2 h reminder; same level including `EXTEND` does not push again): 雷暴 `WTS`, 強烈季候風 `WMSGNL`, 火災危險 `WFIRE` (黃 1／紅 2), 新界北水浸 `WFNTSA`, 霜凍 `WFROST`, 海嘯 `WTMW`. Macau uses the same levels from SMG thunderstorm and monsoon XML. Taiwan 濃霧 is information; 大雷雨 and rain advisories still push as wind / rain. A category missing from a saved scope is recorded once without a push.
+- `swt` / `warningInfo` are not polled: `warnsum` already lists every warning in force, and special weather tips rewrite too often to fit issue / cancel dedupe.
 - First run / first sight of a cell only records the state (no pushes).
 - **Taiwan (1.4.14)**: devices sending `isTW` (+ `twCounty`, `twTown`) are polled every `TW_POLL_MS` (5 min) against 中央氣象署
   per county / town, with the non-HK rules (hk=false texts, 2 lower readings before a drop push). Texts use CWA names
   (「中央氣象署：豪雨特報」, 「豪雨特報轉大雨特報」, 「大雨特報已解除」). Mapping (same as the app, parity-tested):
   海上颱風警報 → typhoon L1, 海上陸上颱風警報 (county in area) → L3, 陸上強風 黃/橙/紅 → L1/L2/L3, 大雨 → rain L1,
   豪雨/大豪雨/超大豪雨 → rain L2, 大雷雨即時訊息 (1.4.15, player's township in the CAP area) → typhoon L2 (狂風雷暴),
-  高溫資訊 → heat, 低溫 → cold, 濃霧 → none.
+  高溫資訊 → heat, 低溫 → cold, 濃霧 → information push (no game event).
   Datasets (src/cwa.js `DATASETS`): O-A0001-001 / O-A0003-001 stations, O-A0002-001 rain, F-D0047-091 county week forecast,
   W-C0033-001 county hazards, CAP W-C0033-003 (rain) / -004 (低溫) / -005 (高溫資訊) / -006 (陸上強風), W-C0034-001 (typhoon).
   大雷雨即時訊息 has no CWA REST dataset: CWA's 雷雨 CAP files are read from the public NCDR active-alerts Atom feed
