@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createOfficialClient, ecccEvent, emmaAt, inForce, loadMeteoalarmAreas, maEvent, nwsEvent, parseEccc, parseJma, parseMeteoalarm, parseNws, tidyAlerts, MA_TTL, MA_DISCLAIMER } from '../src/official.js';
+import { createOfficialClient, ecccEvent, ecccInfo, emmaAt, feedLevels, inForce, loadMeteoalarmAreas, maEvent, maInfo, nwsEvent, nwsInfo, parseEccc, parseJma, parseMeteoalarm, parseNws, tidyAlerts, MA_TTL, MA_DISCLAIMER } from '../src/official.js';
 
 const NOW = Date.parse('2026-10-02T12:00:00Z');
 
@@ -10,7 +10,19 @@ test('event mapping per feed', () => {
   assert.equal(nwsEvent('Hurricane Warning'), 'typhoon8');
   assert.equal(nwsEvent('Wind Advisory'), 'typhoon1');
   assert.equal(nwsEvent('Severe Thunderstorm Watch'), null);
+  assert.equal(nwsEvent('Gale Warning'), 'typhoon1');
   assert.equal(nwsEvent('Extreme Heat Warning'), 'hot');
+  assert.deepEqual(nwsInfo('Dense Fog Advisory'), ['fog', 1]);
+  assert.deepEqual(nwsInfo('Red Flag Warning'), ['fire', 2]);
+  assert.deepEqual(nwsInfo('Tsunami Warning'), ['tsunami', 2]);
+  assert.deepEqual(nwsInfo('Blizzard Warning'), ['snow', 3]);
+  assert.equal(nwsInfo('Severe Thunderstorm Watch'), null);
+  assert.deepEqual(ecccInfo('snowfall warning'), ['snow', 1]);
+  assert.deepEqual(ecccInfo('fog advisory'), ['fog', 1]);
+  assert.equal(ecccInfo('weather watch'), null);
+  assert.deepEqual(maInfo('4; Fog', '3; orange; Severe'), ['fog', 1]);
+  assert.deepEqual(maInfo('8; Forest fire', '4; red; Extreme'), ['fire', 2]);
+  assert.equal(maInfo('4; Fog', '2; yellow; Moderate'), null);
   assert.equal(ecccEvent('rainfall warning', 'orange'), 'rainstorm');
   assert.equal(ecccEvent('rainfall warning', 'red'), 'blackrain');
   assert.equal(ecccEvent('wind warning', 'yellow'), 'typhoon1');
@@ -60,6 +72,12 @@ test('JMA r8: latest report per kind, なし clears', () => {
   assert.deepEqual(parseJma(reports, '0121400', NOW).map((a) => a.event).sort(), ['thunder', 'typhoon1']);
   reports.push(r('2026-10-02T05:00:00+09:00', [{ code: '14', status: '解除' }]));
   assert.deepEqual(parseJma(reports, '0121400', NOW).map((a) => a.event), ['typhoon1']);
+  const fog = parseJma([r('2026-10-02T06:00:00+09:00', [{ code: '20', status: '発表' }, { code: '04', status: '発表' }])], '0121400', NOW);
+  assert.deepEqual(fog.map((a) => a.info).sort(), ['flood', 'fog']);
+  const { levels } = feedLevels({ source: 'jma', alerts: fog }, NOW);
+  assert.equal(levels.fog, 1);
+  assert.equal(levels.flood, 1);
+  assert.equal(levels.typhoon, 0);
 });
 
 test('MeteoAlarm: EMMA area lookup + feed match', () => {

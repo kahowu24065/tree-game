@@ -26,11 +26,11 @@ const base = {
 };
 
 describe('1.4.78 twenty-one more weather vignettes', () => {
-  it('version 1.4.79 / versionCode 86', () => {
-    expect(APP_VERSION).toBe('1.4.79');
+  it('version 1.4.80 / versionCode 87', () => {
+    expect(APP_VERSION).toBe('1.4.80');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+86/);
-    expect(g).toContain('1.4.79');
+    expect(g).toMatch(/versionCode\s+87/);
+    expect(g).toContain('1.4.80');
   });
 
   it('EVENTS has 31 ids and all new ones are present with i18n', () => {

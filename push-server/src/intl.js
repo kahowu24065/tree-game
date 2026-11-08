@@ -1,4 +1,5 @@
 import { intlLabel, str } from './i18n.js';
+import { emptyLevels } from './warnings.js';
 // Non-HK weather: the game's own rules (ported 1:1 from tree-game src/events.ts + src/balance.ts; a tree-game test
 // checks this port against the TypeScript originals) applied to MET Norway numbers (src/metno.js, Open-Meteo-shaped), per 0.5° grid cell.
 
@@ -101,7 +102,7 @@ export function parseOpenMeteo(body) {
 
 /** Game events → per-category push level (wind: 烈風 1 < 狂風雷暴 2 < 暴風 3; rain: 大雨 1 < 豪雨 2). */
 export function levelsFromEvents(events) {
-  const out = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+  const out = emptyLevels();
   for (const e of events) {
     if (e === 'hot') out.heat = 1;
     else if (e === 'cold') out.cold = 1;

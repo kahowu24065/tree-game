@@ -318,12 +318,14 @@ async function pollSmg() {
       if (!res.ok) throw new Error(`SMG ${file} ${res.status}`);
       return res.text();
     };
-    const [typhoon, rain, temp] = await Promise.all([
+    const [typhoon, rain, temp, thunder, monsoon] = await Promise.all([
       load('xml', 'c_typhoon.xml'),
       load('xml', 'c_rainstorm.xml'),
       load('rss', 'c_temperatureAlert_rss.xml'),
+      load('xml', 'c_thunderstorm.xml'),
+      load('xml', 'c_monsoon.xml'),
     ]);
-    const warnsum = warnsumFromSmg({ typhoon, rain, temp });
+    const warnsum = warnsumFromSmg({ typhoon, rain, temp, thunder, monsoon });
     const levels = levelsFromWarnsum(warnsum);
     // Keep the last SMG temperature titles so a later cancel still names the right alert.
     if (warnsum.WHOT?.name) smgNames.heat = warnsum.WHOT.name;

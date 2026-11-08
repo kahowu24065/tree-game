@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { feedStr, intlLabel, normLocale, str } from './i18n.js';
+import { INFO, emptyLevels } from './warnings.js';
 
 const UA = 'sekai-tree-push (github.com/kahowu24065/tree-game)';
 const FEED_TTL = 5 * 60_000;
@@ -54,10 +55,28 @@ export function nwsEvent(name) {
   if (/^flash flood (warning|emergency)/.test(n)) return 'blackrain';
   if (/^flood warning/.test(n)) return 'rainstorm';
   if (/^(hurricane|typhoon|extreme wind|high wind|storm) warning/.test(n)) return 'typhoon8';
-  if (/^(tropical storm warning|wind advisory)/.test(n)) return 'typhoon1';
+  if (/^(tropical storm warning|wind advisory|gale warning)/.test(n)) return 'typhoon1';
   if (/^(severe thunderstorm|tornado) warning/.test(n)) return 'thunder';
   if (/^(excessive heat|extreme heat|heat) warning/.test(n)) return 'hot';
   if (/^(extreme cold|wind chill|hard freeze|freeze|cold weather) warning/.test(n)) return 'cold';
+  return null;
+}
+/**
+ * NWS products that stay out of the game (no tree event) but are worth one information push.
+ * Watches and statements are skipped: they update often and are not a warning in force.
+ * Returns [category, level] or null.
+ */
+export function nwsInfo(name) {
+  const n = String(name ?? '').toLowerCase();
+  if (/watch|statement|outlook/.test(n)) return null;
+  if (/^dense fog advisory/.test(n)) return ['fog', 1];
+  if (/^red flag warning/.test(n)) return ['fire', 2];
+  if (/^tsunami warning/.test(n)) return ['tsunami', 2];
+  if (/^tsunami advisory/.test(n)) return ['tsunami', 1];
+  if (/^frost advisory/.test(n)) return ['frost', 1];
+  if (/^blizzard warning/.test(n)) return ['snow', 3];
+  if (/^ice storm warning/.test(n)) return ['snow', 2];
+  if (/^winter storm warning/.test(n)) return ['snow', 1];
   return null;
 }
 export function inUsBox(lat, lon) {
@@ -69,7 +88,8 @@ export function parseNws(body, now) {
     .filter((p) => p.status === 'Actual' && p.messageType !== 'Cancel')
     .map((p) => {
       const ends = p.ends ?? p.expires;
-      return { id: String(p.id ?? ''), event: nwsEvent(p.event), name: p.event ?? '', nameEn: p.event ?? '', level: p.severity ?? '', onset: p.onset ?? p.effective ?? null, ends: ends ?? null, headline: clip(p.headline), description: clip(p.description), instruction: clip(p.instruction), area: clip(p.areaDesc).slice(0, 300), active: inForce(p.onset ?? p.effective, ends, now) };
+      const info = nwsInfo(p.event);
+      return { id: String(p.id ?? ''), event: nwsEvent(p.event), info: info?.[0] ?? null, infoLevel: info?.[1] ?? 0, name: p.event ?? '', nameEn: p.event ?? '', level: p.severity ?? '', onset: p.onset ?? p.effective ?? null, ends: ends ?? null, headline: clip(p.headline), description: clip(p.description), instruction: clip(p.instruction), area: clip(p.areaDesc).slice(0, 300), active: inForce(p.onset ?? p.effective, ends, now) };
     });
 }
 
@@ -86,6 +106,19 @@ export function ecccEvent(name, colour) {
   if (/^(severe thunderstorm|tornado) warning/.test(n)) return 'thunder';
   if (/^heat warning/.test(n)) return 'hot';
   if (/^extreme cold warning/.test(n)) return 'cold';
+  return null;
+}
+/** ECCC warnings with no game event. Advisories that match are included; watches and statements are not. */
+export function ecccInfo(name) {
+  const n = String(name ?? '').toLowerCase();
+  if (/watch|statement/.test(n)) return null;
+  if (/blizzard/.test(n)) return ['snow', 3];
+  if (/freezing rain|ice storm|winter storm/.test(n)) return ['snow', 2];
+  if (/snowfall/.test(n)) return ['snow', 1];
+  if (/^fog/.test(n)) return ['fog', 1];
+  if (/tsunami/.test(n)) return ['tsunami', /warning/.test(n) ? 2 : 1];
+  if (/frost/.test(n)) return ['frost', 1];
+  if (/red flag|wildfire|fire weather/.test(n)) return ['fire', 2];
   return null;
 }
 /** Even-odd point-in-polygon over GeoJSON rings ([lon, lat]). */
@@ -118,7 +151,8 @@ export function parseEccc(body, lat, lon, now) {
     if (seen.has(key)) continue;
     seen.add(key);
     const ends = p.event_end_datetime ?? p.expiration_datetime;
-    out.push({ id: String(p.id ?? f.id ?? key), event: p.alert_type === 'warning' ? ecccEvent(p.alert_name_en, p.risk_colour_en) : null, name: p.alert_name_fr && p.alert_name_en ? `${p.alert_name_en} / ${p.alert_name_fr}` : p.alert_name_en ?? '', nameEn: p.alert_name_en ?? '', level: p.risk_colour_en ?? '', onset: p.publication_datetime ?? null, ends: ends ?? null, headline: clip(p.alert_name_en), description: clip(p.alert_text_en), instruction: '', area: clip(p.feature_name_en).slice(0, 300), active: inForce(null, ends, now) });
+    const info = ecccInfo(p.alert_name_en);
+    out.push({ id: String(p.id ?? f.id ?? key), event: p.alert_type === 'warning' ? ecccEvent(p.alert_name_en, p.risk_colour_en) : null, info: info?.[0] ?? null, infoLevel: info?.[1] ?? 0, name: p.alert_name_fr && p.alert_name_en ? `${p.alert_name_en} / ${p.alert_name_fr}` : p.alert_name_en ?? '', nameEn: p.alert_name_en ?? '', level: p.risk_colour_en ?? '', onset: p.publication_datetime ?? null, ends: ends ?? null, headline: clip(p.alert_name_en), description: clip(p.alert_text_en), instruction: '', area: clip(p.feature_name_en).slice(0, 300), active: inForce(null, ends, now) });
   }
   return out;
 }
@@ -138,6 +172,18 @@ export const JMA_KINDS = {
   23: ['cold', '低温注意報', 'Low Temperature Advisory'],
   10: [null, '大雨注意報', 'Heavy Rain Advisory'],
 };
+/** Warnings with no game event. 大雨注意報 stays display-only (it is issued most rainy days). 注意報 other than fog / frost are not pushed. */
+export const JMA_INFO = {
+  '04': ['flood', 1, '洪水警報', 'Flood Warning'],
+  '06': ['snow', 2, '大雪警報', 'Heavy Snow Warning'],
+  36: ['snow', 3, '大雪特別警報', 'Heavy Snow Emergency Warning'],
+  20: ['fog', 1, '濃霧注意報', 'Dense Fog Advisory'],
+  24: ['frost', 1, '霜注意報', 'Frost Advisory'],
+};
+function jmaRow(table, code) {
+  const k = String(code ?? '');
+  return table[code] ?? table[k] ?? table[k.padStart(2, '0')] ?? null;
+}
 export function inJapanBox(lat, lon) {
   return lat >= 24 && lat <= 46 && lon >= 122.9 && lon <= 154;
 }
@@ -162,9 +208,17 @@ export function parseJma(reports, class20, now) {
   }
   const out = [];
   for (const [code, { status, report }] of state) {
-    if (/解除|なし/.test(status) || !JMA_KINDS[code]) continue;
-    const [event, name, nameEn] = JMA_KINDS[code];
-    out.push({ id: `${class20}-${code}`, event, name, nameEn, level: status, onset: report.reportDatetime ?? null, ends: null, headline: clip(report.headlineText), description: '', instruction: '', area: '', active: true });
+    if (/解除|なし/.test(status)) continue;
+    const kind = jmaRow(JMA_KINDS, code);
+    const extra = kind ? null : jmaRow(JMA_INFO, code);
+    if (!kind && !extra) continue;
+    const [a, b, c] = kind ?? extra;
+    const event = kind ? a : null;
+    const info = kind ? null : a;
+    const infoLevel = kind ? 0 : b;
+    const name = kind ? b : c;
+    const nameEn = kind ? c : extra[3];
+    out.push({ id: `${class20}-${code}`, event, info, infoLevel, name, nameEn, level: status, onset: report.reportDatetime ?? null, ends: null, headline: clip(report.headlineText), description: '', instruction: '', area: '', active: true });
   }
   return out;
 }
@@ -242,6 +296,17 @@ export function maEvent(type, level) {
   if (t === 6) return 'cold';
   return null;
 }
+/** MeteoAlarm orange/red types with no game event. Yellow stays display-only. [category, level]. */
+export function maInfo(type, level) {
+  const t = parseInt(String(type ?? ''), 10);
+  const l = parseInt(String(level ?? ''), 10);
+  if (!(l >= 3)) return null;
+  const lv = l >= 4 ? 2 : 1;
+  if (t === 2) return ['snow', lv];
+  if (t === 4) return ['fog', lv];
+  if (t === 8) return ['fire', lv];
+  return null;
+}
 let maAreas = null;
 export function loadMeteoalarmAreas(file) {
   if (maAreas && !file) return maAreas;
@@ -297,10 +362,11 @@ export function parseMeteoalarm(body, { codes = [], lat, lon }, now) {
     const level = param(en, 'awareness_level');
     const type = param(en, 'awareness_type');
     const event = maEvent(type, level);
+    const info = maInfo(type, level);
     const colour = level.split(';')[1]?.trim() ?? '';
     const active = inForce(en.onset ?? en.effective, en.expires, now);
     const key = `${type}|${colour}|${en.onset}|${en.expires}`;
-    const item = { id: String(a.identifier ?? w.uuid ?? key), event, name: local?.event ?? en.event ?? '', nameEn: en.event ?? '', level: colour, onset: en.onset ?? null, ends: en.expires ?? null, headline: clip(en.headline), description: clip(en.description), instruction: clip(en.instruction), area: clip(areas.map((ar) => ar.areaDesc).join(', ')).slice(0, 300), active, issued: a.sent ?? en.effective ?? null, issuer: String(en.senderName ?? '').slice(0, 120) };
+    const item = { id: String(a.identifier ?? w.uuid ?? key), event, info: info?.[0] ?? null, infoLevel: info?.[1] ?? 0, name: local?.event ?? en.event ?? '', nameEn: en.event ?? '', level: colour, onset: en.onset ?? null, ends: en.expires ?? null, headline: clip(en.headline), description: clip(en.description), instruction: clip(en.instruction), area: clip(areas.map((ar) => ar.areaDesc).join(', ')).slice(0, 300), active, issued: a.sent ?? en.effective ?? null, issuer: String(en.senderName ?? '').slice(0, 120) };
     if (!out.has(key)) out.set(key, item);
   }
   return [...out.values()];
@@ -419,14 +485,23 @@ const EVENT_LEVEL = { hot: ['heat', 1], cold: ['cold', 1], rainstorm: ['rain', 1
 
 /** Alerts in force → push levels per category (as the game counts them) + the alert behind each level. */
 export function feedLevels(answer, now) {
-  const levels = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+  const levels = emptyLevels();
   const names = {};
   for (const a of answer?.alerts ?? []) {
-    if (!a.event || !a.active || (ms(a.ends) !== null && ms(a.ends) <= now) || !EVENT_LEVEL[a.event]) continue;
-    const [cat, lv] = EVENT_LEVEL[a.event];
-    if (lv > levels[cat] || (lv === levels[cat] && a.kind === 'jp-heat-special')) {
-      levels[cat] = lv;
-      names[cat] = { name: a.name, nameEn: a.nameEn, kind: a.kind ?? null, src: a.kind?.startsWith('jp-heat') ? 'moe' : answer.source };
+    if (!a.active || (ms(a.ends) !== null && ms(a.ends) <= now)) continue;
+    if (a.event && EVENT_LEVEL[a.event]) {
+      const [cat, lv] = EVENT_LEVEL[a.event];
+      if (lv > levels[cat] || (lv === levels[cat] && a.kind === 'jp-heat-special')) {
+        levels[cat] = lv;
+        names[cat] = { name: a.name, nameEn: a.nameEn, kind: a.kind ?? null, src: a.kind?.startsWith('jp-heat') ? 'moe' : answer.source };
+      }
+    }
+    if (a.info && INFO.has(a.info)) {
+      const lv = a.infoLevel || 1;
+      if (lv > levels[a.info]) {
+        levels[a.info] = lv;
+        names[a.info] = { name: a.name, nameEn: a.nameEn, kind: a.kind ?? null, src: answer.source };
+      }
     }
   }
   return { levels, names };
@@ -448,7 +523,7 @@ export function feedMessageFor({ category, level }, names, reminder = false, loc
   const n = names?.[category];
   const name = feedName(n, loc) ?? intlLabel(category, level, loc);
   const src = feedStr(`src_${n?.src ?? 'meteoalarm'}`, loc);
-  const body = feedStr('feedBody', loc, { label: intlLabel(category, level, loc), act: act(category, loc) });
+  const body = INFO.has(category) ? str('infoBody', loc) : feedStr('feedBody', loc, { label: intlLabel(category, level, loc), act: act(category, loc) });
   return reminder
     ? { title: feedStr('feedStill', loc, { name }), body: str('reminder', loc, { body: act(category, loc) }), category, level }
     : { title: feedStr('feedIssue', loc, { src, name }), body, category, level };

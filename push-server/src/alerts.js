@@ -3,7 +3,7 @@
 //  • downgrade / cancel → `drops` (info). `confirmDrops` = how many consecutive lower readings are needed first
 //    (HK official warnings: 1; model-based cells: 2 ≈ 40 min, so a flapping forecast doesn't spam).
 //  • prev null (first sight / fresh start) → record only, no pushes.
-import { CATEGORIES } from './warnings.js';
+import { CATEGORIES, INFO } from './warnings.js';
 
 export const REMINDER_MS = 2 * 3600_000;
 
@@ -18,6 +18,12 @@ export function stepScope(prev, levels, now, { confirmDrops = 1 } = {}) {
     const lv = levels[c] ?? 0;
     const old = prev?.alerts?.[c];
     if (!prev) {
+      confirmed[c] = lv;
+      if (lv) alerts[c] = { level: lv, firedAt: now, reminded: true };
+      continue;
+    }
+    // A category this scope has never stored (e.g. info warnings added in 1.4.80) is first sight: record it, don't push.
+    if (prev.levels && !Object.prototype.hasOwnProperty.call(prev.levels, c)) {
       confirmed[c] = lv;
       if (lv) alerts[c] = { level: lv, firedAt: now, reminded: true };
       continue;
@@ -44,7 +50,7 @@ export function stepScope(prev, levels, now, { confirmDrops = 1 } = {}) {
     confirmed[c] = conf;
     if (!conf) continue;
     const a = old ? { ...old } : { level: conf, firedAt: now, reminded: true };
-    if (!a.reminded && now - a.firedAt >= REMINDER_MS) {
+    if (!INFO.has(c) && !a.reminded && now - a.firedAt >= REMINDER_MS) {
       a.reminded = true;
       reminders.push({ category: c, level: conf });
     }

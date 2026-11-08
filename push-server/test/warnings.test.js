@@ -1,17 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { diffLevels, levelsFromWarnsum, messageFor } from '../src/warnings.js';
+import { diffLevels, emptyLevels, levelsFromWarnsum, messageFor } from '../src/warnings.js';
 
 const fx = (n) => JSON.parse(fs.readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'));
 const NONE = levelsFromWarnsum(fx('none'));
 const AMBER = levelsFromWarnsum(fx('amber-t3'));
 const BLACK = levelsFromWarnsum(fx('black-t8'));
 
-test('levels: irrelevant warnings and CANCEL are ignored', () => {
-  assert.deepEqual(NONE, { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 });
-  assert.deepEqual(AMBER, { heat: 0, rain: 1, typhoon: 2, cold: 0, landslip: 0 });
-  assert.deepEqual(BLACK, { heat: 0, rain: 3, typhoon: 3, cold: 1, landslip: 0 });
+const z = (over = {}) => ({ ...emptyLevels(), ...over });
+
+test('levels: CANCEL is ignored; yellow fire danger is an information warning', () => {
+  assert.deepEqual(NONE, z({ fire: 1 }));
+  assert.deepEqual(AMBER, z({ rain: 1, typhoon: 2 }));
+  assert.deepEqual(BLACK, z({ rain: 3, typhoon: 3, cold: 1 }));
+  assert.equal(levelsFromWarnsum({ WFIRE: { code: 'WFIREY', actionCode: 'CANCEL' } }).fire, 0);
 });
 
 test('first run records state without notifying', () => {
@@ -26,7 +29,8 @@ test('issue and upgrade notify; same level does not', () => {
 
 test('downgrade / cancel is silent, re-issue after cancel notifies again', () => {
   assert.deepEqual(diffLevels(BLACK, AMBER), []);
-  assert.deepEqual(diffLevels(BLACK, NONE), []);
+  // none.json is a yellow fire warning, so leaving black rain for that fixture is a new fire issue, not a downgrade.
+  assert.deepEqual(diffLevels(BLACK, NONE), [{ category: 'fire', level: 1 }]);
   assert.deepEqual(diffLevels(NONE, BLACK).map((d) => d.category), ['rain', 'typhoon', 'cold']);
 });
 
