@@ -41,8 +41,14 @@ jobs:
       - name: Capacitor sync (pod install)
         run: |
           pod --version || sudo gem install cocoapods
-          # pod downloads sometimes hit a CDN 5xx: retry once.
-          npx cap sync ios || { sleep 30; npx cap sync ios; }
+          # pod downloads sometimes hit a CDN 5xx (e.g. IONFilesystemLib GitHub asset 504): retry with backoff.
+          ok=0
+          for i in 1 2 3 4 5 6 7 8; do
+            if npx cap sync ios; then ok=1; break; fi
+            echo "cap sync failed (attempt $i), sleeping $((20*i))s…"
+            sleep $((20*i))
+          done
+          [ "$ok" = 1 ]
       - name: Build for simulator (unsigned)
         working-directory: ios/App
         run: |
@@ -135,8 +141,14 @@ jobs:
           npm ci --ignore-scripts && npm run build:app
           if [ -n "$VITE_ADMOB_IOS_BANNER" ]; then grep -rqF "$VITE_ADMOB_IOS_BANNER" dist/assets || { echo "::error::AdMob banner ID not in the web bundle"; exit 1; }; echo "AdMob banner ID injected"; fi
           pod --version || sudo gem install cocoapods
-          # pod downloads sometimes hit a CDN 5xx: retry once.
-          npx cap sync ios || { sleep 30; npx cap sync ios; }
+          # pod downloads sometimes hit a CDN 5xx (e.g. IONFilesystemLib GitHub asset 504): retry with backoff.
+          ok=0
+          for i in 1 2 3 4 5 6 7 8; do
+            if npx cap sync ios; then ok=1; break; fi
+            echo "cap sync failed (attempt $i), sleeping $((20*i))s…"
+            sleep $((20*i))
+          done
+          [ "$ok" = 1 ]
       - name: iCloud capability on the App ID (key-value storage, 1.4.54)
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
