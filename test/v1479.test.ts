@@ -52,11 +52,11 @@ function headHeight(id: string): number {
 }
 
 describe('1.4.79 species silhouettes', () => {
-  it('version 1.4.79 / versionCode 86', () => {
-    expect(APP_VERSION).toBe('1.4.79');
+  it('version 1.4.80 / versionCode 87', () => {
+    expect(APP_VERSION).toBe('1.4.80');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+86/);
-    expect(g).toContain('1.4.79');
+    expect(g).toMatch(/versionCode\s+87/);
+    expect(g).toContain('1.4.80');
   });
 
   it('each butterfly and moth has its own wing outline', () => {

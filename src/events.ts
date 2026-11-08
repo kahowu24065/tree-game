@@ -7,8 +7,9 @@ import { isRainCode, type HourPoint } from './weather';
 import { t as tl } from './i18n';
 
 /**
- * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告或強烈季候風 → 狂風雷暴;
- * 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風; v15 寒冷天氣警告 → 寒冷; v1.4 山泥傾瀉警告 (WL) → 山泥傾瀉.
+ * HKO warnings: 酷熱天氣警告 → 酷熱; 黃／紅雨 → 暴雨; 黑雨 → 黑雨; 雷暴警告 → 狂風雷暴;
+ * 強烈季候風 → 初級颱風（同風，冇閃電）; 一號／三號風球 → 初級颱風; 八號或以上 → 高級颱風;
+ * v15 寒冷天氣警告 → 寒冷; v1.4 山泥傾瀉警告 (WL) → 山泥傾瀉.
  * v1.4.14 Taiwan (中央氣象署, groups TW*, code = group + level; same table as push-server eventsFromCwa):
  * 海上颱風警報 → 初級颱風; 海上陸上颱風警報 → 高級颱風; 大雨 → 暴雨; 豪雨／大豪雨／超大豪雨 → 黑雨;
  * 陸上強風 黃 → 初級颱風、橙 → 狂風雷暴、紅 → 高級颱風; 1.4.15 大雷雨即時訊息 → 狂風雷暴; 低溫 → 寒冷; 高溫資訊 → 酷熱; 濃霧只顯示.
@@ -21,7 +22,8 @@ export function hkoWarningEvents(warnings: readonly HkoWarning[] | undefined): W
     if (w.group === 'WHOT') out.add('hot');
     else if (w.group === 'WCOLD') out.add('cold');
     else if (w.group === 'WRAIN') out.add(w.code === 'WRAINB' ? 'blackrain' : 'rainstorm');
-    else if (w.group === 'WTS' || w.group === 'WMSGNL') out.add('thunder');
+    else if (w.group === 'WTS') out.add('thunder');
+    else if (w.group === 'WMSGNL') out.add('typhoon1');
     else if (w.group === 'WL') out.add('landslip');
     else if (w.group === 'WTCSGNL') out.add(/^TC(1|3)$/.test(w.code) ? 'typhoon1' : 'typhoon8');
     else {

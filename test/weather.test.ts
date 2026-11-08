@@ -167,7 +167,7 @@ describe('天文台警告變遊戲天氣事件', () => {
     expect(hkoWarningEvents([w('WRAIN', 'WRAINR')])).toEqual(['rainstorm']);
     expect(hkoWarningEvents([w('WRAIN', 'WRAINB')])).toEqual(['blackrain']);
     expect(hkoWarningEvents([w('WTS', 'WTS')])).toEqual(['thunder']);
-    expect(hkoWarningEvents([w('WMSGNL', 'WMSGNL')])).toEqual(['thunder']);
+    expect(hkoWarningEvents([w('WMSGNL', 'WMSGNL')])).toEqual(['typhoon1']);
     expect(hkoWarningEvents([w('WTCSGNL', 'TC1')])).toEqual(['typhoon1']);
     expect(hkoWarningEvents([w('WTCSGNL', 'TC3')])).toEqual(['typhoon1']);
     expect(hkoWarningEvents([w('WTCSGNL', 'TC8NE')])).toEqual(['typhoon8']);

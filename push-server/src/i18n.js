@@ -23,17 +23,38 @@ export function fmt(s, p = {}) {
   return s.replace(/\{(\w+)\}/g, (m, k) => (k in p ? String(p[k]) : m));
 }
 
+const INFO_HK = {
+  thunder: '雷暴警告', monsoon: '強烈季候風信號',
+  fire: ['', '黃色火災危險警告', '紅色火災危險警告'],
+  flood: '新界北部水浸特別報告', frost: '霜凍警告', tsunami: '海嘯警告', fog: '濃霧警告',
+  snow: ['', '大雪警告', '嚴重大雪警告', '暴風雪警告'],
+};
+const INFO_CN = {
+  thunder: '雷暴警告', monsoon: '强烈季候风信号',
+  fire: ['', '黄色火灾危险警告', '红色火灾危险警告'],
+  flood: '新界北部水浸特别报告', frost: '霜冻警告', tsunami: '海啸警告', fog: '浓雾警告',
+  snow: ['', '大雪警告', '严重大雪警告', '暴风雪警告'],
+};
+const INFO_EN = {
+  thunder: 'Thunderstorm Warning', monsoon: 'Strong Monsoon Signal',
+  fire: ['', 'Yellow Fire Danger Warning', 'Red Fire Danger Warning'],
+  flood: 'Special Announcement on Flooding in the Northern New Territories', frost: 'Frost Warning', tsunami: 'Tsunami Warning', fog: 'Dense Fog Advisory',
+  snow: ['', 'Snow warning', 'Severe snow warning', 'Blizzard warning'],
+};
 const HK_LABEL = {
-  'zh-HK': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃色暴雨警告信號', '紅色暴雨警告信號', '黑色暴雨警告信號'], typhoon: ['', '一號戒備信號', '三號強風信號', '八號烈風或暴風信號', '九號烈風或暴風風力增強信號', '十號颶風信號'] },
-  'zh-CN': { heat: '酷热天气警告', cold: '寒冷天气警告', landslip: '山泥倾泻警告', rain: ['', '黄色暴雨警告信号', '红色暴雨警告信号', '黑色暴雨警告信号'], typhoon: ['', '一号戒备信号', '三号强风信号', '八号烈风或暴风信号', '九号烈风或暴风风力增强信号', '十号飓风信号'] },
-  en: { heat: 'Very Hot Weather Warning', cold: 'Cold Weather Warning', landslip: 'Landslip Warning', rain: ['', 'Amber Rainstorm Warning Signal', 'Red Rainstorm Warning Signal', 'Black Rainstorm Warning Signal'], typhoon: ['', 'Standby Signal No. 1', 'Strong Wind Signal No. 3', 'No. 8 Gale or Storm Signal', 'Increasing Gale or Storm Signal No. 9', 'Hurricane Signal No. 10'] },
+  'zh-HK': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃色暴雨警告信號', '紅色暴雨警告信號', '黑色暴雨警告信號'], typhoon: ['', '一號戒備信號', '三號強風信號', '八號烈風或暴風信號', '九號烈風或暴風風力增強信號', '十號颶風信號'], ...INFO_HK },
+  'zh-CN': { heat: '酷热天气警告', cold: '寒冷天气警告', landslip: '山泥倾泻警告', rain: ['', '黄色暴雨警告信号', '红色暴雨警告信号', '黑色暴雨警告信号'], typhoon: ['', '一号戒备信号', '三号强风信号', '八号烈风或暴风信号', '九号烈风或暴风风力增强信号', '十号飓风信号'], ...INFO_CN },
+  en: { heat: 'Very Hot Weather Warning', cold: 'Cold Weather Warning', landslip: 'Landslip Warning', rain: ['', 'Amber Rainstorm Warning Signal', 'Red Rainstorm Warning Signal', 'Black Rainstorm Warning Signal'], typhoon: ['', 'Standby Signal No. 1', 'Strong Wind Signal No. 3', 'No. 8 Gale or Storm Signal', 'Increasing Gale or Storm Signal No. 9', 'Hurricane Signal No. 10'], ...INFO_EN },
 };
 HK_LABEL['zh-TW'] = HK_LABEL['zh-HK'];
+const SHORT_HK = { thunder: '雷暴警告', monsoon: '強烈季候風', fire: ['', '黃色火災', '紅色火災'], flood: '新界北水浸', frost: '霜凍警告', tsunami: '海嘯警告', fog: '濃霧', snow: ['', '大雪', '嚴重大雪', '暴風雪'] };
+const SHORT_CN = { thunder: '雷暴警告', monsoon: '强烈季候风', fire: ['', '黄色火灾', '红色火灾'], flood: '新界北水浸', frost: '霜冻警告', tsunami: '海啸警告', fog: '浓雾', snow: ['', '大雪', '严重大雪', '暴风雪'] };
+const SHORT_EN = { thunder: 'Thunderstorm Warning', monsoon: 'Strong Monsoon', fire: ['', 'Yellow Fire', 'Red Fire'], flood: 'NT Flooding', frost: 'Frost Warning', tsunami: 'Tsunami Warning', fog: 'Dense Fog', snow: ['', 'Snow', 'Severe snow', 'Blizzard'] };
 const HK_SHORT = {
-  'zh-HK': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃雨', '紅雨', '黑雨'], typhoon: ['', '一號風球', '三號風球', '八號風球', '九號風球', '十號風球'] },
-  'zh-TW': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃雨', '紅雨', '黑雨'], typhoon: ['', '一號風球', '三號風球', '八號風球', '九號風球', '十號風球'] },
-  'zh-CN': { heat: '酷热天气警告', cold: '寒冷天气警告', landslip: '山泥倾泻警告', rain: ['', '黄雨', '红雨', '黑雨'], typhoon: ['', '一号风球', '三号风球', '八号风球', '九号风球', '十号风球'] },
-  en: { heat: 'Very Hot Weather Warning', cold: 'Cold Weather Warning', landslip: 'Landslip Warning', rain: ['', 'Amber Rain', 'Red Rain', 'Black Rain'], typhoon: ['', 'Signal No. 1', 'Signal No. 3', 'Signal No. 8', 'Signal No. 9', 'Signal No. 10'] },
+  'zh-HK': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃雨', '紅雨', '黑雨'], typhoon: ['', '一號風球', '三號風球', '八號風球', '九號風球', '十號風球'], ...SHORT_HK },
+  'zh-TW': { heat: '酷熱天氣警告', cold: '寒冷天氣警告', landslip: '山泥傾瀉警告', rain: ['', '黃雨', '紅雨', '黑雨'], typhoon: ['', '一號風球', '三號風球', '八號風球', '九號風球', '十號風球'], ...SHORT_HK },
+  'zh-CN': { heat: '酷热天气警告', cold: '寒冷天气警告', landslip: '山泥倾泻警告', rain: ['', '黄雨', '红雨', '黑雨'], typhoon: ['', '一号风球', '三号风球', '八号风球', '九号风球', '十号风球'], ...SHORT_CN },
+  en: { heat: 'Very Hot Weather Warning', cold: 'Cold Weather Warning', landslip: 'Landslip Warning', rain: ['', 'Amber Rain', 'Red Rain', 'Black Rain'], typhoon: ['', 'Signal No. 1', 'Signal No. 3', 'Signal No. 8', 'Signal No. 9', 'Signal No. 10'], ...SHORT_EN },
 };
 const pick = (table, cat, level) => (Array.isArray(table[cat]) ? table[cat][level] : table[cat]) ?? '';
 export const hkLabel = (cat, level, loc) => pick(HK_LABEL[normLocale(loc)], cat, level);
@@ -52,7 +73,7 @@ const S = {
   'zh-HK': {
     act_heat: '快啲幫棵樹做額外澆水（酷熱澆水）！', act_rain: '快啲幫棵樹做暴雨疏水！', act_rainIntl: '快啲幫棵樹做大雨疏水！',
     act_cold: '快啲幫棵樹做保暖，鋪好樹皮乾葉！', act_landslip: '快啲幫棵樹加固！', act_typhoonHigh: '快啲幫棵樹加固，打木樁、綁防風繩！', act_typhoonLow: '留意風勢，記得幫棵樹加固！',
-    issue: '{label}生效！', still: '{label}仍然生效', reminder: '棵樹仲未做應急行動：{body}',
+    issue: '{label}生效！', still: '{label}仍然生效', reminder: '棵樹仲未做應急行動：{body}', infoBody: '留意最新天氣消息。',
     drop: '{a}轉{b}', dropTyphoon: '天文台已改發{b}，仍要留意風勢。', dropOther: '天文台已改發{b}，仍要留意天氣。',
     cancelTyphoon: '熱帶氣旋警告信號已取消', cancelRain: '暴雨警告信號已取消', cancel: '{a}已取消', cancelBody: '天文台已經取消，棵樹可以鬆一口氣。',
     safeLandslip: '現實中請注意安全：避免走近斜坡同擋土牆，留意天文台最新消息。', safeHk: '現實中請注意安全：遠離窗邊，留意天文台最新消息。', safeIntl: '現實中請注意安全：遠離窗邊，留意當地最新天氣消息。',
@@ -64,7 +85,7 @@ const S = {
   'zh-TW': {
     act_heat: '快幫這棵樹額外澆水（酷熱澆水）！', act_rain: '快幫這棵樹做暴雨疏水！', act_rainIntl: '快幫這棵樹做大雨疏水！',
     act_cold: '快幫這棵樹保暖，鋪好樹皮和乾葉！', act_landslip: '快幫這棵樹加固！', act_typhoonHigh: '快幫這棵樹加固，打木樁、綁防風繩！', act_typhoonLow: '留意風勢，記得幫這棵樹加固！',
-    issue: '{label}生效！', still: '{label}仍然生效', reminder: '這棵樹還沒做應急行動：{body}',
+    issue: '{label}生效！', still: '{label}仍然生效', reminder: '這棵樹還沒做應急行動：{body}', infoBody: '請留意最新天氣消息。',
     drop: '{a}轉為{b}', dropTyphoon: '天文台已改發{b}，仍要留意風勢。', dropOther: '天文台已改發{b}，仍要留意天氣。',
     cancelTyphoon: '熱帶氣旋警告信號已取消', cancelRain: '暴雨警告信號已取消', cancel: '{a}已取消', cancelBody: '天文台已經取消，這棵樹可以鬆一口氣。',
     safeLandslip: '現實中請注意安全：避免靠近斜坡和擋土牆，留意天文台最新消息。', safeHk: '現實中請注意安全：遠離窗邊，留意天文台最新消息。', safeIntl: '現實中請注意安全：遠離窗邊，留意當地最新天氣消息。',
@@ -76,7 +97,7 @@ const S = {
   'zh-CN': {
     act_heat: '快帮这棵树额外浇水（酷热浇水）！', act_rain: '快帮这棵树做暴雨疏水！', act_rainIntl: '快帮这棵树做大雨疏水！',
     act_cold: '快帮这棵树保暖，铺好树皮和干叶！', act_landslip: '快帮这棵树加固！', act_typhoonHigh: '快帮这棵树加固，打木桩、绑防风绳！', act_typhoonLow: '留意风势，记得帮这棵树加固！',
-    issue: '{label}生效！', still: '{label}仍然生效', reminder: '这棵树还没做应急行动：{body}',
+    issue: '{label}生效！', still: '{label}仍然生效', reminder: '这棵树还没做应急行动：{body}', infoBody: '请留意最新天气消息。',
     drop: '{a}转为{b}', dropTyphoon: '天文台已改发{b}，仍要留意风势。', dropOther: '天文台已改发{b}，仍要留意天气。',
     cancelTyphoon: '热带气旋警告信号已取消', cancelRain: '暴雨警告信号已取消', cancel: '{a}已取消', cancelBody: '天文台已经取消，这棵树可以松一口气。',
     safeLandslip: '现实中请注意安全：避免靠近斜坡和挡土墙，留意天文台最新消息。', safeHk: '现实中请注意安全：远离窗边，留意天文台最新消息。', safeIntl: '现实中请注意安全：远离窗边，留意当地最新天气消息。',
@@ -88,7 +109,7 @@ const S = {
   en: {
     act_heat: 'Give your tree an extra watering (Heat watering) now!', act_rain: 'Do Rainstorm drainage for your tree now!', act_rainIntl: 'Do Heavy-rain drainage for your tree now!',
     act_cold: 'Keep your tree warm now: spread bark and dry leaves around the roots!', act_landslip: 'Reinforce your tree now!', act_typhoonHigh: 'Reinforce your tree now: stake it and tie windbreak ropes!', act_typhoonLow: 'Watch the wind and remember to reinforce your tree!',
-    issue: '{label} in force!', still: '{label} still in force', reminder: "Your tree's emergency action isn't done yet: {body}",
+    issue: '{label} in force!', still: '{label} still in force', reminder: "Your tree's emergency action isn't done yet: {body}", infoBody: 'Follow the latest weather news.',
     drop: '{a} changed to {b}', dropTyphoon: 'The Observatory has changed to {b}. Keep watching the wind.', dropOther: 'The Observatory has changed to {b}. Keep watching the weather.',
     cancelTyphoon: 'Tropical Cyclone Warning Signals cancelled', cancelRain: 'Rainstorm Warning Signal cancelled', cancel: '{a} cancelled', cancelBody: 'The Observatory has cancelled it. Your tree can breathe a sigh of relief.',
     safeLandslip: 'Stay safe in real life: keep away from slopes and retaining walls, and follow the latest Observatory news.', safeHk: 'Stay safe in real life: keep away from windows and follow the latest Observatory news.', safeIntl: 'Stay safe in real life: keep away from windows and follow the latest local weather news.',
@@ -175,16 +196,27 @@ export function smgTempName(kind, title, loc) {
   return MO_TEMP[l][kind][level];
 }
 
+const MO_EXTRA = {
+  'zh-HK': { thunder: '雷暴警告信號', monsoon: '強烈季候風信號' },
+  'zh-TW': { thunder: '雷暴警告信號', monsoon: '強烈季候風信號' },
+  'zh-CN': { thunder: '雷暴警告信号', monsoon: '强烈季候风信号' },
+  en: { thunder: 'Thunderstorm Warning Signal', monsoon: 'Strong Monsoon Signal' },
+};
+
 /** Label functions for Macao pushes; `names` = latest SMG temperature titles { heat, cold }. */
 export function moLabels(names = {}) {
   const label = (cat, level, loc) => {
-    if (cat === 'rain') return MO_RAIN[normLocale(loc)].full[level] ?? '';
+    const l = normLocale(loc);
+    if (cat === 'rain') return MO_RAIN[l].full[level] ?? '';
     if (cat === 'heat' || cat === 'cold') return smgTempName(cat, names[cat], loc);
+    if (MO_EXTRA[l][cat]) return MO_EXTRA[l][cat];
     return hkLabel(cat, level, loc);
   };
   const short = (cat, level, loc) => {
-    if (cat === 'rain') return MO_RAIN[normLocale(loc)].short[level] ?? '';
+    const l = normLocale(loc);
+    if (cat === 'rain') return MO_RAIN[l].short[level] ?? '';
     if (cat === 'heat' || cat === 'cold') return smgTempName(cat, names[cat], loc);
+    if (MO_EXTRA[l][cat]) return MO_EXTRA[l][cat];
     return hkShort(cat, level, loc);
   };
   return { label, short };

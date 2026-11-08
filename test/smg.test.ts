@@ -83,6 +83,10 @@ describe('SMG', () => {
     expect(storm.map((w) => w.code)).toEqual(['TC8SE', 'WRAINB']);
     expect(hkoWarningEvents(storm)).toEqual(expect.arrayContaining(['typhoon8', 'blackrain']));
     expect(hkoWarningEvents(storm)).not.toContain('hot');
+    const thunderOn = thunderOff.replace('CANCEL', 'ISSUE').replace('<Status>2</Status>', '<Status>1</Status><Inforce>1</Inforce>');
+    const monsoonOn = `<MonsoonWarning><Custom><Monsoon><Action>ISSUE</Action><Status>1</Status><Inforce>1</Inforce><Description>強烈季候風信號現正生效。</Description></Monsoon></Custom></MonsoonWarning>`;
+    expect(hkoWarningEvents(smgWarnings(xml({ thunder: thunderOn, monsoon: monsoonOn, temp: hotCancelled })))).toEqual(expect.arrayContaining(['thunder', 'typhoon1']));
+    expect(hkoWarningEvents(smgWarnings(xml({ monsoon: monsoonOn, temp: hotCancelled })))).toEqual(['typhoon1']);
     expect(smgMessages(xml({ typhoon: typhoon8, rain: rainBlack, temp: hotCancelled }))).toEqual([
       '現正發出八號東南烈風或暴風信號。',
       '黑色暴雨警告信號現正生效。',

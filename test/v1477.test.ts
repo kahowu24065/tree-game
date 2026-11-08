@@ -7,11 +7,11 @@ import { GARDEN_POND, onGardenWater } from '../src/three/island3d';
 import { APP_VERSION } from '../src/version';
 
 describe('1.4.78 campfire clear of pond + iOS MP4 upright', () => {
-  it('version 1.4.79 / versionCode 86', () => {
-    expect(APP_VERSION).toBe('1.4.79');
+  it('version 1.4.80 / versionCode 87', () => {
+    expect(APP_VERSION).toBe('1.4.80');
     const g = readFileSync('android/app/build.gradle', 'utf8');
-    expect(g).toMatch(/versionCode\s+86/);
-    expect(g).toContain('1.4.79');
+    expect(g).toMatch(/versionCode\s+87/);
+    expect(g).toContain('1.4.80');
   });
 
   it('scene prefers ~1.55 and wet keep-out covers the ash pad', () => {

@@ -1,4 +1,5 @@
 import { cwaName, str } from './i18n.js';
+import { INFO, emptyLevels } from './warnings.js';
 // 交通部中央氣象署 (CWA) open data → one normalised Taiwan weather bundle for the app, plus the warning levels the push
 // relay uses. The API key lives only on the server (env CWA_API_KEY); the app calls GET /cwa?lat=&lon= instead.
 //
@@ -536,9 +537,16 @@ const EVENT_LEVEL = { hot: ['heat', 1], cold: ['cold', 1], rainstorm: ['rain', 1
 
 /** Push levels (same scale as intl.js levelsFromEvents) plus the Taiwan warning name behind each category's level. */
 export function twLevels(warnings) {
-  const levels = { heat: 0, rain: 0, typhoon: 0, cold: 0, landslip: 0 };
+  const levels = emptyLevels();
   const names = {};
   for (const w of warnings ?? []) {
+    if (w.active === false) continue;
+    // 濃霧 is display-only in the game, but still an information push.
+    if (w.type === 'fog') {
+      levels.fog = 1;
+      names.fog = w.name;
+      continue;
+    }
     for (const e of eventsFromCwa([w])) {
       const [cat, lv] = EVENT_LEVEL[e];
       if (lv > levels[cat] || (lv === levels[cat] && w.type === 'typhoon')) {
@@ -550,7 +558,7 @@ export function twLevels(warnings) {
   return { levels, names };
 }
 
-const twBody = (category, loc) => str(category === 'rain' ? 'act_rainIntl' : category === 'typhoon' ? 'act_typhoonHigh' : `act_${category}`, loc);
+const twBody = (category, loc) => (INFO.has(category) ? str('infoBody', loc) : str(category === 'rain' ? 'act_rainIntl' : category === 'typhoon' ? 'act_typhoonHigh' : `act_${category}`, loc));
 
 /** Taiwan push text with 中央氣象署's own warning names (non-HK rules: deviceMessage(…, hk=false)), per language. */
 export function twMessageFor({ category, level }, names, reminder = false, loc = 'zh-HK') {
