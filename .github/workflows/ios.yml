@@ -41,14 +41,31 @@ jobs:
       - name: Capacitor sync (pod install)
         run: |
           pod --version || sudo gem install cocoapods
-          # pod downloads sometimes hit a CDN 5xx (e.g. IONFilesystemLib GitHub asset 504): retry with backoff.
+          # IONFilesystemLib / IONGeolocationLib are vendored under ios/vendor (GitHub release CDN 504s in Actions).
+          # Keep path pods in the Podfile even if cap sync rewrites the capacitor_pods list.
+          ensure_ion_vendor_pods() {
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios/App/Podfile")
+          t = p.read_text()
+          block = "  pod 'IONFilesystemLib', :path => '../vendor/IONFilesystemLib'\n  pod 'IONGeolocationLib', :path => '../vendor/IONGeolocationLib'\n"
+          if "IONFilesystemLib', :path" not in t:
+              t = t.replace("  capacitor_pods\n", "  capacitor_pods\n" + block, 1)
+              p.write_text(t)
+              print("re-injected ION vendor pods into Podfile")
+          else:
+              print("ION vendor pods already in Podfile")
+          PY
+          }
+          ensure_ion_vendor_pods
           ok=0
-          for i in 1 2 3 4 5 6 7 8; do
+          for i in 1 2 3 4 5 6; do
             if npx cap sync ios; then ok=1; break; fi
-            echo "cap sync failed (attempt $i), sleeping $((20*i))s…"
-            sleep $((20*i))
+            echo "cap sync failed (attempt $i); re-inject vendor pods, sleep $((15*i))s…"
+            ensure_ion_vendor_pods
+            sleep $((15*i))
           done
-          [ "$ok" = 1 ]
+          [ "$ok" = 1 ] || { ensure_ion_vendor_pods; cd ios/App && pod install; }
       - name: Build for simulator (unsigned)
         working-directory: ios/App
         run: |
@@ -141,14 +158,31 @@ jobs:
           npm ci --ignore-scripts && npm run build:app
           if [ -n "$VITE_ADMOB_IOS_BANNER" ]; then grep -rqF "$VITE_ADMOB_IOS_BANNER" dist/assets || { echo "::error::AdMob banner ID not in the web bundle"; exit 1; }; echo "AdMob banner ID injected"; fi
           pod --version || sudo gem install cocoapods
-          # pod downloads sometimes hit a CDN 5xx (e.g. IONFilesystemLib GitHub asset 504): retry with backoff.
+          # IONFilesystemLib / IONGeolocationLib are vendored under ios/vendor (GitHub release CDN 504s in Actions).
+          # Keep path pods in the Podfile even if cap sync rewrites the capacitor_pods list.
+          ensure_ion_vendor_pods() {
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ios/App/Podfile")
+          t = p.read_text()
+          block = "  pod 'IONFilesystemLib', :path => '../vendor/IONFilesystemLib'\n  pod 'IONGeolocationLib', :path => '../vendor/IONGeolocationLib'\n"
+          if "IONFilesystemLib', :path" not in t:
+              t = t.replace("  capacitor_pods\n", "  capacitor_pods\n" + block, 1)
+              p.write_text(t)
+              print("re-injected ION vendor pods into Podfile")
+          else:
+              print("ION vendor pods already in Podfile")
+          PY
+          }
+          ensure_ion_vendor_pods
           ok=0
-          for i in 1 2 3 4 5 6 7 8; do
+          for i in 1 2 3 4 5 6; do
             if npx cap sync ios; then ok=1; break; fi
-            echo "cap sync failed (attempt $i), sleeping $((20*i))s…"
-            sleep $((20*i))
+            echo "cap sync failed (attempt $i); re-inject vendor pods, sleep $((15*i))s…"
+            ensure_ion_vendor_pods
+            sleep $((15*i))
           done
-          [ "$ok" = 1 ]
+          [ "$ok" = 1 ] || { ensure_ion_vendor_pods; cd ios/App && pod install; }
       - name: iCloud capability on the App ID (key-value storage, 1.4.54)
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
